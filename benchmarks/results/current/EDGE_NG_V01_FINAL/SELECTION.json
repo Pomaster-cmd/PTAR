@@ -1,0 +1,76 @@
+{
+  "best_per_mode": {
+    "SW1": {
+      "scope": "EDGE_CORE",
+      "mode": "SW1",
+      "epsilon": 0.1,
+      "cases": 15,
+      "mean_psnr_db": 22.615846530800745,
+      "mean_ssim": 0.86255286971875,
+      "min_ssim": 0.7090785725229131,
+      "mean_edge_confidence": 0.5575105231460655
+    },
+    "SW2": {
+      "scope": "EDGE_CORE",
+      "mode": "SW2",
+      "epsilon": 0.1,
+      "cases": 15,
+      "mean_psnr_db": 22.50121861615983,
+      "mean_ssim": 0.8590784049238351,
+      "min_ssim": 0.702512901055976,
+      "mean_edge_confidence": 0.5575105231460655
+    },
+    "SW3": {
+      "scope": "EDGE_CORE",
+      "mode": "SW3",
+      "epsilon": 0.01,
+      "cases": 15,
+      "mean_psnr_db": 22.64796001945024,
+      "mean_ssim": 0.8629482309769806,
+      "min_ssim": 0.7100878677418402,
+      "mean_edge_confidence": 0.5575105231460655
+    }
+  },
+  "ranking_edge_core": [
+    {
+      "scope": "EDGE_CORE",
+      "mode": "BASELINE",
+      "epsilon": "NA",
+      "cases": 15,
+      "mean_psnr_db": 22.710567517483238,
+      "mean_ssim": 0.8649286516565304,
+      "min_ssim": 0.7157822014128253,
+      "mean_edge_confidence": 0.5575105231460655
+    },
+    {
+      "scope": "EDGE_CORE",
+      "mode": "SW3",
+      "epsilon": 0.01,
+      "cases": 15,
+      "mean_psnr_db": 22.64796001945024,
+      "mean_ssim": 0.8629482309769806,
+      "min_ssim": 0.7100878677418402,
+      "mean_edge_confidence": 0.5575105231460655
+    },
+    {
+      "scope": "EDGE_CORE",
+      "mode": "SW1",
+      "epsilon": 0.1,
+      "cases": 15,
+      "mean_psnr_db": 22.615846530800745,
+      "mean_ssim": 0.86255286971875,
+      "min_ssim": 0.7090785725229131,
+      "mean_edge_confidence": 0.5575105231460655
+    },
+    {
+      "scope": "EDGE_CORE",
+      "mode": "SW2",
+      "epsilon": 0.1,
+      "cases": 15,
+      "mean_psnr_db": 22.50121861615983,
+      "mean_ssim": 0.8590784049238351,
+      "min_ssim": 0.702512901055976,
+      "mean_edge_confidence": 0.5575105231460655
+    }
+  ]
+}
