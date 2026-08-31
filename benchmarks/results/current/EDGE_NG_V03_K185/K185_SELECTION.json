@@ -1,0 +1,31 @@
+{
+  "algorithm": "EDGE-NG-v03-K185",
+  "historical_equivalence": false,
+  "corpus_id": "PTAR-PERCEPTUAL-V1-B-GRID",
+  "tuning_scope": "EDGE_CORE",
+  "edge_case_count": 15,
+  "sweep_range": {
+    "start": -2.2,
+    "end": -1.6,
+    "step": 0.01
+  },
+  "selection_rule": "Candidates within 0.0001 mean SSIM of best; choose lowest component out-of-range fraction, PSNR tiebreak.",
+  "best_mean_ssim_candidate": {
+    "a": -1.89,
+    "cases": 15,
+    "mean_ssim": 0.9168460237719274,
+    "mean_psnr_db": 24.80325489646521,
+    "min_ssim": 0.856629367089071,
+    "mean_edge_psnr_db": 22.97085958661201,
+    "mean_component_out_of_range_fraction": 0.06893754286694101
+  },
+  "selected": {
+    "a": -1.85,
+    "cases": 15,
+    "mean_ssim": 0.9167825152360796,
+    "mean_psnr_db": 24.80874523918092,
+    "min_ssim": 0.8562241406175964,
+    "mean_edge_psnr_db": 22.97719280968457,
+    "mean_component_out_of_range_fraction": 0.06869212962962962
+  }
+}
