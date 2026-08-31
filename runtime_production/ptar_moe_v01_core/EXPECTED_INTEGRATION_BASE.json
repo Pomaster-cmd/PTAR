@@ -1,0 +1,7 @@
+{
+  "integration_target_family": "P1FG7N/VBLANK2/NISFG1B18K18",
+  "expected_base_zip_sha256": "a8185065db6ec60d3e7be06fe108386ba1bb7955a35e46b64cfc463f6065ee3e",
+  "expected_base_dll_sha256": "1e5e415bb09b33f8d4631f9d78f8f9734cd4cae4316cc6901d032cdcebb54420",
+  "expected_package_files": 444,
+  "policy": "refuse patch if supplied base does not match expected identity unless explicitly reviewed as a newer base"
+}

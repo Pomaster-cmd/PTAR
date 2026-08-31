@@ -1,0 +1,29 @@
+{
+  "schema": "PTAR_EDGE_V04_VARIANTS_V1",
+  "shader_model": "ps_5_0",
+  "target_os": "Windows 8.1",
+  "runtime_mode_switch": false,
+  "historical_equivalence_claimed": false,
+  "variants": [
+    {
+      "id": "EDGE_V03_BASELINE",
+      "mode": 0,
+      "status": "requires exact baseline host implementation"
+    },
+    {
+      "id": "EDGE_V04_SW1",
+      "mode": 1,
+      "status": "compile-ready helper"
+    },
+    {
+      "id": "EDGE_V04_SW2",
+      "mode": 2,
+      "status": "compile-ready helper"
+    },
+    {
+      "id": "EDGE_V04_SW3",
+      "mode": 3,
+      "status": "compile-ready helper; requires existing EDGE confidence and baseline"
+    }
+  ]
+}

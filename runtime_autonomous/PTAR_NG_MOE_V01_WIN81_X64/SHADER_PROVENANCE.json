@@ -1,0 +1,27 @@
+{
+  "runtime_id": "PTAR-NG-MoE-v01-SF5-AUTONOMOUS-VALIDATION",
+  "target": "Windows 8.1 x64 / D3D11 FL11_0",
+  "shader_source_evidence": "hardware_evidence/GTX960M_2026-08-18_v0_11_0",
+  "shader_compile_mode": "PRECOMPILED_DXBC_ONLY_AT_RUNTIME",
+  "runtime_hlsl_compiler_required": false,
+  "runtime_visual_studio_required": false,
+  "runtime_windows_sdk_required": false,
+  "validated_texture_path": "1 gather4 + 4 sample_l + 0 UAV",
+  "shaders": {
+    "ptar_vs.cso": {
+      "sha256": "6328bbd87aac73b07d6112de593f781b2769381aae65fa9c2bcfa06fdc68585c",
+      "size_bytes": 680,
+      "dxbc_magic": true
+    },
+    "ptar_moe_ng_v01_sf5_ps.cso": {
+      "sha256": "bb531ad6f797d2db4a362c82673067e39b7aa3a8fbb0ea19f786a053556a2279",
+      "size_bytes": 3552,
+      "dxbc_magic": true
+    },
+    "ptar_k185_control_ps.cso": {
+      "sha256": "6bd926e85f21dd08788ff9d189c472800a5e0eb726091158ed1ecde3d06d8c16",
+      "size_bytes": 2332,
+      "dxbc_magic": true
+    }
+  }
+}
