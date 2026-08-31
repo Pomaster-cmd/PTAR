@@ -1,0 +1,23 @@
+[
+  {
+    "variant": "nearest",
+    "cases": 15,
+    "mean_ssim": 0.8723397818791858,
+    "mean_psnr_db": 22.372545588371167,
+    "min_ssim": 0.759014158963265
+  },
+  {
+    "variant": "bilinear",
+    "cases": 15,
+    "mean_ssim": 0.890223930936628,
+    "mean_psnr_db": 23.565776560660428,
+    "min_ssim": 0.7983489512324615
+  },
+  {
+    "variant": "cubic4_separable",
+    "cases": 15,
+    "mean_ssim": 0.908966543990136,
+    "mean_psnr_db": 24.32272370316483,
+    "min_ssim": 0.8373714041892311
+  }
+]
