@@ -1,0 +1,19 @@
+{
+  "corpus_id": "PTAR-CORE-PROBES-V1",
+  "type": "DIRECTIONAL_ANALYTIC_REGRESSION",
+  "purpose": "Regression/epsilon probes for the EDGE directional reconstruction core.",
+  "historical_equivalence": false,
+  "acceptance_corpus": false,
+  "seed": 1347699026,
+  "case_count": 382,
+  "phase_values": [
+    "1/3",
+    "2/3"
+  ],
+  "sha256_probes_csv": "6430132b4fe6af43a7a115345e42a269fb36bf85b27208193e08cfc1975f0461",
+  "notes": [
+    "Does not replace EDGE/horse/naturel/RASTER historical corpora.",
+    "Does not reconstruct EDGE v03 orientation/routing.",
+    "Not sufficient for PTAR image-quality acceptance."
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "variant": "PTAR-NG-MoE-v01-SF5",
+  "historical_equivalence": false,
+  "protocol": "PTAR-PERCEPTUAL-V1-B-GRID",
+  "shared_texture_path": "1 GatherGreen + 4 SampleLevel",
+  "router_type": "soft convex weighting",
+  "experts": {
+    "natural": "NATURAL-NG-v01-N70",
+    "edge": "EDGE-NG-v03-K185",
+    "raster": "RASTER-NG-v01-MCLAMP",
+    "router": "ROUTER-NG-v01-R1-SOFT"
+  },
+  "full_42": {
+    "cases": 42,
+    "moe_mean_ssim": 0.9302648237744296,
+    "k185_mean_ssim": 0.9260390744158674,
+    "delta_ssim": 0.004225749358562157,
+    "moe_mean_psnr_db": 29.576762065894453,
+    "k185_mean_psnr_db": 29.15428284628828,
+    "delta_psnr_db": 0.4224792196061756,
+    "moe_min_ssim": 0.8413950218216093,
+    "k185_min_ssim": 0.8441972724274232
+  },
+  "edge_core": {
+    "cases": 15,
+    "moe_mean_ssim": 0.9177260623152512,
+    "k185_mean_ssim": 0.9167822419912279,
+    "delta_ssim": 0.0009438203240232553,
+    "moe_mean_psnr_db": 24.843724775286592,
+    "k185_mean_psnr_db": 24.808741949308068
+  },
+  "raster_scope": {
+    "cases": 9,
+    "moe_mean_ssim": 0.9185301035190183,
+    "k185_mean_ssim": 0.9067712944101471,
+    "delta_ssim": 0.011758809108871207,
+    "moe_mean_psnr_db": 24.814749477368157,
+    "k185_mean_psnr_db": 24.596555369516253
+  },
+  "natural_scope": {
+    "cases": 24,
+    "moe_mean_ssim": 0.9421880814128619,
+    "k185_mean_ssim": 0.9401803900081359,
+    "delta_ssim": 0.0020076914047260364,
+    "moe_mean_psnr_db": 34.538163756424275,
+    "k185_mean_psnr_db": 33.90923724295681
+  },
+  "mean_weights": {
+    "mean_natural_weight": 0.6481191399021855,
+    "mean_edge_weight": 0.19705220226848477,
+    "mean_raster_weight": 0.1548286578293297
+  },
+  "float64_vs_float32_semantic": {
+    "max_abs_lsb": 1,
+    "mismatched_pixels": 3640,
+    "pixels": 3483648,
+    "mismatch_fraction": 0.0010448816872427984
+  },
+  "status": "CPU_REFERENCE_HLSL_AND_SEMANTIC_GATE_COMPLETE_GPU_GATE_PENDING"
+}

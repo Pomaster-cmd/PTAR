@@ -1,0 +1,36 @@
+{
+  "protocol": "STEP_WENO_CORE_SWEEP_V1",
+  "corpus_id": "PTAR-CORE-PROBES-V1",
+  "purpose": "epsilon sensitivity and directional-core regression only",
+  "not_an_acceptance_gate": true,
+  "best_rmse_on_this_probe_set": {
+    "SW1": {
+      "mode": "SW1",
+      "epsilon": 0.01,
+      "cases": 382,
+      "mae": 0.08748095878681982,
+      "rmse": 0.16391103761193385,
+      "max_abs_error": 0.6790123456790124,
+      "max_central_interval_violation": 0.061782602044681
+    },
+    "SW2": {
+      "mode": "SW2",
+      "epsilon": 0.01,
+      "cases": 382,
+      "mae": 0.09176597580797252,
+      "rmse": 0.1661089965623145,
+      "max_abs_error": 0.6790123456790124,
+      "max_central_interval_violation": 0.0
+    }
+  },
+  "epsilon_values": [
+    1e-12,
+    1e-10,
+    1e-08,
+    1e-06,
+    1e-05,
+    0.0001,
+    0.001,
+    0.01
+  ]
+}

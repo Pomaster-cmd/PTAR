@@ -1,0 +1,5 @@
+record_id,series,cases,result,ptar_baseline,external_reference,corpus_status,harness_status,provenance_status,official_use
+HIST-EDGE-001,EDGE,64,64/64,MoE v07 / specialist state recovered,NIS45 exact (external only),SOURCE FILES MISSING,MISSING,RECOVERED_AGGREGATE_ONLY,Historical reference only; not sufficient for new non-regression proof
+HIST-HORSE-001,horse,64,64/64,MoE v07 / specialist state recovered,NIS45 exact (external only),SOURCE FILES MISSING,MISSING,RECOVERED_AGGREGATE_ONLY,Historical reference only; not sufficient for new non-regression proof
+HIST-NATUREL-001,naturel,48,48/48,MoE v07 / specialist state recovered,NIS45 exact (external only),SOURCE FILES MISSING,MISSING,RECOVERED_AGGREGATE_ONLY,Historical reference only; not sufficient for new non-regression proof
+HIST-RASTER-001,RASTER,64,64/64,MoE v07 / specialist state recovered,NIS45 exact (external only),SOURCE FILES MISSING,MISSING,RECOVERED_AGGREGATE_ONLY,Historical reference only; not sufficient for new non-regression proof
