@@ -1,0 +1,41 @@
+{
+  "corpus_id": "PTAR-PERCEPTUAL-V1-A",
+  "status": "PERMANENT_ACCEPTANCE_CORPUS_INITIAL_SET",
+  "historical_equivalence": false,
+  "case_count": 42,
+  "source_count": 14,
+  "hr_size": [
+    288,
+    288
+  ],
+  "lr_size": [
+    192,
+    192
+  ],
+  "scale": 1.5,
+  "input_generation": {
+    "library": "scikit-image",
+    "version": "0.26.0",
+    "function": "skimage.transform.resize",
+    "order": 3,
+    "mode": "reflect",
+    "anti_aliasing": true,
+    "preserve_range": true,
+    "clip": true,
+    "domain": "sRGB/code values (not linearized)"
+  },
+  "baseline_renderers": {
+    "purpose": "pipeline sanity only; not PTAR acceptance results",
+    "variants": {
+      "nearest": 0,
+      "bilinear": 1,
+      "bicubic": 3
+    },
+    "anti_aliasing": false
+  },
+  "notes": [
+    "Historical EDGE/horse/naturel/RASTER scores are not transferred to this corpus.",
+    "Each source snapshot, HR crop and LR input is hashed.",
+    "Changes to source/crop/downsample protocol require a new corpus ID."
+  ]
+}
