@@ -1,0 +1,37 @@
+from pathlib import Path
+import hashlib,re
+root=Path(__file__).resolve().parents[2]
+checks=[]
+def ck(n,c):checks.append((n,bool(c)))
+def sha(p):return hashlib.sha256(Path(p).read_bytes()).hexdigest()
+DLL='cd8470415301930f0cd93a791e2d0f0a649a16fb34ff702f0b394269d2bea44b'
+V2='2e5b50dabe28f5be147b1f104910876dd6baf95c91b0efae24a279bf4b254b67'
+root_expected={'01-INSTALL_WIN81_USR_V0_41_P1FG7N_VBLANK2_NISFG1.bat','INSTALL_WIN81_NIS.bat','RESTORE_WIN81_NIS.bat','VERIFY_WIN81_NIS_INSTALL.bat','README_P1FG7N_VBLANK2_NISFG1.txt','CHANGES_P1FG7N_VBLANK2_NISFG1.txt','SHA256_P1FG7N_VBLANK2_NISFG1.txt','MANIFEST_SHA256.txt','win81_nis.ini','win81_nis_dx11_x64.dll','diag'}
+ck('root file set',set(p.name for p in root.iterdir())==root_expected)
+ck('DLL exact',sha(root/'win81_nis_dx11_x64.dll')==DLL)
+ck('VBLANK2 reference exact',sha(root/'diag/r/r052.dll')==V2)
+ck('VBLANK2 source reference exists',(root/'diag/source/win81_nis_proxy.c.vblank2.reference').exists())
+ck('installers identical',(root/'01-INSTALL_WIN81_USR_V0_41_P1FG7N_VBLANK2_NISFG1.bat').read_bytes()==(root/'INSTALL_WIN81_NIS.bat').read_bytes())
+inst=(root/'INSTALL_WIN81_NIS.bat').read_text(errors='replace')
+verify=(root/'VERIFY_WIN81_NIS_INSTALL.bat').read_text(errors='replace')
+ini=(root/'win81_nis.ini').read_text(errors='replace')
+src=(root/'diag/source/win81_nis_proxy.c').read_text(errors='replace')
+for token in [f'DLL_SHA256={DLL}','WIN81_NIS_VERSION=P1FG7N-VBLANK2-NISFG1','FRAME_GENERATION_TEMPORAL_SCALER=NVIDIA_NIS_WHEN_SELECTED_AND_UPSCALE_REQUIRED','FRAME_GENERATION_NIS_PATH=FG_DEVICE_B_BEFORE_MAILBOX','FRAME_GENERATION_NIS_APPLIES=GENERATED_AND_REAL','FRAME_GENERATION_NIS_FAIL_OPEN=BILINEAR_KEEP_FG_ACTIVE','FRAME_GENERATION_NIS_TIMING=DIAGNOSTIC_ONLY']:
+    ck('installer marker '+token,token in inst)
+    ck('verify marker '+token,token in verify)
+ck('production diag OFF','VBlankDiagnostics=0' in ini)
+ck('startup FG OFF','FrameGeneration=0' in ini)
+for f in ['01-ENABLE_VBLANK_DIAGNOSTICS.bat','02-DISABLE_VBLANK_DIAGNOSTICS.bat','03-VBLANK_DIAGNOSTIC_STATUS.bat','04-ARM_VISIBLE_FRAME_VERIFIER.bat','README_DIAGNOSTICS.txt']:
+    ck('diag tool '+f,(root/'diag'/f).exists())
+ck('visible verifier retained',(root/'diag/visible_verifier/win81_vblank2_visible_marker_x64.exe').exists())
+ck('combined source banner','P1FG7N-VBLANK2-NISFG1 COMBINED NIS + FRAME GENERATION TEST' in src)
+ck('real+generated counters','g_fgNisDispatchGenerated++' in src and 'g_fgNisDispatchReal++' in src)
+ck('no FLIP','DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL' not in src and 'FRAME_LATENCY_WAITABLE_OBJECT' not in src)
+ck('VBlank retained','WaitForVBlank' in src and 'DXGI_PRESENT_DO_NOT_WAIT' in src)
+ck('diagnostic NIS QPC gating','g_vblankDiagnostics&&g_qpcFreq' in src)
+# User-facing scripts must not delete user data.
+script_text='\n'.join(p.read_text(errors='replace') for p in list(root.glob('*.bat'))+list((root/'diag').glob('*.bat'))+list((root/'diag').glob('*.ps1')))
+ck('no destructive delete commands',re.search(r'(?im)(^|[ &])(del|erase|rmdir|rd)\s',script_text) is None)
+print(f'NISFG1 PACKAGE VALIDATION: {sum(v for _,v in checks)}/{len(checks)} PASS')
+for n,v in checks:print(('PASS ' if v else 'FAIL ')+n)
+raise SystemExit(1 if not all(v for _,v in checks) else 0)

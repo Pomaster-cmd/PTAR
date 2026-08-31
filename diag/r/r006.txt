@@ -1,0 +1,23 @@
+from pathlib import Path
+root=Path(__file__).resolve().parents[2]
+s=(root/'diag/source/win81_nis_proxy.c').read_text(errors='replace')
+ini=(root/'win81_nis.ini').read_text(errors='replace')
+inst=(root/'01-INSTALL_WIN81_USR_V0_41_P1FG7N_VBLANK2.bat').read_text(errors='replace')
+checks=[]
+def ck(n,c): checks.append((n,bool(c)))
+ck('package default OFF','VBlankDiagnostics=0' in ini)
+ck('installer forces production OFF','echo VBlankDiagnostics=0' in inst)
+ck('source default OFF','static int g_vblankDiagnostics=0;' in s)
+ck('reload every FG activation',s.count('GetPrivateProfileIntW(L"WIN81_NIS",L"VBlankDiagnostics",0')>=2)
+ck('marker only diagnostic','if(g_vblankDiagnostics){g_vblankMarkerSerial++' in s)
+ck('accepted marker only diagnostic','if(!g_vblankDiagnostics)return;' in s)
+ck('wait timing only diagnostic','if(g_vblankDiagnostics&&g_qpcFreq&&QueryPerformanceCounter(&q0))timed=1;' in s)
+ck('present path retained','present?present(g_fgSwap,0u,DXGI_PRESENT_DO_NOT_WAIT)' in s)
+ck('vblank path retained','hr=waitFn(g_fgVblankOutput)' in s)
+for f in ['01-ENABLE_VBLANK_DIAGNOSTICS.bat','02-DISABLE_VBLANK_DIAGNOSTICS.bat','03-VBLANK_DIAGNOSTIC_STATUS.bat','04-ARM_VISIBLE_FRAME_VERIFIER.bat','README_DIAGNOSTICS.txt']:
+    ck('diag file '+f,(root/'diag'/f).exists())
+ck('verifier in diag',(root/'diag/visible_verifier/win81_vblank2_visible_marker_x64.exe').exists())
+ck('no root diagnostic launcher',not (root/'02-ARM_VBLANK1_VISIBLE_VERIFIER.bat').exists())
+print(f'VBLANK2 DIAG GATE: {sum(v for _,v in checks)}/{len(checks)} PASS')
+for n,v in checks: print(('PASS ' if v else 'FAIL ')+n)
+raise SystemExit(1 if not all(v for _,v in checks) else 0)

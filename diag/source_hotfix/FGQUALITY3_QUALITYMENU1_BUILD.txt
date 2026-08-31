@@ -1,0 +1,43 @@
+RC17 FGQUALITY3 + QUALITYMENU1 BUILD
+===================================
+
+Base:
+- exact RC16 runtime SHA-256 f5873962a1add8e5a18dd2f0ee628d01700fb63a269dfe04016ef7104b83820b
+- RC16 field result: startup image/HUD restored; Q3 still shows character-edge flicker.
+
+Runtime delta 1 — Q3 motion-discontinuity stabilizer:
+- embedded FG HLSL source remains in the historical fixed source slot (1197 bytes + NUL).
+- bidirectional warp and truth-frame blend fallback remain.
+- profiles 0/1/2 keep the prior trust path.
+- only profile 3 enters the added branch because its normalized Guard is 0.25 and the branch is `Guard < 0.30`.
+- the branch compares the center motion vector with +X and +Y neighbors.
+- local disagreement produces a squared confidence multiplier `k*k`.
+- final warp trust = prior photometric trust * motion-consistency multiplier.
+- no new ME resolution, NVENC job, D3D device, mailbox, Flush, Present, wait or cadence path is introduced.
+
+Runtime delta 2 — CTRL+F8 quality menu:
+- the RC16 startup/configuration parser remains untouched.
+- first exact CTRL+F8 press when quality notice 8 is not active: show current selected profile name only; do not change profile.
+- after full key release, a second CTRL+F8 while the 3000 ms name notice is still active: advance one profile and refresh the notice.
+- additional released/re-pressed CTRL+F8 actions while the notice remains active continue cycling.
+- once the notice expires, the next CTRL+F8 returns to show-only behavior.
+- Shift or Alt held rejects the exact chord as before.
+- cross-tier /3 <-> /2 changes preserve the existing pending contract; no automatic FG teardown/rebuild is introduced.
+
+HUD delta:
+- notice ID 8 now renders only LEGACY / BALANCED / QUALITY / CONSERVATIVE.
+- real 3x5 G and Q glyphs were added to the existing feedback shader.
+- line 2 is suppressed for quality notice 8.
+- feedback HLSL remains in the exact historic 6632-byte source allocation; source is space-padded, and the following binary data is not moved.
+
+Binary layout:
+- RC16 .fgdia first 0xC00 raw bytes are byte-identical.
+- new menu code appended at RVA 0x34FDC00, size 0x157.
+- .fgdia raw size 0xC00 -> 0x1000; virtual size remains below the existing 0x1000 section-alignment envelope.
+- SizeOfImage unchanged.
+- only the CTRL+F8 call site is redirected in .text.
+- only the FG interpolation HLSL and feedback HUD HLSL source slots change in .rdata.
+- .fgov/GATE1 and .fgdat state are byte-identical to RC16.
+
+RC17 runtime SHA-256:
+5bdff6f5ecce928cb62f5dbbfe0cd3562eff455054620223cc4ba268c12c92fc

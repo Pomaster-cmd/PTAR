@@ -1,0 +1,85 @@
+B18K8 SAFE PATH REFERENCE MAP
+
+Reference filenames were compacted only to avoid Windows 8.1 MAX_PATH extraction/deletion failures.
+Binary contents are unchanged. Installer scans diag\r\*.dll by content, not by filename.
+
+diag/r/r001.txt  <=  diag/reference/audit_nisfg1_scope.py.historical.txt
+diag/r/r002.inc  <=  diag/reference/b18c_fg_capture_b18b1.inc
+diag/r/r003.inc  <=  diag/reference/b18c_fg_mailbox_transport.inc
+diag/r/r004.inc  <=  diag/reference/fg_custom_edge_lite_b18d_exact_visual_reference.inc
+diag/r/r005.txt  <=  diag/reference/test_nisfg1_nis_parity_b14_reference.py.txt
+diag/r/r006.txt  <=  diag/reference/test_vblank2_diag_gate_inherited_reference.py.txt
+diag/r/r007.txt  <=  diag/reference/validate_nisfg1_package.py.historical.txt
+diag/r/r008.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7j_reference.dll
+diag/r/r009.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7l_reference.dll
+diag/r/r010.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7m_reference.dll
+diag/r/r011.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_flip1_reference.dll
+diag/r/r012.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_flip1a_reference.dll
+diag/r/r013.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_reference.dll
+diag/r/r014.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank1_reference.dll
+diag/r/r015.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1_reference.dll
+diag/r/r016.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1a_diag1_reference.dll
+diag/r/r017.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1a_reference.dll
+diag/r/r018.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b10_reference.dll
+diag/r/r019.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b11_reference.dll
+diag/r/r020.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b12_reference.dll
+diag/r/r021.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b13_reference.dll
+diag/r/r022.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b14_reference.dll
+diag/r/r023.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b18a_hardware_reference.dll
+diag/r/r024.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b18b1_hardware_reference.dll
+diag/r/r025.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b18b_hardware_reference.dll
+diag/r/r026.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b18c_reference.dll
+diag/r/r027.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b18c_visual_reference.dll
+diag/r/r028.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b18d2_hardware_reference.dll
+diag/r/r029.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b18d_hardware_reference.dll
+diag/r/r030.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b18d_reference.dll
+diag/r/r031.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b18e_hardware_reference.dll
+diag/r/r032.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b18e_reference.dll
+diag/r/r033.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b18f_hardware_reference.dll
+diag/r/r034.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b18j_hardware_reference.dll
+diag/r/r035.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b18j_reference.dll
+diag/r/r036.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b18k1_hardware_reference.dll
+diag/r/r037.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b18k2_reference.dll
+diag/r/r038.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b18k4_reference.dll
+diag/r/r039.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b18k5_hardware_reference.dll
+diag/r/r040.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b18k6_reference.dll
+diag/r/r041.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b18k7_reference.dll
+diag/r/r042.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b18k_hardware_reference.dll
+diag/r/r043.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b18k_reference.dll
+diag/r/r044.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b3_reference.dll
+diag/r/r045.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b4_reference.dll
+diag/r/r046.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b5_reference.dll
+diag/r/r047.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b6_reference.dll
+diag/r/r048.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b7_reference.dll
+diag/r/r049.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b8_reference.dll
+diag/r/r050.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b9_reference.dll
+diag/r/r051.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_nisfg1b_reference.dll
+diag/r/r052.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1fg7n_vblank2_reference.dll
+diag/r/r053.dll  <=  diag/reference/win81_nis_dx11_x64_v0_41_p1u46_locked.dll
+
+diag/r/r054.dll  <=  exact RC2 runtime before INQUISITORFIX1 (SHA-256 49dce3f671475f7685fecbe28a56c7af0999816f53b03a5e0a4b3c989d333637)
+diag/r/r055.dll  <=  exact INQUISITORFIX1 RC2 runtime before INPUTMAP1 (SHA-256 5e753029d344ed1d39de94e3f08eebedbeb63f058bae32a14741055aed4cecfe)
+diag/r/r056.dll  <=  REJECTED INPUTMAP1 RC3 runtime; field crash reproduced, retained only for safe upgrade/forensics (SHA-256 db1499ca7b5c78af215f27048af343c048c9a42c6a3211cf698a2f883d37f042)
+diag/r/r057.dll  <=  exact INPUTMAP2 RC4 hardware-working reference before FGREAL30 (SHA-256 0e558350d789e56908a3f4bb866f76ba77e252dd282fe1bfe0df41dc085e8548)
+diag/r/r058.dll  <=  exact RC5 INPUTMAP2 + FGREAL30 reference before SHAREDIAG1 (SHA-256 309f82ea51cb549a594dfe584b3d9d9039b3b25265af604e6d063cabadff0a00)
+diag/r/r059.dll  <=  exact RC6 INPUTMAP2 + FGREAL30 + SHAREDIAG1 reference before GATE1 (SHA-256 9d67705897a0faa7c7b25c09e8d85a7d6fcbb8ee043344dd601ecc5be5e0c263)
+diag/r/r060.dll  <=  exact RC7 INPUTMAP2 + FGREAL30 GATE1 + SHAREDIAG1 hardware-validated governor-gating reference before SHAREHR1 (SHA-256 f871c6a5e3a6a7cf1430d5fdd609d5e5f81a98f5c141559af81a5d51718cd2d2)
+diag/r/r061.dll  <=  exact RC8 INPUTMAP2 + FGREAL30 GATE1 + SHAREHR1 hardware result reference before SHAREPROBE1 (SHA-256 f26bbf5919ddeeb39937e5258d6c56f3196936e7d9a755099d55404693326d98)
+diag/r/r062.dll  <=  exact RC9 INPUTMAP2 + FGREAL30 GATE1 + SHAREPROBE1 hardware-probed reference before SHARELEGACY1 (SHA-256 9d84bb1978a8463df2498455b180125f9aa6a9a2f6ee390cab1382cec44f1d59)
+diag/r/r063.dll  <=  REJECTED RC10 INPUTMAP2 + FGREAL30 GATE1 + SHARELEGACY1 runtime; Inquisitor reached NVENC/display device but mailbox SHARED_KEYEDMUTEX CreateTexture2D failed with E_INVALIDARG and the game later crashed; retained only for safe upgrade/forensics (SHA-256 d8faa86cfc4ddf7d8baefd75634c799c99248804a89340ab19ef3262e8e08ef8)
+
+diag/r/r064.dll  <=  REJECTED RC11 INPUTMAP2 + FGREAL30 GATE1 + SHARELEGACY2 runtime; GTX 960M field run reached legacy transport, NVENC, display mailboxes and all FG threads, then Inquisitor ResizeBuffers tore down/rebuilt FG and the game crashed (SHA-256 11fb4e484e79984641d72e2c793a2fa2b8eab871d50daf9cb03bfd77ed535dff)
+
+diag/r/r065.dll  <=  exact RC12 first field-working Inquisitor FG reference before FGQUALITY1; 1280x720 source, legacy fallback + RESIZEGUARD1 (SHA-256 b253f0457f61a7c268ea3747864eb53e14ab113464f3c62f2a137da56bc18148)
+
+diag/r/r066.dll  <=  exact RC13 FGQUALITY1 field-tested quality baseline; fixed /2 + Guard35 (SHA-256 2c8b77c540988c5671f604abeaf244c660e2ede11f5b74fb716c7e9a184affd2)
+
+diag/r/r067.dll  <=  exact RC14 FGQUALITY2 selectable profile baseline before HUD visibility fix (SHA-256 3808fcb1681f00342b7ce07e39aebc2b1cabbed8aeb2fd244788744136d1868f)
+r068.dll = RC15 FGQUALITYHUD1 REJECTED on GTX 960M / Windows 8.1: black startup/no HUD/no runtime log, image visible only after Alt+Enter; SHA-256 2c978a59cc7053edc6669de18e0dcf2ae5755b9b96da74c452c9b19405c1d785
+
+diag/r/r069.dll  <=  exact RC16 FGQUALITYHUD2 field-working startup/HUD baseline before FGQUALITY3+QUALITYMENU1; GTX 960M / Windows 8.1 image and HUD restored, Q3 still showed character-edge flicker (SHA-256 f5873962a1add8e5a18dd2f0ee628d01700fb63a269dfe04016ef7104b83820b)
+
+diag/r/r070.dll  <=  exact RC17 FGQUALITY3 + QUALITYMENU1 + DIAGREPAIR5 field base before PRESENTDELIVERY1; Q3 CONSERVATIVE visually satisfactory, but visible verifier proved HUD ~30 while visible unique remained 16.372 FPS and GENERATED only 0.793 FPS (SHA-256 5bdff6f5ecce928cb62f5dbbfe0cd3562eff455054620223cc4ba268c12c92fc)
+
+r071.dll = exact RC18 PRESENTDELIVERY1 field base for DWMPHASE1 lab
+SHA256 2b6fafabeedc89857dbb6d5a318ca143ce8e30ec912050116f70a4a58ad55ad3
