@@ -1,0 +1,7 @@
+{
+  "fxc": null,
+  "dxc": null,
+  "cl": null,
+  "x86_64-w64-mingw32-g++": null,
+  "note": "Real Windows/D3D11 build cannot be executed in this Linux environment; no hardware PASS is claimed."
+}

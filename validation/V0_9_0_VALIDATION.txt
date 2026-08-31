@@ -1,0 +1,78 @@
+=== v0.9 hardware kit ===
+return=0
+21/21 PASS
+PASS - NVIDIA vendor locked
+PASS - feature level 11_0 required
+PASS - hardware adapter path uses UNKNOWN driver type
+PASS - WIC RGBA path
+PASS - 42-case corpus gate
+PASS - semantic reference path
+PASS - parity threshold one LSB
+PASS - warmup 300
+PASS - timing samples 512
+PASS - perf geometry 720p to 1080p
+PASS - K185 shader one GatherGreen
+PASS - K185 shader four SampleLevel
+PASS - bilinear control one SampleLevel
+PASS - timer timestamp disjoint
+PASS - timer DONOTFLUSH
+PASS - no explicit D3D Flush in validator
+PASS - build targets Win8.1
+PASS - build FXC ps_5_0
+PASS - build strict
+PASS - build does DXBC audit
+PASS - build no delete command
+
+
+
+=== EDGE-NG v03 ===
+return=0
+24/24 PASS
+PASS - K185 a fixed
+PASS - W13 sum1
+PASS - W23 sum1
+PASS - phase mirror
+PASS - one GatherGreen
+PASS - four SampleLevel
+PASS - no NIS
+PASS - no UAV
+PASS - one source Texture2D
+PASS - phase mod3
+PASS - selected -1.85
+PASS - beats G5 SSIM
+PASS - beats G5 PSNR
+PASS - beats cubic4 SSIM
+PASS - beats cubic4 PSNR
+PASS - semantic <=1 LSB
+PASS - semantic PASS
+PASS - timestamp disjoint
+PASS - DONOTFLUSH
+PASS - no Flush call
+PASS - FXC ps5
+PASS - FXC vs5
+PASS - strict
+PASS - non destructive
+
+
+
+=== EDGE-NG v02 ===
+return=0
+10/10 PASS
+PASS - one GatherGreen source call
+PASS - four SampleLevel source calls
+PASS - ps has SV_Target
+PASS - phase mod3
+PASS - no NIS token
+PASS - no UAV
+PASS - no extra render resource
+PASS - FXC ps5
+PASS - strict FXC
+PASS - non destructive
+
+
+
+=== Protocol B ===
+return=0
+96/96 PASS
+
+

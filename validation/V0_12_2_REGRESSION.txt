@@ -1,0 +1,94 @@
+=== v0.12.2 trailing slash CLI ===
+12/12 PASS
+PASS - old dp0 trailing assignment removed
+PASS - bundle canonicalized with dot
+PASS - bundle root quoted
+PASS - out quoted
+PASS - argument diagnostics present
+PASS - no direct quoted dp0 argument
+PASS - parser expects bundle-root
+PASS - parser expects out
+PASS - usage requires both
+PASS - no D3DCompileFromFile
+PASS - precompiled loader retained
+PASS - PATH sanitized
+
+
+=== v0.12.1 bundleRoot ===
+14/14 PASS
+PASS - bundleRoot declared
+PASS - bundleRoot parsed
+PASS - shader directory uses bundleRoot
+PASS - input corpus uses autonomous bundle
+PASS - expected corpus uses autonomous bundle
+PASS - no standalone old root identifier
+PASS - no old project corpus path
+PASS - no old project benchmark path
+PASS - no D3DCompileFromFile
+PASS - no D3DDisassemble
+PASS - no d3dcompiler include
+PASS - precompiled shader loader retained
+PASS - SHA256 validation retained
+PASS - 42 case gate retained
+
+
+=== v0.12.0 autonomous ===
+36/36 PASS
+PASS - three validated CSOs
+PASS - 42 bundle inputs
+PASS - 42 bundle expected
+PASS - no HLSL shipped in autonomous bundle
+PASS - hash ptar_vs.cso
+PASS - DXBC ptar_vs.cso
+PASS - hash ptar_moe_ng_v01_sf5_ps.cso
+PASS - DXBC ptar_moe_ng_v01_sf5_ps.cso
+PASS - hash ptar_k185_control_ps.cso
+PASS - DXBC ptar_k185_control_ps.cso
+PASS - source no d3dcompiler include
+PASS - source no D3DCompileFromFile
+PASS - source no D3DDisassemble
+PASS - source no ID3DBlob
+PASS - source loads precompiled shaders
+PASS - source verifies SHA256
+PASS - source verifies DXBC magic
+PASS - builder static CRT
+PASS - builder Win81 subsystem
+PASS - builder no d3dcompiler link
+PASS - builder audits imports
+PASS - builder rejects D3DCompiler import
+PASS - builder refuses overwrite
+PASS - builder no copy /Y
+PASS - runtime sanitizes PATH
+PASS - runtime checks cl hidden
+PASS - runtime checks fxc hidden
+PASS - runtime does not invoke vcvars
+PASS - runtime does not invoke compiler
+PASS - runtime parity gate
+PASS - runtime PNG gate
+PASS - non-destructive PREPARE_AUTONOMOUS_RUNTIME.bat
+PASS - non-destructive RUN_PTAR_AUTO.bat
+PASS - non-destructive BUILD_RUNTIME_ONCE_IN_DEV_ENV.bat
+PASS - non-destructive RUN_AUTONOMOUS_ONLY.bat
+PASS - non-destructive VERIFY_AFTER_TOOLCHAIN_REMOVAL.bat
+
+
+=== v0.11.0 MoE ===
+17/17 PASS
+PASS - one GatherGreen
+PASS - four SampleLevel
+PASS - one source Texture2D
+PASS - no UAV
+PASS - no NIS symbols
+PASS - K185 exact coefficients
+PASS - N70
+PASS - soft convex weights
+PASS - 42 float64 outputs
+PASS - 42 semantic outputs
+PASS - semantic <=1 LSB
+PASS - full42 SSIM improves
+PASS - full42 PSNR improves
+PASS - EDGE_CORE improves
+PASS - RASTER improves
+PASS - NATURAL improves
+PASS - historical equivalence false
+

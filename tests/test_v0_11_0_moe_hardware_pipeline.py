@@ -1,0 +1,32 @@
+#!/usr/bin/env python3
+from pathlib import Path
+ROOT=Path(__file__).resolve().parents[1]
+cpp=(ROOT/'hardware_validation/ptar_moe_ng_v01_hw_validation.cpp').read_text(encoding='utf-8')
+bat=(ROOT/'build/windows/BUILD_AND_RUN_MOE_NG_V01_HARDWARE_VALIDATION.bat').read_text(encoding='utf-8')
+ps=(ROOT/'automation/windows/PTAR_AutoSetupAndValidate.ps1').read_text(encoding='utf-8')
+checks=[]
+def ck(n,c):
+    checks.append((n,bool(c)))
+    if not c: raise AssertionError(n)
+ck('MoE validator exe','ptar_moe_ng_v01_hw_validation.exe' in cpp)
+ck('MoE source CLI','--moe-src' in cpp)
+ck('K185 control CLI','--k185-src' in cpp)
+ck('MoE semantic expected','MOE_NG_V01_SF5\\\\MOE_SEMANTIC_FLOAT32_OUTPUTS' in cpp or 'MOE_NG_V01_SF5\\MOE_SEMANTIC_FLOAT32_OUTPUTS' in cpp)
+ck('RenderMoe','RenderMoe' in cpp)
+ck('m_psMoe','m_psMoe' in cpp)
+ck('MoE timing label','PTAR_NG_MOE_V01_SF5' in cpp)
+ck('K185 timing control','EDGE_NG_V03_K185_CONTROL' in cpp)
+ck('paired MoE/K185','delta_moe_minus_k185_ms' in cpp)
+ck('MoE DXBC asm','ptar_moe_ng_v01_sf5_ps.asm' in cpp)
+ck('DXBC audit retained','AuditK185Bytecode(m.Get()' in cpp and 'AuditK185Bytecode(k.Get()' in cpp)
+ck('PNG hard gate','GPU PNG persistence failed' in cpp)
+ck('RAII cleanup','ComApartmentGuard' in cpp)
+ck('TDR safe','TryResolveEx' in cpp and 'GetDeviceRemovedReason' in cpp)
+ck('no explicit Flush','->Flush(' not in cpp and '.Flush(' not in cpp)
+ck('Win8.1 subsystem','/SUBSYSTEM:CONSOLE,6.03' in bat)
+ck('D3DCompiler link','d3dcompiler.lib' in bat)
+ck('BAT passes MoE source','--moe-src "%MOE%"' in bat)
+ck('automation uses MoE BAT','BUILD_AND_RUN_MOE_NG_V01_HARDWARE_VALIDATION.bat' in ps)
+ck('PowerShell non destructive','Remove-Item' not in ps)
+print(f'{sum(v for _,v in checks)}/{len(checks)} PASS')
+for n,v in checks: print(('PASS' if v else 'FAIL')+' - '+n)

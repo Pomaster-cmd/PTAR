@@ -1,0 +1,202 @@
+=== v0.10.2 TLS/download ===
+27/27 PASS
+PASS - BITS fallback
+PASS - bitsadmin fallback
+PASS - WebClient TLS12 fallback
+PASS - certutil fallback
+PASS - BITS before WebClient
+PASS - historical preserved-download log retained
+PASS - Authenticode retained
+PASS - Microsoft signer retained
+PASS - candidate engine suffixes
+PASS - candidate reuse
+PASS - 64-bit strong crypto
+PASS - 32-bit strong crypto
+PASS - SchUseStrongCrypto
+PASS - SystemDefaultTlsVersions
+PASS - Schannel TLS12 client
+PASS - TLS backup file
+PASS - exit code 61
+PASS - BAT code61 handling
+PASS - no automatic reboot
+PASS - PS no Remove-Item
+PASS - PS no del
+PASS - PS no rmdir
+PASS - PS no format
+PASS - BAT no Remove-Item
+PASS - BAT no del
+PASS - BAT no rmdir
+PASS - BAT no format
+
+Spreadsheet runtime warmup failed during python startup
+Traceback (most recent call last):
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/patches/warm_spreadsheet_runtime_on_startup.py", line 26, in warm_spreadsheet_runtime_on_startup
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/spreadsheet_warmup.py", line 785, in warm_spreadsheet_runtime
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/spreadsheet_warmup.py", line 720, in _warm_feature_flows
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/spreadsheet_warmup.py", line 704, in _warm_collaboration_flows
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/generated/interface/models.py", line 32317, in hydrate_crdt_from_proto
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/rpc/remote.py", line 749, in __call__
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/rpc/client.py", line 150, in call
+artifact_tool.rpc.client.RemoteError: hydrateCrdtFromProto requires an empty collaborative document.
+
+
+=== v0.10.1 UAC/path ===
+21/21 PASS
+PASS - root BAT does not pass ProjectRoot
+PASS - verify BAT does not pass ProjectRoot
+PASS - root derives from PSScriptRoot
+PASS - root resolution uses LiteralPath
+PASS - UAC child argument list has no ProjectRoot
+PASS - UAC uses argument array
+PASS - root failure exits 91
+PASS - UAC failure exits 93
+PASS - BAT refuses false success wording
+PASS - PowerShell no Remove-Item
+PASS - PowerShell no del
+PASS - PowerShell no rmdir
+PASS - PowerShell no reboot
+PASS - root BAT no Remove-Item
+PASS - root BAT no del
+PASS - root BAT no rmdir
+PASS - root BAT no reboot
+PASS - verify BAT no Remove-Item
+PASS - verify BAT no del
+PASS - verify BAT no rmdir
+PASS - verify BAT no reboot
+
+Spreadsheet runtime warmup failed during python startup
+Traceback (most recent call last):
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/patches/warm_spreadsheet_runtime_on_startup.py", line 26, in warm_spreadsheet_runtime_on_startup
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/spreadsheet_warmup.py", line 785, in warm_spreadsheet_runtime
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/spreadsheet_warmup.py", line 720, in _warm_feature_flows
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/spreadsheet_warmup.py", line 704, in _warm_collaboration_flows
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/generated/interface/models.py", line 32317, in hydrate_crdt_from_proto
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/rpc/remote.py", line 749, in __call__
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/rpc/client.py", line 150, in call
+artifact_tool.rpc.client.RemoteError: hydrateCrdtFromProto requires an empty collaborative document.
+
+
+=== v0.10 automation ===
+35/35 PASS
+PASS - VS2019 official endpoint
+PASS - Windows 8.1 SDK official endpoint
+PASS - PowerShell no Remove-Item
+PASS - PowerShell no del command
+PASS - PowerShell no rmdir command
+PASS - PowerShell no format command
+PASS - PowerShell no shutdown/reboot
+PASS - root BAT no Remove-Item
+PASS - root BAT no del command
+PASS - root BAT no rmdir command
+PASS - root BAT no format command
+PASS - root BAT no shutdown/reboot
+PASS - UAC uses RunAs
+PASS - signature verification present
+PASS - requires valid signature
+PASS - requires Microsoft signer
+PASS - TLS12 attempt
+PASS - VS quiet
+PASS - VS wait
+PASS - VS norestart
+PASS - VCTools workload
+PASS - VS 16 version range
+PASS - prefers Windows Kits 8.1 FXC
+PASS - SDK unattended attempt
+PASS - SDK interactive fallback documented
+PASS - unique automation run
+PASS - preserves existing downloads
+PASS - hardware runner invoked
+PASS - opens result folder
+PASS - static CRT /MT
+PASS - explicit subsystem 6.03
+PASS - WINVER 0x0603
+PASS - _WIN32_WINNT 0x0603
+PASS - doc says no automatic reboot
+PASS - doc says no UAC bypass
+
+Spreadsheet runtime warmup failed during python startup
+Traceback (most recent call last):
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/patches/warm_spreadsheet_runtime_on_startup.py", line 26, in warm_spreadsheet_runtime_on_startup
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/spreadsheet_warmup.py", line 785, in warm_spreadsheet_runtime
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/spreadsheet_warmup.py", line 720, in _warm_feature_flows
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/spreadsheet_warmup.py", line 704, in _warm_collaboration_flows
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/generated/interface/models.py", line 32317, in hydrate_crdt_from_proto
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/rpc/remote.py", line 749, in __call__
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/rpc/client.py", line 150, in call
+artifact_tool.rpc.client.RemoteError: hydrateCrdtFromProto requires an empty collaborative document.
+
+
+=== v0.9 hardware ===
+21/21 PASS
+PASS - NVIDIA vendor locked
+PASS - feature level 11_0 required
+PASS - hardware adapter path uses UNKNOWN driver type
+PASS - WIC RGBA path
+PASS - 42-case corpus gate
+PASS - semantic reference path
+PASS - parity threshold one LSB
+PASS - warmup 300
+PASS - timing samples 512
+PASS - perf geometry 720p to 1080p
+PASS - K185 shader one GatherGreen
+PASS - K185 shader four SampleLevel
+PASS - bilinear control one SampleLevel
+PASS - timer timestamp disjoint
+PASS - timer DONOTFLUSH
+PASS - no explicit D3D Flush in validator
+PASS - build targets Win8.1
+PASS - build FXC ps_5_0
+PASS - build strict
+PASS - build does DXBC audit
+PASS - build no delete command
+
+Spreadsheet runtime warmup failed during python startup
+Traceback (most recent call last):
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/patches/warm_spreadsheet_runtime_on_startup.py", line 26, in warm_spreadsheet_runtime_on_startup
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/spreadsheet_warmup.py", line 785, in warm_spreadsheet_runtime
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/spreadsheet_warmup.py", line 720, in _warm_feature_flows
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/spreadsheet_warmup.py", line 704, in _warm_collaboration_flows
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/generated/interface/models.py", line 32317, in hydrate_crdt_from_proto
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/rpc/remote.py", line 749, in __call__
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/rpc/client.py", line 150, in call
+artifact_tool.rpc.client.RemoteError: hydrateCrdtFromProto requires an empty collaborative document.
+
+
+=== EDGE-NG v03 ===
+24/24 PASS
+PASS - K185 a fixed
+PASS - W13 sum1
+PASS - W23 sum1
+PASS - phase mirror
+PASS - one GatherGreen
+PASS - four SampleLevel
+PASS - no NIS
+PASS - no UAV
+PASS - one source Texture2D
+PASS - phase mod3
+PASS - selected -1.85
+PASS - beats G5 SSIM
+PASS - beats G5 PSNR
+PASS - beats cubic4 SSIM
+PASS - beats cubic4 PSNR
+PASS - semantic <=1 LSB
+PASS - semantic PASS
+PASS - timestamp disjoint
+PASS - DONOTFLUSH
+PASS - no Flush call
+PASS - FXC ps5
+PASS - FXC vs5
+PASS - strict
+PASS - non destructive
+
+Spreadsheet runtime warmup failed during python startup
+Traceback (most recent call last):
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/patches/warm_spreadsheet_runtime_on_startup.py", line 26, in warm_spreadsheet_runtime_on_startup
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/spreadsheet_warmup.py", line 785, in warm_spreadsheet_runtime
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/spreadsheet_warmup.py", line 720, in _warm_feature_flows
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/spreadsheet_warmup.py", line 704, in _warm_collaboration_flows
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/generated/interface/models.py", line 32317, in hydrate_crdt_from_proto
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/rpc/remote.py", line 749, in __call__
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/rpc/client.py", line 150, in call
+artifact_tool.rpc.client.RemoteError: hydrateCrdtFromProto requires an empty collaborative document.
+

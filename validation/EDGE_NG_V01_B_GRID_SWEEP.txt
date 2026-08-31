@@ -1,0 +1,74 @@
+{
+  "protocol": "EDGE_NG_V01_B_GRID_SWEEP",
+  "historical_equivalence": false,
+  "corpus_id": "PTAR-PERCEPTUAL-V1-B-GRID",
+  "tuning_case_count": 15,
+  "epsilon_candidates": [
+    1e-06,
+    0.0001,
+    0.001,
+    0.01,
+    0.1
+  ],
+  "best_per_mode": {
+    "SW1": {
+      "mode": "SW1",
+      "epsilon": 0.1,
+      "cases": 15,
+      "mean_psnr_db": 23.902583763427405,
+      "mean_ssim": 0.8994127339922483,
+      "min_ssim": 0.8162977337993279
+    },
+    "SW2": {
+      "mode": "SW2",
+      "epsilon": 0.1,
+      "cases": 15,
+      "mean_psnr_db": 23.767062945850025,
+      "mean_ssim": 0.8965875726303484,
+      "min_ssim": 0.8110765987567926
+    },
+    "SW3": {
+      "mode": "SW3",
+      "epsilon": 0.1,
+      "cases": 15,
+      "mean_psnr_db": 23.799065294569807,
+      "mean_ssim": 0.8972296982296277,
+      "min_ssim": 0.8113469054822954
+    }
+  },
+  "ranking": [
+    {
+      "mode": "BASELINE",
+      "epsilon": "NA",
+      "cases": 15,
+      "mean_psnr_db": 24.067822896728565,
+      "mean_ssim": 0.9020337093498346,
+      "min_ssim": 0.8195822344966817
+    },
+    {
+      "mode": "SW1",
+      "epsilon": 0.1,
+      "cases": 15,
+      "mean_psnr_db": 23.902583763427405,
+      "mean_ssim": 0.8994127339922483,
+      "min_ssim": 0.8162977337993279
+    },
+    {
+      "mode": "SW3",
+      "epsilon": 0.1,
+      "cases": 15,
+      "mean_psnr_db": 23.799065294569807,
+      "mean_ssim": 0.8972296982296277,
+      "min_ssim": 0.8113469054822954
+    },
+    {
+      "mode": "SW2",
+      "epsilon": 0.1,
+      "cases": 15,
+      "mean_psnr_db": 23.767062945850025,
+      "mean_ssim": 0.8965875726303484,
+      "min_ssim": 0.8110765987567926
+    }
+  ]
+}
+

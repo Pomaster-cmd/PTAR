@@ -1,0 +1,31 @@
+{
+  "diagnostic_only": true,
+  "not_fxc_sm5_validation": true,
+  "results": [
+    {
+      "mode": 0,
+      "returncode": 0,
+      "stderr": "clang: warning: dxv not found; resulting DXIL will not be validated or signed for use in release environment [-Wdxil-validation]",
+      "output": "/mnt/data/PTAR_PROJECT_MASTER_v0_5_0/validation/clang_hlsl_diagnostic_ir/mode0.ll"
+    },
+    {
+      "mode": 1,
+      "returncode": 0,
+      "stderr": "clang: warning: dxv not found; resulting DXIL will not be validated or signed for use in release environment [-Wdxil-validation]",
+      "output": "/mnt/data/PTAR_PROJECT_MASTER_v0_5_0/validation/clang_hlsl_diagnostic_ir/mode1.ll"
+    },
+    {
+      "mode": 2,
+      "returncode": 0,
+      "stderr": "clang: warning: dxv not found; resulting DXIL will not be validated or signed for use in release environment [-Wdxil-validation]",
+      "output": "/mnt/data/PTAR_PROJECT_MASTER_v0_5_0/validation/clang_hlsl_diagnostic_ir/mode2.ll"
+    },
+    {
+      "mode": 3,
+      "returncode": 0,
+      "stderr": "clang: warning: dxv not found; resulting DXIL will not be validated or signed for use in release environment [-Wdxil-validation]",
+      "output": "/mnt/data/PTAR_PROJECT_MASTER_v0_5_0/validation/clang_hlsl_diagnostic_ir/mode3.ll"
+    }
+  ]
+}
+

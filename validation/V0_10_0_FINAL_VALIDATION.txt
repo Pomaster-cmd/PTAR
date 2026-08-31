@@ -1,0 +1,19 @@
+PTAR v0.10.0 AUTOMATION FINAL VALIDATION
+=======================================
+
+PASS - automation structural/security suite: 35/35
+PASS - v0.9 hardware kit regression: 21/21
+PASS - EDGE-NG v03 regression: 24/24
+PASS - PowerShell lexical balance:
+       parentheses 0 residual
+       braces      0 residual
+       brackets    0 residual
+       scanner ended in normal state
+
+Important runtime boundary:
+- Real PowerShell execution, Microsoft installer execution, FXC compilation,
+  D3D11 rendering and GTX 960M timing cannot be executed in this Linux environment.
+- The automation is designed for Windows 8.1 PowerShell 4-compatible syntax.
+- Downloaded Microsoft installers are refused unless Authenticode reports
+  Valid and the signer certificate subject contains Microsoft.
+- No automatic reboot and no destructive cleanup are present.

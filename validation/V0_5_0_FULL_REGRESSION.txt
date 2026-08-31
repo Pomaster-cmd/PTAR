@@ -1,0 +1,110 @@
+=== edge-ng invariants ===
+return=0
+26/26 PASS
+PASS - constant BASELINE 1e-08
+PASS - shape BASELINE 1e-08
+PASS - constant BASELINE 0.001
+PASS - shape BASELINE 0.001
+PASS - constant BASELINE 0.1
+PASS - shape BASELINE 0.1
+PASS - constant SW1 1e-08
+PASS - shape SW1 1e-08
+PASS - constant SW1 0.001
+PASS - shape SW1 0.001
+PASS - constant SW1 0.1
+PASS - shape SW1 0.1
+PASS - constant SW2 1e-08
+PASS - shape SW2 1e-08
+PASS - constant SW2 0.001
+PASS - shape SW2 0.001
+PASS - constant SW2 0.1
+PASS - shape SW2 0.1
+PASS - constant SW3 1e-08
+PASS - shape SW3 1e-08
+PASS - constant SW3 0.001
+PASS - shape SW3 0.001
+PASS - constant SW3 0.1
+PASS - shape SW3 0.1
+PASS - finite
+PASS - bounded
+
+
+
+=== v0.4 structure ===
+return=0
+18/18 PASS
+PASS - adapter mode 0
+PASS - adapter mode 1
+PASS - adapter mode 2
+PASS - adapter range guard
+PASS - both fixed phases in adapter
+PASS - compile probe references both phases
+PASS - FXC matrix has four modes
+PASS - FXC target ps_5_0
+PASS - FXC strict build
+PASS - non-destructive output collision guard
+PASS - BAT no delete commands
+PASS - WENO no resource declarations
+PASS - WENO no NIS token
+PASS - four variant records
+PASS - no runtime mode switch
+PASS - contract is not EDGE v03 reconstruction
+PASS - contract targets Shader Model 5.0
+PASS - registration tool syntax
+
+
+
+=== step-weno formal ===
+return=0
+PTAR STEP-WENO FORMAL / STRUCTURAL VALIDATION
+=============================================
+seed=0x50544152
+checks=12/12 PASS
+
+PASS - ideal phase weights reproduce cubic interpolation | max_abs_error=1.776e-15
+PASS - closed-form smoothness equals exact polynomial integral | max_abs_error=1.705e-13
+PASS - SW1/SW2 core reproduces polynomials through degree 2 | max_abs_error=1.776e-15
+PASS - phase mirror symmetry | max_abs_error=3.553e-15
+PASS - weights remain in [0,1] | min=1.1279629549665272e-09, max=0.999999999999856
+PASS - SW2 monotone clamp never exits central interval | max_violation=0.000e+00
+PASS - SW3 confidence endpoints are exact | max_abs_error=4.441e-16
+PASS - SW3 remains a convex blend of EDGE baseline and SW2 | max_violation=0.000e+00
+PASS - HLSL runtime helper has no NIS token
+PASS - HLSL helper performs no texture/resource access
+PASS - HLSL helper contains both fixed x1.5 phases
+PASS - HLSL helper contains SW1/SW2/SW3
+
+Scope:
+- Validates the recovered STEP-WENO primitive and SW1/SW2/SW3 definitions.
+- Does NOT claim image-quality non-regression versus EDGE v03.
+- Does NOT replace the missing original PTAR corpus/harness.
+- epsilon remains caller-supplied because no locked project epsilon was recovered.
+
+
+
+=== v0.2 regression ===
+return=0
+15/15 PASS
+PASS - phase 1 baseline passthrough
+PASS - phase 1 SW3 conf0
+PASS - phase 1 SW3 conf1
+PASS - phase 2 baseline passthrough
+PASS - phase 2 SW3 conf0
+PASS - phase 2 SW3 conf1
+PASS - compile-time selector present
+PASS - no texture access
+PASS - no NIS token
+PASS - both phases exposed
+PASS - benchmark harness exits 0
+PASS - identical SSIM=1
+PASS - identical PSNR=inf
+PASS - altered SSIM<1
+PASS - altered PSNR finite
+
+
+
+=== corpus A integrity ===
+return=0
+285/285 PASS
+
+

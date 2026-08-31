@@ -1,0 +1,7 @@
+{
+  "fxc": null,
+  "dxc": null,
+  "glslangValidator": null,
+  "vkd3d-compiler": null,
+  "note": "No SM5/DXBC compiler found here; FXC gate not marked passed."
+}

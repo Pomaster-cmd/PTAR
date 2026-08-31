@@ -1,0 +1,141 @@
+=== v0.12.0 autonomous ===
+36/36 PASS
+PASS - three validated CSOs
+PASS - 42 bundle inputs
+PASS - 42 bundle expected
+PASS - no HLSL shipped in autonomous bundle
+PASS - hash ptar_vs.cso
+PASS - DXBC ptar_vs.cso
+PASS - hash ptar_moe_ng_v01_sf5_ps.cso
+PASS - DXBC ptar_moe_ng_v01_sf5_ps.cso
+PASS - hash ptar_k185_control_ps.cso
+PASS - DXBC ptar_k185_control_ps.cso
+PASS - source no d3dcompiler include
+PASS - source no D3DCompileFromFile
+PASS - source no D3DDisassemble
+PASS - source no ID3DBlob
+PASS - source loads precompiled shaders
+PASS - source verifies SHA256
+PASS - source verifies DXBC magic
+PASS - builder static CRT
+PASS - builder Win81 subsystem
+PASS - builder no d3dcompiler link
+PASS - builder audits imports
+PASS - builder rejects D3DCompiler import
+PASS - builder refuses overwrite
+PASS - builder no copy /Y
+PASS - runtime sanitizes PATH
+PASS - runtime checks cl hidden
+PASS - runtime checks fxc hidden
+PASS - runtime does not invoke vcvars
+PASS - runtime does not invoke compiler
+PASS - runtime parity gate
+PASS - runtime PNG gate
+PASS - non-destructive PREPARE_AUTONOMOUS_RUNTIME.bat
+PASS - non-destructive RUN_PTAR_AUTO.bat
+PASS - non-destructive BUILD_RUNTIME_ONCE_IN_DEV_ENV.bat
+PASS - non-destructive RUN_AUTONOMOUS_ONLY.bat
+PASS - non-destructive VERIFY_AFTER_TOOLCHAIN_REMOVAL.bat
+
+
+=== v0.11.0 MoE ===
+17/17 PASS
+PASS - one GatherGreen
+PASS - four SampleLevel
+PASS - one source Texture2D
+PASS - no UAV
+PASS - no NIS symbols
+PASS - K185 exact coefficients
+PASS - N70
+PASS - soft convex weights
+PASS - 42 float64 outputs
+PASS - 42 semantic outputs
+PASS - semantic <=1 LSB
+PASS - full42 SSIM improves
+PASS - full42 PSNR improves
+PASS - EDGE_CORE improves
+PASS - RASTER improves
+PASS - NATURAL improves
+PASS - historical equivalence false
+
+
+=== v0.11.0 hardware pipeline ===
+20/20 PASS
+PASS - MoE validator exe
+PASS - MoE source CLI
+PASS - K185 control CLI
+PASS - MoE semantic expected
+PASS - RenderMoe
+PASS - m_psMoe
+PASS - MoE timing label
+PASS - K185 timing control
+PASS - paired MoE/K185
+PASS - MoE DXBC asm
+PASS - DXBC audit retained
+PASS - PNG hard gate
+PASS - RAII cleanup
+PASS - TDR safe
+PASS - no explicit Flush
+PASS - Win8.1 subsystem
+PASS - D3DCompiler link
+PASS - BAT passes MoE source
+PASS - automation uses MoE BAT
+PASS - PowerShell non destructive
+
+
+=== v0.10.8 PNG/A-B ===
+25/25 PASS
+PASS - SavePngRGBA returns bytes
+PASS - PNG uses BGRA
+PASS - RGBA to BGRA red-blue swap
+PASS - RGBA to BGRA blue-red swap
+PASS - file size verified
+PASS - zero-byte rejected
+PASS - save HRESULT checked
+PASS - parity CSV records png bytes
+PASS - success console reports 42 PNG
+PASS - TimingPair struct
+PASS - interleaved measurement
+PASS - alternating order
+PASS - K185-first label
+PASS - bilinear-first label
+PASS - timing pairs CSV
+PASS - paired mean delta
+PASS - paired median delta
+PASS - paired faster counts
+PASS - old sequential MeasureShader removed
+PASS - no explicit D3D Flush
+PASS - RAII COM retained
+PASS - NOMINMAX retained
+PASS - UTF8 helper retained
+PASS - portable BGRA swap executes
+PASS - portable BGRA swap compiles
+
+
+=== EDGE-NG v03 ===
+24/24 PASS
+PASS - K185 a fixed
+PASS - W13 sum1
+PASS - W23 sum1
+PASS - phase mirror
+PASS - one GatherGreen
+PASS - four SampleLevel
+PASS - no NIS
+PASS - no UAV
+PASS - one source Texture2D
+PASS - phase mod3
+PASS - selected -1.85
+PASS - beats G5 SSIM
+PASS - beats G5 PSNR
+PASS - beats cubic4 SSIM
+PASS - beats cubic4 PSNR
+PASS - semantic <=1 LSB
+PASS - semantic PASS
+PASS - timestamp disjoint
+PASS - DONOTFLUSH
+PASS - no Flush call
+PASS - FXC ps5
+PASS - FXC vs5
+PASS - strict
+PASS - non destructive
+

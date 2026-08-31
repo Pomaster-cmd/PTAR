@@ -1,0 +1,170 @@
+=== v0.12.3 Win8.1 full audit ===
+60/60 PASS
+PASS - run bundle canonical
+PASS - build bundle canonical
+PASS - prepare root canonical
+PASS - verify bundle canonical
+PASS - no missing separator %BUNDLE%bin
+PASS - no missing separator %BUNDLE%shaders
+PASS - no missing separator %BUNDLE%corpus
+PASS - no missing separator %BUNDLE%runs
+PASS - no missing separator %BUNDLE%source
+PASS - no missing separator %BUNDLE%include
+PASS - no missing separator %BUNDLE%build_evidence
+PASS - no missing separator %ROOT%runtime_autonomous
+PASS - exe explicit separator
+PASS - shader dir separator
+PASS - runs dir separator
+PASS - prepare bundle separator
+PASS - 42 input preflight
+PASS - 42 expected preflight
+PASS - 42 GPU PNG postflight
+PASS - 512 pair postflight
+PASS - cl hidden
+PASS - fxc hidden
+PASS - precompiled mode gate
+PASS - Win81 target
+PASS - Win81 subsystem
+PASS - static CRT
+PASS - obj staged
+PASS - link command has no d3dcompiler
+PASS - base Win81 libraries only
+PASS - import reject D3DCompiler
+PASS - import reject VCRUNTIME
+PASS - import reject MSVCP
+PASS - import reject UCRTBASE
+PASS - import reject API-MS-WIN-CRT
+PASS - no runtime compiler
+PASS - no D3D12
+PASS - no CreateDXGIFactory2
+PASS - no dxgi1_2+ header
+PASS - no d3d11_1+ header
+PASS - base D3D11
+PASS - DXGI1.1
+PASS - WIC
+PASS - COM
+PASS - BCrypt
+PASS - GetTickCount64
+PASS - NOMINMAX
+PASS - no HLSL in autonomous bundle
+PASS - 3 CSOs
+PASS - DXBC ptar_vs.cso
+PASS - SHA256 ptar_vs.cso
+PASS - DXBC ptar_moe_ng_v01_sf5_ps.cso
+PASS - SHA256 ptar_moe_ng_v01_sf5_ps.cso
+PASS - DXBC ptar_k185_control_ps.cso
+PASS - SHA256 ptar_k185_control_ps.cso
+PASS - non destructive run
+PASS - non destructive build
+PASS - non destructive prepare
+PASS - non destructive root
+PASS - non destructive verify
+PASS - source frozen from successful Win81 compile
+
+
+=== v0.12.1 bundleRoot ===
+14/14 PASS
+PASS - bundleRoot declared
+PASS - bundleRoot parsed
+PASS - shader directory uses bundleRoot
+PASS - input corpus uses autonomous bundle
+PASS - expected corpus uses autonomous bundle
+PASS - no standalone old root identifier
+PASS - no old project corpus path
+PASS - no old project benchmark path
+PASS - no D3DCompileFromFile
+PASS - no D3DDisassemble
+PASS - no d3dcompiler include
+PASS - precompiled shader loader retained
+PASS - SHA256 validation retained
+PASS - 42 case gate retained
+
+
+=== v0.12.0 autonomous ===
+36/36 PASS
+PASS - three validated CSOs
+PASS - 42 bundle inputs
+PASS - 42 bundle expected
+PASS - no HLSL shipped in autonomous bundle
+PASS - hash ptar_vs.cso
+PASS - DXBC ptar_vs.cso
+PASS - hash ptar_moe_ng_v01_sf5_ps.cso
+PASS - DXBC ptar_moe_ng_v01_sf5_ps.cso
+PASS - hash ptar_k185_control_ps.cso
+PASS - DXBC ptar_k185_control_ps.cso
+PASS - source no d3dcompiler include
+PASS - source no D3DCompileFromFile
+PASS - source no D3DDisassemble
+PASS - source no ID3DBlob
+PASS - source loads precompiled shaders
+PASS - source verifies SHA256
+PASS - source verifies DXBC magic
+PASS - builder static CRT
+PASS - builder Win81 subsystem
+PASS - builder no d3dcompiler link
+PASS - builder audits imports
+PASS - builder rejects D3DCompiler import
+PASS - builder refuses overwrite
+PASS - builder no copy /Y
+PASS - runtime sanitizes PATH
+PASS - runtime checks cl hidden
+PASS - runtime checks fxc hidden
+PASS - runtime does not invoke vcvars
+PASS - runtime does not invoke compiler
+PASS - runtime parity gate
+PASS - runtime PNG gate
+PASS - non-destructive PREPARE_AUTONOMOUS_RUNTIME.bat
+PASS - non-destructive RUN_PTAR_AUTO.bat
+PASS - non-destructive BUILD_RUNTIME_ONCE_IN_DEV_ENV.bat
+PASS - non-destructive RUN_AUTONOMOUS_ONLY.bat
+PASS - non-destructive VERIFY_AFTER_TOOLCHAIN_REMOVAL.bat
+
+
+=== v0.11.0 MoE ===
+17/17 PASS
+PASS - one GatherGreen
+PASS - four SampleLevel
+PASS - one source Texture2D
+PASS - no UAV
+PASS - no NIS symbols
+PASS - K185 exact coefficients
+PASS - N70
+PASS - soft convex weights
+PASS - 42 float64 outputs
+PASS - 42 semantic outputs
+PASS - semantic <=1 LSB
+PASS - full42 SSIM improves
+PASS - full42 PSNR improves
+PASS - EDGE_CORE improves
+PASS - RASTER improves
+PASS - NATURAL improves
+PASS - historical equivalence false
+
+
+=== EDGE-NG v03 ===
+24/24 PASS
+PASS - K185 a fixed
+PASS - W13 sum1
+PASS - W23 sum1
+PASS - phase mirror
+PASS - one GatherGreen
+PASS - four SampleLevel
+PASS - no NIS
+PASS - no UAV
+PASS - one source Texture2D
+PASS - phase mod3
+PASS - selected -1.85
+PASS - beats G5 SSIM
+PASS - beats G5 PSNR
+PASS - beats cubic4 SSIM
+PASS - beats cubic4 PSNR
+PASS - semantic <=1 LSB
+PASS - semantic PASS
+PASS - timestamp disjoint
+PASS - DONOTFLUSH
+PASS - no Flush call
+PASS - FXC ps5
+PASS - FXC vs5
+PASS - strict
+PASS - non destructive
+

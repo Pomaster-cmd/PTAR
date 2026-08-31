@@ -1,0 +1,11 @@
+{
+  "harness_version": "1.0.0",
+  "python": "3.13.5 (main, Jul 15 2026, 20:25:40) [GCC 14.2.0]",
+  "platform": "Linux-6.18.35-x86_64-with-glibc2.41",
+  "numpy": "2.3.5",
+  "Pillow": "12.3.0",
+  "scikit_image": "0.26.0",
+  "manifest_sha256": "c61ac71278a5b19d70660974d912ecdc89280a37333cc350b76603024efbba2f",
+  "case_count": 168
+}
+

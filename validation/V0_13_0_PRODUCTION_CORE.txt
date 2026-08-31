@@ -1,0 +1,21 @@
+20/20 PASS
+PASS - runtime create VS
+PASS - runtime create PS
+PASS - no D3DCompile
+PASS - no D3DDisassemble
+PASS - no UAV
+PASS - no Flush
+PASS - no Present
+PASS - no wait
+PASS - one Draw
+PASS - exact x1.5 integer gate
+PASS - non x1.5 S_FALSE
+PASS - linear clamp sampler
+PASS - dynamic constants
+PASS - SRV unbound after draw
+PASS - embedded VS DXBC
+PASS - embedded MoE DXBC
+PASS - embedded K185 control DXBC
+PASS - expected base zip hash
+PASS - expected base dll hash
+PASS - package count 444

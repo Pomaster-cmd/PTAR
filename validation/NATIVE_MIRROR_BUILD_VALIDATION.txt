@@ -1,0 +1,6 @@
+PTAR STEP-WENO NATIVE MIRROR BUILD VALIDATION
+==============================================
+PASS - clang++ C++11 compile with -Wall -Wextra -Werror
+PASS - arithmetic mirror runtime invariants
+NOTE - HLSL helper is not claimed as FXC-compiled in this Linux environment.
+       It is an include/helper, not the final PTAR shader entry point.

@@ -1,0 +1,36 @@
+#!/usr/bin/env python3
+from pathlib import Path
+import re,sys,json
+ROOT=Path(__file__).resolve().parents[1]
+cpp=(ROOT/'hardware_validation/ptar_k185_hw_validation.cpp').read_text(encoding='utf-8')
+bat=(ROOT/'build/windows/BUILD_AND_RUN_K185_HARDWARE_VALIDATION.bat').read_text(encoding='utf-8')
+ps=(ROOT/'src/hlsl/edge_ng_v03/ptar_edge_ng_v03_k185_ps.hlsl').read_text(encoding='utf-8')
+bypass=(ROOT/'src/hlsl/edge_ng_v03/ptar_bilinear_control_ps.hlsl').read_text(encoding='utf-8')
+timer=(ROOT/'runtime_integration/d3d11/PTARD3D11GpuTimerRing.h').read_text(encoding='utf-8')
+checks=[]
+def ck(name,cond):
+    checks.append((name,bool(cond)))
+    if not cond: raise AssertionError(name)
+ck('NVIDIA vendor locked', '0x10DEu' in cpp)
+ck('feature level 11_0 required', 'D3D_FEATURE_LEVEL_11_0' in cpp)
+ck('hardware adapter path uses UNKNOWN driver type', 'D3D_DRIVER_TYPE_UNKNOWN' in cpp)
+ck('WIC RGBA path', 'GUID_WICPixelFormat32bppRGBA' in cpp)
+ck('42-case corpus gate', 'ids.size()!=42u' in cpp)
+ck('semantic reference path', 'K185_SEMANTIC_FLOAT32_OUTPUTS' in cpp)
+ck('parity threshold one LSB', 'PTAR_PARITY_MAX_LSB = 1u' in cpp)
+ck('warmup 300', 'PTAR_WARMUP_FRAMES = 300u' in cpp)
+ck('timing samples 512', 'PTAR_TIMING_SAMPLES = 512u' in cpp)
+ck('perf geometry 720p to 1080p', 'gpu.Benchmark(1280,720,1920,1080' in cpp)
+ck('K185 shader one GatherGreen', ps.count('.GatherGreen(')==1)
+ck('K185 shader four SampleLevel', ps.count('.SampleLevel(')==4)
+ck('bilinear control one SampleLevel', bypass.count('.SampleLevel(')==1)
+ck('timer timestamp disjoint', 'D3D11_QUERY_TIMESTAMP_DISJOINT' in timer)
+ck('timer DONOTFLUSH', 'D3D11_ASYNC_GETDATA_DONOTFLUSH' in timer)
+ck('no explicit D3D Flush in validator', '->Flush(' not in cpp and '.Flush(' not in cpp)
+ck('build targets Win8.1', '/D_WIN32_WINNT=0x0603' in bat and '/DWINVER=0x0603' in bat)
+ck('build FXC ps_5_0', '/T ps_5_0' in bat)
+ck('build strict', '/Ges /WX' in bat and '/W4 /WX' in bat)
+ck('build does DXBC audit', 'AUDIT_EDGE_NG_V03_DXBC.ps1' in bat)
+ck('build no delete command', not re.search(r'(?im)^\s*(del|erase|rd|rmdir|remove-item)\b',bat))
+print(f'{sum(p for _,p in checks)}/{len(checks)} PASS')
+for n,p in checks: print(('PASS' if p else 'FAIL')+' - '+n)
