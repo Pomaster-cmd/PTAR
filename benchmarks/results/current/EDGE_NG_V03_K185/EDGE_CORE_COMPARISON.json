@@ -1,0 +1,46 @@
+{
+  "EDGE_NG_V02_G5": {
+    "variant": "EDGE_NG_V02_G5",
+    "cases": 15,
+    "mean_ssim": 0.9026904239048456,
+    "mean_psnr_db": 24.12134862483771,
+    "min_ssim": 0.8200236093451893
+  },
+  "CUBIC4_SEPARABLE_CONTROL_EDGE_CORE": {
+    "cases": 15,
+    "mean_ssim": 0.9089665439901361,
+    "mean_psnr_db": 24.322723703164833,
+    "min_ssim": 0.8373714041892311
+  },
+  "EDGE_NG_V03_K185": {
+    "cases": 15,
+    "mean_ssim": 0.9167822542990075,
+    "mean_psnr_db": 24.808745097497177,
+    "min_ssim": 0.8562241406175964,
+    "mean_edge_psnr_db": 22.97719302172242,
+    "mean_component_out_of_range_fraction": 0.06869212962962962,
+    "raw_min": -0.2684580004841423,
+    "raw_max": 1.340711692084241
+  },
+  "delta_K185_vs_G5": {
+    "mean_ssim": 0.014091830394161953,
+    "mean_psnr_db": 0.687396472659465,
+    "min_ssim": 0.03620053127240719
+  },
+  "delta_K185_vs_cubic4": {
+    "mean_ssim": 0.007815710308871404,
+    "mean_psnr_db": 0.4860213943323437,
+    "min_ssim": 0.01885273642836538
+  },
+  "full_42_note": "K185 is an EDGE expert; full-42 aggregate is regression evidence, not the EDGE promotion objective.",
+  "full_42": {
+    "cases": 42,
+    "mean_ssim": 0.9260391127725941,
+    "mean_psnr_db": 29.154287066790268,
+    "min_ssim": 0.8441974131297192,
+    "mean_edge_psnr_db": 26.900428015585238,
+    "mean_component_out_of_range_fraction": 0.04635724772805212,
+    "raw_min": -0.29204066811909946,
+    "raw_max": 1.340711692084241
+  }
+}

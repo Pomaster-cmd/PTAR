@@ -1,0 +1,11 @@
+{
+  "reference": "float64 algorithm reference vs float32 shader-semantic mirror, both quantized RGB8",
+  "cases": 42,
+  "total_pixels": 3483648,
+  "mismatched_pixels": 2029,
+  "global_mismatch_fraction": 0.0005824354240152851,
+  "max_abs_lsb": 1,
+  "max_case_mismatch_fraction": 0.0021219135802469135,
+  "software_gate": "PASS",
+  "note": "Actual D3D11 GPU parity still required; hardware/driver texture-filter precision is not emulated here."
+}
