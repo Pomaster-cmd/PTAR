@@ -1,0 +1,37 @@
+[
+  {
+    "variant": "EDGE_NG_V02_V01_FLOOR",
+    "cases": 15,
+    "mean_ssim": 0.901834588601525,
+    "mean_psnr_db": 24.06141792292568,
+    "min_ssim": 0.8194975691742359
+  },
+  {
+    "variant": "EDGE_NG_V02_G5",
+    "cases": 15,
+    "mean_ssim": 0.9026904239048456,
+    "mean_psnr_db": 24.12134862483771,
+    "min_ssim": 0.8200236093451893
+  },
+  {
+    "variant": "EDGE_NG_V02_HQ05",
+    "cases": 15,
+    "mean_ssim": 0.9041358775518178,
+    "mean_psnr_db": 24.15122283570475,
+    "min_ssim": 0.8243693669849441
+  },
+  {
+    "variant": "bilinear",
+    "cases": 15,
+    "mean_ssim": 0.890223930936628,
+    "mean_psnr_db": 23.565776560660428,
+    "min_ssim": 0.7983489512324615
+  },
+  {
+    "variant": "cubic4_separable",
+    "cases": 15,
+    "mean_ssim": 0.908966543990136,
+    "mean_psnr_db": 24.32272370316483,
+    "min_ssim": 0.8373714041892311
+  }
+]
