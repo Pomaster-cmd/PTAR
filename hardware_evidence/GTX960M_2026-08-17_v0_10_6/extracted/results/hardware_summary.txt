@@ -1,0 +1,11 @@
+PTAR EDGE-NG v03 K185 HARDWARE VALIDATION
+adapter=NVIDIA GeForce GTX 960M
+parity_cases=42
+parity_failed_cases=0
+parity_global_max_abs_lsb=1
+parity_global_mismatch_fraction=0.041944536302
+k185_median_ms=0.497728000
+k185_p95_ms=0.499758400
+k185_p99_ms=0.501614400
+bilinear_median_ms=0.502352000
+median_delta_ms=-0.004624000

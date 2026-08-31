@@ -1,0 +1,286 @@
+{
+  "project": "PTAR",
+  "master_snapshot_version": "0.13.0",
+  "snapshot_date": "2026-08-17",
+  "timezone": "Europe/Paris",
+  "architecture": {
+    "moe": "v07",
+    "natural": {
+      "version": "v02",
+      "status": "LOCKED"
+    },
+    "edge": {
+      "version": "v03",
+      "status": "LOCKED_BASELINE",
+      "experimental_successor": {
+        "version": "v04",
+        "status": "ADAPTER_IMPLEMENTED_VALIDATION_PENDING",
+        "modes": [
+          "EDGE_V03_BASELINE",
+          "SW1",
+          "SW2",
+          "SW3"
+        ]
+      },
+      "new_successor": {
+        "id": "EDGE-NG-v03-K185",
+        "status": "HARDWARE_VALIDATED_GTX960M",
+        "historical_equivalence": false,
+        "orientation": "G5",
+        "reconstruction": "Keys-style cubic convolution a=-1.85",
+        "step_weno_runtime": false,
+        "logical_texture_path": "1 GatherGreen + 4 SampleLevel",
+        "edge_core_results": "benchmarks/results/current/EDGE_NG_V03_K185/EDGE_CORE_COMPARISON.json",
+        "semantic_parity": "benchmarks/results/current/EDGE_NG_V03_K185/CPU_SHADER_SEMANTIC_PARITY_SUMMARY.json"
+      }
+    },
+    "step_weno": {
+      "status": "EXPERIMENTAL_IMPLEMENTATION_COMPLETE_FORMAL_VALIDATION_COMPLETE_EMPIRICAL_GATE_PENDING"
+    },
+    "raster": {
+      "version": "v03",
+      "status": "LOCKED"
+    },
+    "ng_moe": {
+      "id": "PTAR-NG-MoE-v01-SF5",
+      "status": "HARDWARE_VALIDATED_GTX960M",
+      "historical_equivalence": false,
+      "shared_texture_path": "1 GatherGreen + 4 SampleLevel",
+      "experts": {
+        "natural": "NATURAL-NG-v01-N70",
+        "edge": "EDGE-NG-v03-K185",
+        "raster": "RASTER-NG-v01-MCLAMP",
+        "router": "ROUTER-NG-v01-R1-SOFT"
+      },
+      "quality_summary": "benchmarks/results/current/MOE_NG_V01_SF5/SUMMARY.json",
+      "hardware_result": {
+        "evidence": "hardware_evidence/GTX960M_2026-08-18_v0_11_0",
+        "moe_median_ms": 0.655488,
+        "k185_control_median_ms": 0.49824,
+        "median_overhead_ms": 0.157248,
+        "parity": "42/42 PASS <=1 LSB",
+        "png": "42/42 non-zero",
+        "clean_exit": "confirmed by user"
+      }
+    }
+  },
+  "runtime_boundary": {
+    "nis_in_ptar_runtime": false,
+    "nis45_external_benchmark_only": true
+  },
+  "historical_corpus": {
+    "status": "DOCUMENTED_WITH_MISSING_SOURCE_ARTIFACTS",
+    "series": {
+      "EDGE": {
+        "cases": 64,
+        "aggregate": "64/64"
+      },
+      "horse": {
+        "cases": 64,
+        "aggregate": "64/64"
+      },
+      "naturel": {
+        "cases": 48,
+        "aggregate": "48/48"
+      },
+      "RASTER": {
+        "cases": 64,
+        "aggregate": "64/64"
+      }
+    }
+  },
+  "next_gate": [
+    "Obtain the exact current integrated B18K18 source ZIP",
+    "Verify ZIP SHA-256 a8185065... and DLL SHA-256 1e5e415b...",
+    "Patch only the spatial presenter/filter module to add PTAR mode",
+    "Keep 13 non-recorder FG modules byte-identical",
+    "Keep B18K18 recorder module byte-identical",
+    "Replace F12 NIS selection with PTAR selection for exact x1.5",
+    "Build reproducibly with the existing clang-cl/lld-link package toolchain",
+    "Run static diff audit before hardware test"
+  ],
+  "corpora": {
+    "historical": "DOCUMENTED_MISSING_SOURCE_ARTIFACTS",
+    "core_probes": {
+      "corpus_id": "PTAR-CORE-PROBES-V1",
+      "status": "GENERATED_AND_HASHED",
+      "acceptance_use": false
+    },
+    "perceptual_v1": {
+      "corpus_id": "PTAR-PERCEPTUAL-V1-A",
+      "status": "INITIAL_SET_GENERATED_HASHED_VALIDATED",
+      "source_count": 14,
+      "case_count": 42,
+      "hr": "288x288",
+      "lr": "192x192",
+      "scale": 1.5
+    },
+    "perceptual_v1_b_grid": {
+      "corpus_id": "PTAR-PERCEPTUAL-V1-B-GRID",
+      "status": "GENERATED_HASHED_VALIDATED",
+      "case_count": 42,
+      "primary_ng_geometry_corpus": true
+    }
+  },
+  "benchmarking": {
+    "image_harness_version": "1.0.0",
+    "core_sweep_protocol": "STEP_WENO_CORE_SWEEP_V1"
+  },
+  "runtime_integration": {
+    "host_reference": "P1FG7N/B18D runtime evidence",
+    "host_reference_role": "integration constraints only; not EDGE v03 identity",
+    "target": "Direct3D 11 / Shader Model 5.0 / Windows 8.1",
+    "compile_probe": "READY_FOR_FXC_ON_WINDOWS",
+    "permutations": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "runtime_mode_switch": false,
+    "current_edge_candidate": "EDGE-NG-v03-K185",
+    "gpu_timer": "8-slot D3D11 timestamp/disjoint ring; DONOTFLUSH",
+    "fxc_status": "NOT_AVAILABLE_IN_CURRENT_LINUX_BUILD_ENVIRONMENT",
+    "real_gtx960m_v0_10_5": {
+      "native_build": "PASS",
+      "sm5_compile": "PASS",
+      "dxbc_audit": "PASS_1_GATHER4_4_SAMPLE_L_0_UAV",
+      "gpu_parity": "PASS_42_OF_42_MAX_1_LSB",
+      "timing": "OLD_HARNESS_TRIGGERED_TDR",
+      "interpretation": "K185 parity validated; old timing harness accumulated unsafe GPU work"
+    },
+    "timing_protocol": "GPU_VALIDATION_PROTOCOL_V1_1",
+    "real_gtx960m_v0_10_6": {
+      "native_build": "PASS",
+      "sm5_compile": "PASS",
+      "dxbc_audit": "PASS_1_GATHER4_4_SAMPLE_L_0_UAV",
+      "gpu_parity": "PASS_42_OF_42_MAX_1_LSB",
+      "timing_k185_median_ms": 0.49784,
+      "timing_k185_p95_ms": 0.500832,
+      "timing_k185_p99_ms": 0.502197,
+      "timing_bilinear_median_ms": 0.503136,
+      "timing_delta_ms": -0.005296,
+      "tdr": "NO_TDR_IN_V0_10_6",
+      "process_exit": "CRASH_AFTER_FINAL_RESULTS",
+      "v0_10_7_fix": "RAII COM apartment lifetime + D3D ClearState before release"
+    }
+  },
+  "hardware_validation": {
+    "kit": "hardware_validation/ptar_moe_ng_v01_hw_validation.cpp",
+    "target": "Windows 8.1 / NVIDIA GTX 960M / D3D11 FL11.0",
+    "parity_cases": 42,
+    "parity_max_lsb": 1,
+    "timing_geometry": "1280x720 -> 1920x1080",
+    "warmup_frames": 32,
+    "valid_timing_samples": 512,
+    "comparison": "PTAR-NG MoE v01 SF5 vs EDGE-NG v03 K185",
+    "status": "SOURCE_READY_REAL_GPU_EXECUTION_PENDING"
+  },
+  "automation": {
+    "entry_point": "RUN_PTAR_AUTO.bat",
+    "target": "Windows 8.1 x64 + NVIDIA GTX path",
+    "toolchain_install": "automatic when missing",
+    "vs_build_tools": "Visual Studio 2019 Build Tools / VCTools",
+    "fxc": "prefer Windows 8.1 SDK FXC",
+    "download_signature_policy": "Authenticode Valid + Microsoft signer required",
+    "automatic_reboot": false,
+    "destructive_cleanup": false,
+    "hardware_validation": "automatic after toolchain is ready",
+    "uac_path_fix": {
+      "status": "FIXED_AFTER_REAL_WINDOWS81_TEST",
+      "failure_in_v0_10_0": "trailing-backslash ProjectRoot corrupted during quoted UAC relaunch",
+      "fix": "derive root from PSScriptRoot in every process; no ProjectRoot argument crosses UAC"
+    },
+    "download_stack": [
+      "PowerShell BITS",
+      "bitsadmin.exe",
+      ".NET WebClient forced TLS 1.2",
+      "certutil.exe URL cache"
+    ],
+    "tls_last_resort": {
+      "backup_prior_registry_state": true,
+      "strong_crypto_and_tls12": true,
+      "automatic_reboot": false,
+      "restart_exit_code": 61
+    },
+    "fxc_required": false,
+    "hlsl_compile_path": "D3DCompileFromFile + D3DDisassemble inside native hardware validator",
+    "real_machine_v0_10_3_result": {
+      "windows81": "PASS",
+      "gtx960m_detection": "PASS",
+      "msvc_detection": "PASS",
+      "cl_exe": "PASS",
+      "native_build": "FAILED_AT_WIN32_MAX_MACRO_LINE_694",
+      "fix_in_v0_10_4": "NOMINMAX + macro-safe (std::max)(...)"
+    },
+    "real_machine_v0_10_4_result": {
+      "win32_max_macro_fix": "PASS_REACHED_LATER_COMPILER_STAGE",
+      "native_build": "FAILED_ON_WCHAR_TO_CHAR_C4244_UNDER_WX",
+      "fix_in_v0_10_5": "explicit WideCharToMultiByte(CP_UTF8) conversions"
+    }
+  },
+  "hardware_evidence": {
+    "official_real_run": "hardware_evidence/GTX960M_2026-08-17_v0_10_8",
+    "status": "EDGE_NG_V03_K185_HARDWARE_VALIDATED",
+    "parity": "42/42 PASS, max 1 LSB, 42 PNG non-zero",
+    "timing": {
+      "k185_median_ms": 0.499232,
+      "k185_p95_ms": 0.706112,
+      "k185_p99_ms": 0.70907744,
+      "bilinear_median_ms": 0.192064,
+      "paired_mean_delta_ms": 0.259623125,
+      "paired_median_delta_ms": 0.305632,
+      "paired_k185_faster_count": 1,
+      "paired_bilinear_faster_count": 511
+    },
+    "clean_exit": "USER_CONFIRMED_NO_ERROR_NO_CRASH_NO_TDR"
+  },
+  "runtime_autonomous": {
+    "id": "PTAR_NG_MOE_V01_WIN81_X64",
+    "status": "WIN81_FULL_AUDIT_READY_REAL_TEST_PENDING",
+    "shader_mode": "PRECOMPILED_DXBC_ONLY",
+    "d3dcompiler_runtime_dependency": false,
+    "visual_studio_runtime_dependency": false,
+    "windows_sdk_runtime_dependency": false,
+    "host_linkage": "MSVC /MT",
+    "shader_integrity": "hardcoded SHA-256 verified with Windows BCrypt",
+    "bundle": "runtime_autonomous/PTAR_NG_MOE_V01_WIN81_X64",
+    "v0_12_0_real_failure": "MSVC C2065: two residual corpus paths referenced undeclared old identifier root",
+    "v0_12_1_fix": "corpus paths resolved from bundleRoot autonomous corpus directories",
+    "v0_12_1_real_result": {
+      "host_build": "PASS",
+      "import_audit": "PASS_NO_D3DCOMPILER_VCRUNTIME_MSVCP_UCRTBASE",
+      "sanitized_path": "PASS_CL_AND_FXC_HIDDEN",
+      "runtime_launch": "FAILED_USAGE_CODE_2",
+      "cause": "quoted %~dp0 bundle path carried terminal backslash and broke CRT argument parsing"
+    },
+    "v0_12_2_fix": "canonicalize %~dp0. to full directory path without trailing separator before quoted CLI use",
+    "v0_12_2_real_result": {
+      "host_build": "PASS_ON_REAL_WINDOWS_8_1",
+      "import_audit": "PASS",
+      "runtime_launch": "NOT_REACHED",
+      "failure": "launcher child paths missed explicit separator after BUNDLE canonicalization",
+      "exit_code": 40
+    },
+    "v0_12_3_fix": [
+      "explicit path separators everywhere",
+      "42+42 asset preflight",
+      "42 PNG + 512 pair postflight",
+      "stage-local object file",
+      "expanded import deny list",
+      "C++ source frozen from real Win8.1 successful compile"
+    ]
+  },
+  "runtime_production": {
+    "id": "PTAR-MOE-v01-PRODUCTION-CORE",
+    "status": "CORE_READY_PROXY_PATCH_PENDING_EXACT_BASE_PACKAGE",
+    "scale_contract": "exact x1.5 only",
+    "runtime_shader_mode": "embedded validated DXBC",
+    "fallback_policy": "native direct / existing POINT or BILINEAR; never NIS fallback",
+    "integration_target": {
+      "family": "P1FG7N/VBLANK2/NISFG1B18K18",
+      "zip_sha256": "a8185065db6ec60d3e7be06fe108386ba1bb7955a35e46b64cfc463f6065ee3e",
+      "dll_sha256": "1e5e415bb09b33f8d4631f9d78f8f9734cd4cae4316cc6901d032cdcebb54420"
+    }
+  }
+}

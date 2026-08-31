@@ -1,0 +1,65 @@
+PTAR OFFICIAL CONTINUITY CHECKPOINT — 2026-08-17
+================================================
+
+STATUS
+------
+This file records only the last confirmed state recovered from the prior “NIS + Génération NVENC /4” branch.
+No synthetic STEP-WENO result generated after the chat cutoff is part of the official lineage.
+
+OFFICIAL BASELINE
+-----------------
+PTAR architecture: MoE v07
+- NATURAL v02: LOCKED
+- EDGE v03: LOCKED BASELINE
+- RASTER v03: LOCKED
+
+NIS CONTRACT
+------------
+- NVIDIA NIS is excluded from the PTAR runtime.
+- NIS45 may be used only as an external benchmark/reference.
+- No NIS shader/table/fallback/runtime dependency may be reintroduced into PTAR.
+
+LAST CONFIRMED VALIDATED RESULTS
+--------------------------------
+- EDGE: 64/64
+- horse: 64/64
+- naturel: 48/48
+- RASTER: 64/64
+These are prior validated branch results. They are not STEP-WENO results.
+
+UNFINISHED EXPERIMENT AT CHAT CUTOFF
+------------------------------------
+STEP-WENO experiment inside EDGE only.
+- SW1: WENO-Lite p=1; no new gate.
+- SW2: WENO-Lite p=2 + monotone clamp.
+- SW3: SW2 modulated by the already-existing EDGE confidence.
+
+Frozen constraints:
+- NATURAL v02 unchanged.
+- RASTER v03 unchanged.
+- No fourth expert.
+- STEP-WENO is accepted only if it removes/replaces EDGE complexity/correctors without regression.
+- Primary comparison is against locked EDGE v03; NIS45 remains external benchmark only.
+
+LAST EXECUTION STATE
+--------------------
+The restricted SW1/SW2/SW3 sweep had been announced but had NOT produced any official result before the prior chat cutoff.
+
+RETRIEVAL STATUS IN CURRENT CHAT
+--------------------------------
+Searches of the available File Library and current /mnt/data workspace did not recover the original PTAR benchmark corpus or benchmark script that produced the prior 64/64 and 48/48 results.
+
+EXCLUDED FROM OFFICIAL LINEAGE
+------------------------------
+The following files were generated during an incorrect synthetic reconstruction in the current chat and MUST NOT be used as PTAR validation evidence:
+- PTAR_STEP_WENO_SWEEP_2026-08-17.zip
+- ptar_step_weno_sweep.py
+- ptar_step_weno_results.csv
+- ptar_step_weno_summary.json
+- ptar_step_weno_run.log
+- PTAR_STEP_WENO_CONCLUSION.txt
+- PTAR_STEP_WENO_SHA256.txt
+
+NEXT OFFICIAL ACTION
+--------------------
+Run the restricted SW1/SW2/SW3 experiment on the ORIGINAL PTAR corpus and ORIGINAL benchmark harness, with EDGE v03 as locked baseline. Do not declare any STEP-WENO result before that exact comparison can be executed.

@@ -1,0 +1,20 @@
+{
+  "evidence_id": "PTAR-GTX960M-2026-08-18-V0_11_0",
+  "source": "user-supplied results(2).zip",
+  "adapter": "NVIDIA GeForce GTX 960M",
+  "parity_cases": 42,
+  "parity_failed_cases": 0,
+  "parity_global_max_abs_lsb": 1,
+  "gpu_png_persistence": "PASS_42_NONZERO",
+  "texture_path_target": "1_GATHER4_4_SAMPLE_L_0_UAV",
+  "moe_median_ms": 0.655488,
+  "moe_p95_ms": 0.6582688,
+  "moe_p99_ms": 0.659072,
+  "k185_control_median_ms": 0.49824,
+  "median_overhead_moe_minus_k185_ms": 0.157248,
+  "paired_samples": 512,
+  "paired_mean_delta_ms": 0.157235688,
+  "paired_median_delta_ms": 0.157184,
+  "clean_exit": "USER_CONFIRMED_NO_ISSUE_NO_ERROR_NO_TDR",
+  "status": "PTAR_NG_MOE_V01_SF5_HARDWARE_VALIDATED"
+}

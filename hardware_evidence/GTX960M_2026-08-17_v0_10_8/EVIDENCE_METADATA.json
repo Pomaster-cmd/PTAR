@@ -1,0 +1,15 @@
+{
+  "evidence_id": "PTAR-GTX960M-2026-08-17-V0_10_8",
+  "source": "user-supplied results(1).zip",
+  "machine_target": "Windows 8.1 / NVIDIA GeForce GTX 960M",
+  "parity": "42/42 PASS",
+  "max_abs_lsb": 1,
+  "gpu_png_persistence": "PASS_42_NONZERO",
+  "paired_samples": 512,
+  "k185_median_ms": 0.499232,
+  "bilinear_median_ms": 0.192064,
+  "paired_mean_delta_ms": 0.259623125,
+  "paired_median_delta_ms": 0.305632,
+  "clean_exit": "USER_CONFIRMED_NO_ERROR_NO_CRASH_NO_TDR",
+  "status": "EDGE_NG_V03_K185_HARDWARE_VALIDATED"
+}

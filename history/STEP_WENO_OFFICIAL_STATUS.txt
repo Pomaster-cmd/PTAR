@@ -1,0 +1,52 @@
+PTAR STEP-WENO — OFFICIAL CONTINUATION STATUS
+================================================
+
+Recovered baseline
+------------------
+PTAR MoE v07
+- NATURAL v02: LOCKED
+- EDGE v03: LOCKED BASELINE
+- RASTER v03: LOCKED
+
+Experiment definitions
+----------------------
+SW1 = WENO-Lite p=1; no new gate; no monotone clamp.
+SW2 = WENO-Lite p=2 + component-wise monotone clamp between central samples.
+SW3 = SW2 blended by the already-existing EDGE confidence. No new gate.
+
+What is now completed
+---------------------
+1. The x1.5 phase-specific STEP-WENO primitive is fully specified for phases 1/3 and 2/3.
+2. Ideal phase weights are fixed:
+   - 1/3: C_L=5/9, C_R=4/9
+   - 2/3: C_L=4/9, C_R=5/9
+3. Exact quadratic smoothness indicators are fixed:
+   dL = L0-Lm1
+   dC = L1-L0
+   dR = L2-L1
+   betaL = dC^2 + 13/12*(dC-dL)^2
+   betaR = dC^2 + 13/12*(dR-dC)^2
+4. The normalized p=1 and p=2 weights use one final reciprocal/division.
+5. RGB uses the same scalar weights; luminance is supplied by EDGE v03.
+6. SW3 uses the existing EDGE confidence and introduces no additional classifier.
+7. HLSL helper is prepared as an integration primitive without texture access or extra pass.
+
+Intentionally NOT invented
+--------------------------
+- EDGE v03 direction/orientation logic
+- EDGE v03 luminance definition
+- EDGE confidence formula
+- epsilon value
+- missing corpus samples
+- missing prior benchmark harness
+
+Official decision gate
+----------------------
+STEP-WENO is NOT yet accepted into PTAR V1 and is NOT rejected.
+
+Acceptance still requires the original empirical comparison:
+EDGE v03 locked baseline vs SW1/SW2/SW3 on the ORIGINAL PTAR corpus,
+followed by the full corpus and external NIS45 reference only for the survivor.
+
+The formal/static work is complete. The missing empirical gate cannot be
+truthfully replaced by a reconstructed or synthetic corpus.

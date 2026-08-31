@@ -1,0 +1,2 @@
+6ce901a529e7a6697cf2cf8cfbd5fe1110db6d573be57f7c958d14e79e50088b  source/ptar_autonomous_validation.cpp
+status=SOURCE_UNCHANGED_FROM_V0_12_2_REAL_WIN81_SUCCESSFUL_COMPILE

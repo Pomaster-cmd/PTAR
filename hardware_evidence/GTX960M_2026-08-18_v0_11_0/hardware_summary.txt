@@ -1,0 +1,19 @@
+PTAR-NG MoE v01 SF5 HARDWARE VALIDATION
+adapter=NVIDIA GeForce GTX 960M
+parity_cases=42
+parity_failed_cases=0
+parity_global_max_abs_lsb=1
+parity_global_mismatch_fraction=0.035755621693
+moe_median_ms=0.655488000
+moe_p95_ms=0.658268800
+moe_p99_ms=0.659072000
+k185_control_median_ms=0.498240000
+median_overhead_moe_minus_k185_ms=0.157248000
+paired_samples=512
+paired_mean_delta_ms=0.157235688
+paired_median_delta_ms=0.157184000
+paired_moe_faster_count=0
+paired_k185_faster_count=512
+paired_tie_count=0
+gpu_png_persistence=PASS_42_NONZERO
+texture_path_target=1_GATHER4_4_SAMPLE_L_0_UAV
