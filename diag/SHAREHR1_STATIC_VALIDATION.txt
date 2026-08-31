@@ -1,0 +1,20 @@
+SHAREHR1 STATIC VALIDATION: PASS 19/19
+[PASS] RC7 hash
+[PASS] RC8 hash
+[PASS] same size
+[PASS] same sections
+[PASS] image base
+[PASS] fgdia geometry unchanged
+[PASS] raw HRESULT stub prefix
+[PASS] success target
+[PASS] LAST_STATUS target
+[PASS] failure target
+[PASS] unused old diagnostic body trapped
+[PASS] call-site unchanged
+[PASS] call-site still targets fgdia
+[PASS] .fgov geometry unchanged
+[PASS] .fgov bytes unchanged
+[PASS] .fgdat geometry unchanged
+[PASS] .fgdat bytes unchanged
+[PASS] checksum valid
+[PASS] no unexpected binary changes

@@ -1,0 +1,149 @@
+PTAR INQUISITORFIX1 INPUTMAP1 RC3 - STATIC / BINARY PATCH VALIDATION
+==================================================================
+
+DATE
+----
+2026-08-29
+
+BASE
+----
+Package base:
+PTAR_V1_1_0_6_INPUTFOCUS1_INQUISITORFIX1_RC2_INSTALLFIX3_CADENCEFIX1
+
+Base runtime SHA-256:
+5e753029d344ed1d39de94e3f08eebedbeb63f058bae32a14741055aed4cecfe
+
+INPUTMAP1 runtime SHA-256:
+db1499ca7b5c78af215f27048af343c048c9a42c6a3211cf698a2f883d37f042
+
+FIELD DEFECT
+------------
+The preceding INQUISITORFIX1 hardware run validates the combined native presenter:
+- separate native-output presenter 1920x1080 created;
+- game render swapchain remains independent;
+- native presenter owns the physical Present path.
+
+The remaining observed defect is mouse hit-test displacement. The runtime reports
+that the game HWND/client envelope is native-sized while the engine raster can remain
+smaller and the presenter uses its own ASPECT FIT rectangle. The historic P1U input
+contract intentionally performed no mouse/raw-input remapping. That assumption is not
+compatible with Inquisitor's client-coordinate UI path.
+
+INPUTMAP1 PATCH
+---------------
+INPUTMAP1 changes only the final unconsumed game-WndProc forwarding path.
+It remaps lParam client coordinates for these Win32 messages:
+- WM_MOUSEMOVE (0x0200)
+- WM_LBUTTONDOWN/UP/DBLCLK (0x0201..0x0203)
+- WM_RBUTTONDOWN/UP/DBLCLK (0x0204..0x0206)
+- WM_MBUTTONDOWN/UP/DBLCLK (0x0207..0x0209)
+- WM_XBUTTONDOWN/UP/DBLCLK (0x020B..0x020D)
+
+It deliberately does NOT remap WM_MOUSEWHEEL (0x020A) or WM_MOUSEHWHEEL (0x020E),
+because those lParam coordinates are screen coordinates. Raw Input is untouched.
+Hotkey-consumed messages are still handled before this patch and are unchanged.
+GAME DIRECT (F10) bypasses INPUTMAP1 and remains pass-through.
+
+The transform uses runtime geometry, not hard-coded game dimensions:
+  sourceW/sourceH = actual REAL game-controlled backbuffer
+  fitW/fitH       = current presenter ASPECT FIT image rectangle
+  offX/offY       = current presenter ASPECT FIT offsets
+
+For each client coordinate (x,y):
+  mappedX = clamp(x-offX, 0, fitW-1) * sourceW / fitW
+  mappedY = clamp(y-offY, 0, fitH-1) * sourceH / fitH
+
+Invalid/zero geometry fails open and forwards the original lParam.
+
+BINARY IMPLEMENTATION
+---------------------
+No C source is present in the supplied FLAT production package. This is therefore a
+bounded binary patch against the exact validated INQUISITORFIX1 runtime, not a rebuild
+from an approximate historical source tree.
+
+Original WndProc forwarding site:
+  VA 0x18000DF14
+
+Patch:
+  replace the original 10-byte MOV originalProc + TEST sequence with a CALL to a
+  leaf remapper, commit returned EAX to R14D, then reuse the original JE and original
+  forwarding blocks. The remapper reloads originalProc and sets flags before RET, so
+  the pre-existing null-WndProc branch semantics are preserved.
+
+Leaf remapper location:
+  VA 0x180031517
+  size 193 bytes
+
+The remapper occupies only the pre-existing 0xCC raw padding at the end of .text.
+.text raw size and file size are unchanged. .text VirtualSize is extended from
+0x30517 to 0x305D8, still below the next section RVA 0x32000.
+
+Using CALL rather than an inter-function JMP leaves a valid return address on the
+stack while executing the new leaf code. The remapper performs no calls and no stack
+allocation.
+
+STATIC TESTS
+------------
+Synthetic coordinate model:
+- current observed 1280x960, fit 1440x1080, offset 240x0:
+  240,0 -> 0,0                         PASS
+  960,540 -> 640,480                   PASS
+  1679,1079 -> 1279,959                PASS
+  left black-bar coordinate clamps     PASS
+- target 1280x720, fit 1920x1080, offset 0x0:
+  0,0 -> 0,0                           PASS
+  960,540 -> 640,360                   PASS
+  1919,1079 -> 1279,719                PASS
+- wheel messages excluded              PASS
+- GAME DIRECT bypass encoded           PASS
+- zero-geometry fail-open encoded       PASS
+
+PE / ABI STATIC VALIDATION
+--------------------------
+PE32+ x86-64                              PASS
+Windows GUI subsystem 6.0                 PASS
+File size unchanged: 306688 bytes         PASS
+Static import DLLs unchanged:
+  KERNEL32.dll
+  USER32.dll                              PASS
+D3D11 proxy exports unchanged: 7/7        PASS
+No static NVENC/D3D11 dependency added    PASS
+PE checksum recomputed and verified       PASS
+PE checksum: 0x0005299E
+
+UNCHANGED CONTRACTS
+-------------------
+PTAR-NG MoE v01 shader                    UNCHANGED
+FG/NVENC ME scheduler/interpolation        UNCHANGED
+QPC cadence                               UNCHANGED
+VBlank/mailbox                            UNCHANGED
+F6 / CTRL+F6 / F10 / CTRL+F11 hotkeys    UNCHANGED
+Recorder / VideoRecordProfile=3           UNCHANGED
+INI baseline                              UNCHANGED
+Presenter rendering / ASPECT FIT          UNCHANGED
+Installer INSTALLFIX3 path fix             RETAINED
+
+UPGRADE SAFETY
+--------------
+The exact preceding INQUISITORFIX1 runtime is included as diag/r/r055.dll so the
+non-destructive installer recognizes it as a known prior proxy and can quarantine it
+additively instead of refusing an unknown d3d11.dll.
+
+HARDWARE GATE
+-------------
+Static validation cannot prove how Inquisitor consumes every mouse path. The next
+Windows 8.1 hardware test must therefore verify menu hover/click alignment and in-game
+mouse interaction with FG still OFF. If Inquisitor uses a polling/Raw Input path for a
+specific interaction, INPUTMAP1 intentionally does not alter that path and the log/test
+will identify the remaining scope without risking global input hooks.
+
+FINAL PACKAGE GATE
+------------------
+Custom binary/package validator: 596/596 PASS.
+Package files before ZIP: 88.
+Manifest coverage: 86/86 PASS.
+Static ownership coverage: 86/86 PASS.
+Previous INQUISITORFIX1 runtime retained as known upgrade reference r055: PASS.
+Installer INSTALLFIX3 semantics retained: PASS.
+No destructive command added to install/verify/collector/core scripts: PASS.
+Windows 8.1 hardware mouse-alignment validation remains required.

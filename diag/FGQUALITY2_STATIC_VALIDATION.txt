@@ -1,0 +1,114 @@
+RC14 FGQUALITY2 STATIC/PACKAGE VALIDATION: PASS 113/113
+[PASS] runtime exists
+[PASS] RC13 reference r066 exists
+[PASS] RC12 reference r065 exists
+[PASS] runtime SHA exact
+[PASS] RC13 ref exact
+[PASS] RC12 ref exact
+[PASS] quality object exact
+[PASS] PE AMD64
+[PASS] PE32+
+[PASS] 8 sections retained
+[PASS] GUI subsystem
+[PASS] subsystem 6.0
+[PASS] image base unchanged
+[PASS] PE checksum field exact
+[PASS] PE checksum recomputes
+[PASS] .text geometry unchanged
+[PASS] .rdata geometry unchanged
+[PASS] .data geometry unchanged
+[PASS] .pdata geometry unchanged
+[PASS] .reloc geometry unchanged
+[PASS] .fgov geometry unchanged
+[PASS] .fgdat geometry expected
+[PASS] .fgdia geometry expected
+[PASS] SizeOfImage unchanged
+[PASS] no overlay after expanded .fgdia
+[PASS] GATE1 .fgov byte-identical to RC13
+[PASS] legacy .fgdat 0..9B byte-identical
+[PASS] SHARELEGACY3/RESIZEGUARD1 .fgdia first 0x200 byte-identical
+[PASS] new quality globals start zero
+[PASS] quality UTF16 key exact
+[PASS] quality key occurs exactly once
+[PASS] hook 0x2b46 target
+[PASS] hook 0x2c5d target
+[PASS] hook 0x220bd target
+[PASS] hook 0x220cc target
+[PASS] hook 0x12225 target
+[PASS] hook 0x12271 target
+[PASS] parser hook tail NOP bounded
+[PASS] guard hook tail NOP bounded
+[PASS] width hook tail NOP bounded
+[PASS] height hook tail NOP bounded
+[PASS] action0 hook tail NOP bounded
+[PASS] runtime string P1FG7N QUALITY LEGACY - ME /3 - BLEND GUARD 65
+[PASS] runtime string P1FG7N QUALITY BALANCED - ME /3 - BLEND GUARD 50
+[PASS] runtime string P1FG7N QUALITY QUALITY - ME /2 - BLEND GUARD 35
+[PASS] runtime string P1FG7N QUALITY CONSERVATIVE - ME /2 - BLEND GUARD 25
+[PASS] runtime string P1FG7N QUALITY ME TIER PENDING - CTRL+F6 OFF/ON TO APPLY FULL PROFILE
+[PASS] VK_CONTROL polled
+[PASS] VK_F8 polled
+[PASS] VK_SHIFT polled
+[PASS] VK_ALT polled
+[PASS] four GetAsyncKeyState indirect calls
+[PASS] imports only KERNEL32 USER32
+[PASS] seven D3D11 exports unchanged
+[PASS] root INI equals uninstall baseline
+[PASS] quality default 2
+[PASS] FG starts OFF
+[PASS] profile2 guard identity
+[PASS] profile2 ME identity
+[PASS] target 60
+[PASS] SharedFlush 1
+[PASS] recorder profile3
+[PASS] status F8 preserved
+[PASS] INI documents CTRL+F8
+[PASS] RC14 identity
+[PASS] runtime hash metadata
+[PASS] base RC13 metadata
+[PASS] quality key metadata
+[PASS] profile0 metadata
+[PASS] profile2 metadata
+[PASS] profile3 metadata
+[PASS] CTRL+F8 metadata
+[PASS] F8 preserved metadata
+[PASS] no auto rebuild metadata
+[PASS] GATE1 metadata
+[PASS] AutoVSync deferred
+[PASS] temporal PTAR deferred
+[PASS] quality default var
+[PASS] quality parse old INI
+[PASS] quality 0 guard
+[PASS] quality 0 ME
+[PASS] quality 1 guard
+[PASS] quality 2 guard
+[PASS] quality 3 guard
+[PASS] quality INI write
+[PASS] quality marker
+[PASS] CTRL+F8 marker
+[PASS] GATE1 retained
+[PASS] RESIZEGUARD retained
+[PASS] AutoVSync deferred core
+[PASS] verifier RC14 hash
+[PASS] verifier quality dynamic
+[PASS] verifier profile0 coherence
+[PASS] verifier profile2 coherence
+[PASS] verifier F8 contract
+[PASS] collector RC14 identity
+[PASS] collector GTX960M
+[PASS] protocol starts profile2
+[PASS] protocol tests profile0
+[PASS] protocol no auto rebuild
+[PASS] protocol recorder off
+[PASS] no destructive command 01-INSTALL_FULLSTACK1.bat
+[PASS] no destructive command tools/installer/PTAR_CORE_INSTALL.bat
+[PASS] no destructive command VERIFY_FULLSTACK1_INSTALL.bat
+[PASS] no destructive command diag/05-COLLECT_RESULTS.bat
+[PASS] manifest paths exact
+[PASS] manifest hashes exact
+[PASS] ownership namespace
+[PASS] ownership build id
+[PASS] ownership paths exact
+[PASS] ownership IDs unique
+[PASS] ownership hashes exact
+[PASS] static dirs build id

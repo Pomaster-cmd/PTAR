@@ -1,0 +1,57 @@
+RC15 FGQUALITYHUD1 PACKAGE VALIDATION: PASS 56/56
+[PASS] runtime hash RC15
+[PASS] embedded RC14 reference
+[PASS] HUD object exact
+[PASS] binary validator returns PASS
+[PASS] root INI equals uninstall baseline
+[PASS] quality profile exists
+[PASS] FG starts OFF
+[PASS] recorder profile3
+[PASS] status remains F8
+[PASS] INI documents RC15 HUD
+[PASS] identity
+[PASS] runtime metadata
+[PASS] base metadata
+[PASS] HUD marker
+[PASS] notice id
+[PASS] notice line1
+[PASS] notice line2
+[PASS] active tracking
+[PASS] GATE1 retained
+[PASS] AutoVSync deferred
+[PASS] recorder unchanged
+[PASS] installer hash
+[PASS] HUD marker write
+[PASS] notice id write
+[PASS] profile preservation
+[PASS] quality input parse
+[PASS] no auto rebuild
+[PASS] GATE1 marker
+[PASS] AutoVSync deferred core
+[PASS] verifier hash
+[PASS] verifier HUD marker
+[PASS] verifier notice id
+[PASS] collector RC15 identity
+[PASS] collector GTX960M
+[PASS] protocol same-tier notice
+[PASS] protocol cross-tier notice
+[PASS] protocol no recorder
+[PASS] asset diag/source_hotfix/fgquality_hud1.s
+[PASS] asset diag/source_hotfix/fgquality_hud1.obj
+[PASS] asset diag/source_hotfix/patch_fgqualityhud1_rc14.py
+[PASS] asset diag/source_hotfix/validate_fgqualityhud1_rc15.py
+[PASS] asset diag/source_hotfix/FGQUALITYHUD1_BUILD.txt
+[PASS] asset diag/FGQUALITYHUD1_STATIC_VALIDATION.txt
+[PASS] asset diag/RC14_FIELD_FINDING_FGQUALITY_HUD_GAP.txt
+[PASS] r067 index
+[PASS] no destructive command 01-INSTALL_FULLSTACK1.bat
+[PASS] no destructive command tools/installer/PTAR_CORE_INSTALL.bat
+[PASS] no destructive command VERIFY_FULLSTACK1_INSTALL.bat
+[PASS] no destructive command diag/05-COLLECT_RESULTS.bat
+[PASS] manifest paths exact
+[PASS] manifest hashes exact
+[PASS] ownership namespace
+[PASS] ownership build
+[PASS] ownership paths exact
+[PASS] ownership ids unique
+[PASS] ownership hashes exact

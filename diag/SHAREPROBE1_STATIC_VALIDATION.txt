@@ -1,0 +1,36 @@
+SHAREPROBE1 STATIC VALIDATION: PASS 35/35
+[PASS] RC8 hash
+[PASS] RC9 hash
+[PASS] same file size
+[PASS] PE x64 image base
+[PASS] same 8 sections
+[PASS] SizeOfImage unchanged
+[PASS] fgdia RVA unchanged
+[PASS] fgdia raw position unchanged
+[PASS] fgdia raw capacity unchanged
+[PASS] fgdia characteristics unchanged
+[PASS] fgdia virtual size expanded only within raw capacity
+[PASS] gate starts test eax
+[PASS] raw E_INVALIDARG compare present
+[PASS] probe status marker present
+[PASS] stack allocation present
+[PASS] stack restoration present
+[PASS] CreateTexture2D vtable slot used
+[PASS] IUnknown Release used
+[PASS] seven-probe table exact
+[PASS] probe table is inside code body
+[PASS] unused raw tail trapped
+[PASS] success target exact
+[PASS] raw LAST_STATUS target exact
+[PASS] raw failure target exact
+[PASS] GAME_DEVICE target exact
+[PASS] probe LAST_STATUS target exact
+[PASS] probe failure target exact
+[PASS] existing call-site unchanged
+[PASS] call-site still targets fgdia
+[PASS] .fgov geometry unchanged
+[PASS] .fgov bytes unchanged
+[PASS] .fgdat geometry unchanged
+[PASS] .fgdat bytes unchanged
+[PASS] PE checksum valid
+[PASS] no unexpected binary changes

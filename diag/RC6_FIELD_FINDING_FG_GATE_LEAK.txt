@@ -1,0 +1,26 @@
+RC6 FIELD FINDING — FGREAL30 GOVERNOR LEAK AFTER FAILED FG ACTIVATION
+Date: 2026-08-29
+Game: Warhammer 40,000 Inquisitor - Martyr / Warhammer.exe
+Test resolution: 1280x720 game backbuffer -> 1920x1080 native presenter
+
+Observed contract violation:
+- FG starts OFF.
+- CTRL+F6 requests FG.
+- FG initialization fails before source submits.
+- F8 reports P1FG7N ENABLED NO and SCHEDULER RUNNING NO.
+- SHAREDIAG1 reports STATUS 61697 = 0xF101.
+- Despite FG not becoming active, the REAL-source governor can remain on its ~30 FPS path.
+
+Root cause in RC5/RC6 governor integration:
+- The two Present/Present1 call-sites were described as active-FG-only, but their pre-existing
+  gate represents the requested/configured FG path, not the final runtime-enabled state.
+- Therefore the wrapper could execute while g_fgEnabled == 0 after a failed initialization.
+
+RC7 correction:
+- Wrapper reads the same existing runtime globals used by F8:
+  g_fgEnabled-equivalent RVA 0x2C3F6CC
+  scheduler-running RVA      0x2C93B94
+- Governor pacing is allowed only when both are non-zero.
+- Otherwise GOV_ARMED is reset and the original FGSubmitFrame is called immediately.
+
+No VSync forcing is added by RC7. Future PTAR Auto-VSync must use the same FG-only contract.

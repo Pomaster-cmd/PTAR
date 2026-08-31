@@ -1,0 +1,29 @@
+FGREAL30 GATE1 STATIC VALIDATION SUMMARY
+
+Base RC6 SHA-256:
+9d67705897a0faa7c7b25c09e8d85a7d6fcbb8ee043344dd601ecc5be5e0c263
+
+RC7 runtime SHA-256:
+f871c6a5e3a6a7cf1430d5fdd609d5e5f81a98f5c141559af81a5d51718cd2d2
+
+Dedicated validator: 31/31 PASS.
+
+Validated properties:
+- exact RC6 base required;
+- PE x64 image/section count unchanged;
+- existing .fgov RVA/raw geometry retained;
+- only .fgov VirtualSize grows from 0x194 to 0x1BC;
+- .fgdat is byte-identical to RC6;
+- SHAREDIAG1 .fgdia is byte-identical to RC6;
+- existing Present and Present1 governor call-sites are unchanged;
+- governor first checks the exact runtime state printed by F8 as P1FG7N ENABLED;
+- governor then checks the exact runtime state printed by F8 as SCHEDULER RUNNING;
+- either false state branches to pass-through, resets GOV_ARMED, and does no wait;
+- tail still jumps to the exact original FGSubmitFrame RVA 0x127C0;
+- unwind metadata updated for the larger wrapper;
+- no binary changes outside .fgov + its VirtualSize + its RUNTIME_FUNCTION + PE checksum;
+- timing model: FG OFF = zero governor delay;
+- timing model: failed FG init = zero governor delay;
+- timing model: ENABLED + scheduler RUNNING + target60 = ~30.00003 REAL FPS.
+
+No hardware validation is claimed by this document.

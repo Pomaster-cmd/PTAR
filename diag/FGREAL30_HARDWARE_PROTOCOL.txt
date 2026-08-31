@@ -1,0 +1,33 @@
+PTAR INQUISITOR RC5 FGREAL30 — HARDWARE PROTOCOL
+================================================
+
+Goal: isolate the new internal REAL half-rate governor. Do not test the recorder yet.
+
+1. Close Inquisitor before installation.
+2. Run 01-INSTALL_FULLSTACK1.bat.
+3. Run VERIFY_FULLSTACK1_INSTALL.bat and require PASS.
+4. Use Inquisitor at 1280x720 on the 60 Hz display; keep V-Sync enabled.
+5. Start with FG OFF. Confirm the already validated baseline is still near 60 FPS.
+6. Press CTRL+F6 once, release both keys, and play/move continuously for 30-60 s.
+7. Expected source/HUD behavior: approximately 30 FPS while FG is ON.
+8. Press F8 once after the FG state has been stable long enough to capture telemetry.
+9. Check visually for crash/TDR, black frame, severe stutter, mouse offset, or temporal artifacts.
+10. Press CTRL+F6 OFF. Source FPS must return quickly toward the ~60 FPS baseline.
+11. Press F8 once after OFF, then optionally repeat one ON/OFF cycle.
+12. Quit normally.
+13. Run diag\05-COLLECT_RESULTS.bat and send the resulting ZIP.
+
+Primary PASS target on 60 Hz:
+- FG OFF source: ~60 FPS (same as RC4 field result)
+- FG ON source REAL: ~30 FPS
+- FG ON REAL display: near ~30/s
+- FG ON GENERATED display: near ~30/s
+- FG ON total display: near ~60/s
+- FG OFF again: source returns toward ~60 FPS
+- RUNTIME FAILURES / AUTO DISABLES: 0
+
+Notes:
+- The first REAL after FG activation is intentionally immediate.
+- A source frame already later than the 30 FPS schedule is submitted immediately;
+  FGREAL30 does not add a second 33 ms delay and never emits catch-up bursts.
+- Recorder CTRL+F9 must remain OFF for this first governor validation.

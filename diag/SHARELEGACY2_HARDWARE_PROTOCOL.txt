@@ -1,0 +1,46 @@
+PTAR RC11 — SHARELEGACY2 HARDWARE PROTOCOL
+
+Purpose
+- Validate coherent legacy D3D11 SHARED fallback across BOTH the game<->FG transport and the isolated display mailboxes.
+- Verify RC10's mailbox E_INVALIDARG is passed without introducing another crash.
+- Preserve GATE1 behavior outside FG.
+- Do not validate recorder/QSV or Auto-VSync in this run.
+
+Preconditions
+1. Close Inquisitor completely.
+2. Install RC11 with 01-INSTALL_FULLSTACK1.bat.
+3. Run VERIFY_FULLSTACK1_INSTALL.bat. PASS is required.
+4. Start Inquisitor at 1280x720 with the working PTAR presenter profile.
+5. Keep the game's V-Sync enabled manually for this diagnostic run. PTAR Auto-VSync is not implemented yet.
+
+Single controlled run
+1. Before FG, verify source FPS is not forced to 30.
+2. Press CTRL+F6 once and fully release CTRL and F6.
+3. Wait about 3 seconds. Do not press other PTAR hotkeys during initialization.
+4. If the game remains stable and FG becomes active, move/play for 15-20 seconds only.
+5. Press F8 once while FG is active if possible.
+6. Do NOT press CTRL+F9 and do not start the recorder.
+7. If FG is active, press CTRL+F6 once to turn it OFF and verify the source cap disappears.
+8. Quit normally.
+9. Run diag\05-COLLECT_RESULTS.bat and return the ZIP.
+
+Expected progress beyond rejected RC10
+- four full-resolution shared transport slots opened;
+- NVENC ME-only API loaded and async ME ring ready;
+- isolated display D3D11 device/context created;
+- no mailbox CreateTexture2D HRESULT 2147942487 / 0x80070057;
+- OK: P1FG7N low-resolution shared display mailbox slots 4;
+- mailbox publisher / cadence / isolated display threads start;
+- P1FG7N ENABLED YES and SCHEDULER RUNNING YES;
+- SOURCE SUBMITS, REAL PRESENTS and GENERATED PRESENTS become > 0.
+
+Failure handling
+- If the game crashes, do not repeat the attempt. Restart only to collect any surviving log/result if needed.
+- If FG fails but the game survives, press F8 once, quit and collect.
+- One activation attempt is sufficient for this RC.
+
+Non-regression contract
+- SatGat/compatible games still attempt original SHARED_KEYEDMUTEX first on every activation.
+- Legacy fallback is limited to E_INVALIDARG + empty primary transport + SharedFlush=1.
+- FG OFF / failed init must not impose the 30 FPS governor.
+- PTAR-NG, INPUTMAP2, presenter, NVENC algorithm, QPC cadence, VBlank policy, hotkeys, recorder and INI are otherwise retained.

@@ -1,0 +1,36 @@
+PTAR RC17 - DIAGREPAIR3 + INSTALLVERIFY1 STATIC VALIDATION
+============================================================
+
+STATUS=PREPACKAGE_54_OF_54_PASS
+FIELD_RUNTIME_CHANGED=NO
+RUNTIME_DLL_SHA256=5bdff6f5ecce928cb62f5dbbfe0cd3562eff455054620223cc4ba268c12c92fc
+VISIBLE_VERIFIER_CHANGED=NO
+VISIBLE_VERIFIER_SHA256=cfeb9be1b1fbdae2fb9a763588a40cc2ea0b81b56469476f02dc82e3ec6c383b
+
+DIAGREPAIR3
+-----------
+04-ARM_VISIBLE_FRAME_VERIFIER.bat is the existing diagnostic entry point.
+It self-relaunches under CMD /K, enables/confirms VBlankDiagnostics=1 with the existing Win32 INI helper, then executes the original visible verifier directly.
+No PTAR_INSTALL_TEE_RAW.ps1, stdout pipe, output redirection, or START detachment is used for the verifier.
+If the verifier or a later command exits immediately, CMD /K remains open.
+
+INSTALLVERIFY1
+--------------
+01-INSTALL_FULLSTACK1.bat calls VERIFY_FULLSTACK1_INSTALL.bat /AUTO after core success.
+Final installer PASS requires both core RC=0 and FULLSTACK verification RC=0.
+VERIFY_FULLSTACK1_INSTALL.bat writes PTAR_VERIFY_LAST.log and repeats all [FAIL] lines at the end on failure.
+The installed DLL SHA-256 check uses diag/PTAR_SHA256.ps1 with .NET SHA256 rather than parsing localized CertUtil prose.
+
+CLEANUP / COLLECTION
+--------------------
+The safe uninstaller recognizes the new verify/status logs and exact legacy diagnostic outputs/backups.
+05-COLLECT_RESULTS.bat copies the verify log and visible-verifier status when present.
+
+COMPATIBILITY LOCKS
+-------------------
+win81_nis_dx11_x64.dll byte-identical to RC17 DIAGREPAIR2.
+win81_nis.ini byte-identical to RC17 DIAGREPAIR2.
+tools/installer/PTAR_CORE_INSTALL.bat byte-identical to RC17 DIAGREPAIR2.
+diag/set_vblank_diagnostics.ps1 byte-identical to RC17 DIAGREPAIR2.
+Original visible verifier byte-identical to RC17 DIAGREPAIR2.
+Changed/new scripts are ASCII CRLF for Windows 8.1 compatibility.

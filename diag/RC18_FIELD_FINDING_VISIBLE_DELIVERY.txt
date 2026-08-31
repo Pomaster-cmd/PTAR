@@ -1,0 +1,34 @@
+PTAR RC18 FIELD BASIS - GENERATED FRAMES NOT REACHING DISPLAY
+============================================================
+
+Field machine: Windows 8.1 x64 / GTX 960M / Inquisitor - Martyr.
+Base runtime: RC17 FGQUALITY3 + QUALITYMENU1.
+Quality finding: CONSERVATIVE was visually satisfactory.
+Priority defect: HUD output FPS did not match perceived fluidity.
+
+External visible-marker verifier, same scene where native/pre-FG was about 16 FPS and PTAR HUD rose to about 30 FPS:
+- measurement duration: ~20.156 s
+- capture rate: 59.386 samples/s
+- capture failures: 0
+- marker sync failures: 0
+- marker parity failures: 0
+- marker unique contents: 330
+- VISIBLE UNIQUE: 16.372 FPS
+- VISIBLE REAL: 15.578 FPS
+- VISIBLE GENERATED: 0.793 FPS
+- visible real contents: 314
+- visible generated contents: 16
+- duplicate samples: 867
+- marker gaps: 292
+- backward/ambiguous steps: 0
+
+Interpretation:
+The external verifier independently recovered the ~16 FPS native cadence (15.578 visible REAL FPS), which strongly validates the measurement. RC17 internally reported/presented roughly 30 FPS, but only 0.793 generated frames/s became distinct visible desktop contents. The primary failure is therefore output delivery/presentation, not FGQUALITY3 image generation.
+
+Root-cause hypothesis confirmed by binary inspection:
+The isolated display loop executed WaitForVBlank() immediately BEFORE every Present(), while Present itself used SyncInterval=0 + DXGI_PRESENT_DO_NOT_WAIT. This can submit just after a physical VBlank and allow the next mailbox content to coalesce/replace the generated frame before a composed desktop refresh.
+
+RC18 PRESENTDELIVERY1 changes only that presentation contract:
+- both explicit pre-Present WaitForVBlank calls in the isolated display loop are bypassed;
+- IDXGISwapChain::Present becomes Present(1, 0), blocking/synchronized to one vertical interval;
+- quality engine, generated-frame synthesis, mailbox selection, QPC selection governor, SHARELEGACY3, RESIZEGUARD1 and recorder are otherwise retained.

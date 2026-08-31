@@ -1,0 +1,32 @@
+FGREAL30 GATE1 STATIC VALIDATION: PASS 31/31
+[PASS] RC6 exact hash :: 9d67705897a0faa7c7b25c09e8d85a7d6fcbb8ee043344dd601ecc5be5e0c263
+[PASS] RC7 exact hash :: f871c6a5e3a6a7cf1430d5fdd609d5e5f81a98f5c141559af81a5d51718cd2d2
+[PASS] same file size :: 308224/308224
+[PASS] x64 image base 
+[PASS] section count unchanged 8 
+[PASS] hotfix sections preserved :: ['.fgov', '.fgdat', '.fgdia']
+[PASS] fgov RVA/raw unchanged 
+[PASS] fgov virtual size updated only :: 0x194->0x1bc
+[PASS] fgdat exact byte-identical 
+[PASS] SHAREDIAG1 exact byte-identical 
+[PASS] checksum valid :: 0x4d480
+[PASS] Present call 0xc798 still enters same governor RVA :: 0x1834fb000
+[PASS] Present call 0xd678 still enters same governor RVA :: 0x1834fb000
+[PASS] enabled gate opcode :: 833db94674ff00
+[PASS] enabled gate resolves exact runtime flag :: 0x182c3f6cc
+[PASS] scheduler gate opcode :: 833d748b79ff00
+[PASS] scheduler gate resolves exact runtime flag :: 0x182c93b94
+[PASS] enabled false -> inactive passthrough :: 0x34fb18d
+[PASS] scheduler false -> inactive passthrough :: 0x34fb18d
+[PASS] inactive clears GOV_ARMED :: c705850e000000000000
+[PASS] inactive jumps to submit :: eb0a
+[PASS] tail opcode JMP :: 0xe9
+[PASS] tail -> original FGSubmit :: 0x1800127c0
+[PASS] new unwind bytes 
+[PASS] runtime function new range :: 00b04f03b4b14f03b4b14f03
+[PASS] F8 ENABLED status global mapping :: 0x182c3f6cc
+[PASS] F8 SCHEDULER status global mapping :: 0x182c93b94
+[PASS] no binary changes outside strict gate region/metadata 
+[PASS] FG OFF has zero governor delay 
+[PASS] failed FG init has zero governor delay 
+[PASS] FG enabled+scheduler running -> ~30 REAL fps :: 30.000030

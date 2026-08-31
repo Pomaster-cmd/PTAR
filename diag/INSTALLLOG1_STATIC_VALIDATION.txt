@@ -1,0 +1,191 @@
+PTAR INSTALLFIX1 RC5 INSTALLLOG1 - STATIC VALIDATION
+=====================================================
+
+CORE_INSTALLFIX1_SHA256=a2189708db9998213c178414a3fdbaf0a78c429f3067487ed2def2b7e9c922fb
+RUNTIME_INPUTFOCUS1_SHA256=49dce3f671475f7685fecbe28a56c7af0999816f53b03a5e0a4b3c989d333637
+ROOT_INSTALLER_SHA256=b1078efc286d35b97187230512d4995bd6e7b9b9ecbbd950b076f9f6b18d6b23
+VERIFY_SHA256=1a887a44a9817834198338fa6a6c57726ba5d2182b64a92e14ad3189ae9b54e5
+
+LOG CONTRACT
+PASS | PTAR_INSTALL_LAST.log created before package validation
+PASS | Windows/date/time/root recorded
+PASS | package DLL/core hashes recorded
+PASS | core stdout and stderr redirected to log
+PASS | STEP 01/08..08/08 output therefore persisted
+PASS | core return code persisted
+PASS | target/exe marker existence persisted
+PASS | installed target DLL hash persisted when available
+PASS | final return code persisted
+
+REGRESSION LOCKS
+PASS | core INSTALLFIX1 unchanged
+PASS | runtime INPUTFOCUS1 unchanged
+PASS | VERIFY unchanged
+PASS | INI unchanged
+PASS | QSV/selftest unchanged
+PASS | uninstaller unchanged
+PASS | collector unchanged under diag
+
+ROOT INSTALLER DIFF
+--- INSTALLFIX1_RC1_ROOT_INSTALLER
++++ INSTALLLOG1_ROOT_INSTALLER
+@@ -1,34 +1,135 @@
+ @echo off
+ setlocal EnableExtensions
+ cd /d "%~dp0"
++title PTAR 1.0.6 INPUTFOCUS1 INSTALLFIX1 - INSTALLLOG1
+ 
+-rem SAFEUNINSTALL2: eliminate configuration contamination from experimental PTAR branches.
+-rem The pristine CADENCEFIX1 INI is copied before the ORIGINAL core installer runs.
+-if not exist "%~dp0_PTAR_UNINSTALL\reference\win81_nis.CADENCEFIX1_BASELINE.ini" (
+-  echo [ERREUR] INI CADENCEFIX1 de reference introuvable.
+-  pause
+-  exit /b 40
+-)
+-copy /y "%~dp0_PTAR_UNINSTALL\reference\win81_nis.CADENCEFIX1_BASELINE.ini" "%~dp0win81_nis.ini" >nul
+-if errorlevel 1 (
+-  echo [ERREUR] Impossible de restaurer le win81_nis.ini CADENCEFIX1 propre.
+-  pause
+-  exit /b 41
++set "ROOT=%~dp0"
++set "LOG=%ROOT%PTAR_INSTALL_LAST.log"
++set "RC=0"
++
++rem The log is created immediately so even an early failure leaves evidence.
++>"%LOG%" echo ============================================================
++>>"%LOG%" echo PTAR INSTALLATION LOG - INSTALLLOG1
++>>"%LOG%" echo ============================================================
++>>"%LOG%" echo START_DATE=%DATE%
++>>"%LOG%" echo START_TIME=%TIME%
++>>"%LOG%" echo ROOT=%ROOT%
++>>"%LOG%" echo COMSPEC=%ComSpec%
++>>"%LOG%" echo PROCESSOR_ARCHITECTURE=%PROCESSOR_ARCHITECTURE%
++>>"%LOG%" echo USERNAME=%USERNAME%
++>>"%LOG%" echo.
++>>"%LOG%" echo [WINDOWS]
++>>"%LOG%" ver
++>>"%LOG%" echo.
++>>"%LOG%" echo [PACKAGE PRECHECK]
++
++echo PTAR INSTALLLOG1
++echo Le journal complet sera conserve ici :
++echo "%LOG%"
++echo.
++
++if exist "%ROOT%win81_nis_dx11_x64.dll" (
++  >>"%LOG%" echo [PASS] win81_nis_dx11_x64.dll present
++  certutil -hashfile "%ROOT%win81_nis_dx11_x64.dll" SHA256 >>"%LOG%" 2>&1
++) else (
++  >>"%LOG%" echo [FAIL] win81_nis_dx11_x64.dll absent
+ )
+ 
+-call "%~dp0tools\installer\PTAR_CORE_INSTALL.bat"
++if exist "%ROOT%tools\installer\PTAR_CORE_INSTALL.bat" (
++  >>"%LOG%" echo [PASS] PTAR_CORE_INSTALL.bat present
++  certutil -hashfile "%ROOT%tools\installer\PTAR_CORE_INSTALL.bat" SHA256 >>"%LOG%" 2>&1
++) else (
++  >>"%LOG%" echo [FAIL] PTAR_CORE_INSTALL.bat absent
++)
++
++if not exist "%ROOT%_PTAR_UNINSTALL\reference\win81_nis.CADENCEFIX1_BASELINE.ini" (
++  >>"%LOG%" echo [FAIL] INI CADENCEFIX1 reference absent
++  set "RC=40"
++  goto :FINISH
++)
++
++>>"%LOG%" echo [PASS] INI CADENCEFIX1 reference present
++
++copy /y "%ROOT%_PTAR_UNINSTALL\reference\win81_nis.CADENCEFIX1_BASELINE.ini" "%ROOT%win81_nis.ini" >>"%LOG%" 2>&1
++if errorlevel 1 (
++  >>"%LOG%" echo [FAIL] Impossible de restaurer win81_nis.ini
++  set "RC=41"
++  goto :FINISH
++)
++>>"%LOG%" echo [PASS] win81_nis.ini baseline restored
++
++>>"%LOG%" echo.
++>>"%LOG%" echo ============================================================
++>>"%LOG%" echo [CORE INSTALLER BEGIN]
++>>"%LOG%" echo ============================================================
++>>"%LOG%" echo CORE_START_DATE=%DATE%
++>>"%LOG%" echo CORE_START_TIME=%TIME%
++
++call "%ROOT%tools\installer\PTAR_CORE_INSTALL.bat" >>"%LOG%" 2>&1
+ set "RC=%ERRORLEVEL%"
+-if not "%RC%"=="0" (
+-  echo.
+-  echo [INFO] Installation interrompue - code %RC%.
+-  echo Appuyez sur une touche lorsque vous voulez fermer cette fenetre.
+-  pause >nul
+-  exit /b %RC%
++
++>>"%LOG%" echo.
++>>"%LOG%" echo ============================================================
++>>"%LOG%" echo [CORE INSTALLER END]
++>>"%LOG%" echo ============================================================
++>>"%LOG%" echo CORE_RETURN_CODE=%RC%
++>>"%LOG%" echo CORE_END_DATE=%DATE%
++>>"%LOG%" echo CORE_END_TIME=%TIME%
++
++:FINISH
++>>"%LOG%" echo.
++>>"%LOG%" echo [POSTCHECK]
++if exist "%ROOT%win81_nis_install_target.txt" (
++  >>"%LOG%" echo [PRESENT] win81_nis_install_target.txt
++  >>"%LOG%" type "%ROOT%win81_nis_install_target.txt"
++) else (
++  >>"%LOG%" echo [ABSENT] win81_nis_install_target.txt
+ )
++
++if exist "%ROOT%win81_nis_install_exe.txt" (
++  >>"%LOG%" echo [PRESENT] win81_nis_install_exe.txt
++  >>"%LOG%" type "%ROOT%win81_nis_install_exe.txt"
++) else (
++  >>"%LOG%" echo [ABSENT] win81_nis_install_exe.txt
++)
++
++if exist "%ROOT%win81_nis_install_target.txt" (
++  set "TARGET="
++  for /f "usebackq delims=" %%T in ("%ROOT%win81_nis_install_target.txt") do if not defined TARGET set "TARGET=%%~T"
++  if defined TARGET (
++    set "TARGET=%TARGET:"=%"
++    if not "%TARGET:~-1%"=="\" set "TARGET=%TARGET%\"
++    >>"%LOG%" echo TARGET_RESOLVED=%TARGET%
++    if exist "%TARGET%d3d11.dll" (
++      >>"%LOG%" echo [PRESENT] TARGET d3d11.dll
++      certutil -hashfile "%TARGET%d3d11.dll" SHA256 >>"%LOG%" 2>&1
++    ) else (
++      >>"%LOG%" echo [ABSENT] TARGET d3d11.dll
++    )
++    if exist "%TARGET%win81_nis.ini" (
++      >>"%LOG%" echo [PRESENT] TARGET win81_nis.ini
++      %SystemRoot%\System32\findstr.exe /i /c:"TargetExe=" /c:"VideoRecordProfile=" /c:"ToggleHUD=" /c:"FrameGeneration=" "%TARGET%win81_nis.ini" >>"%LOG%" 2>&1
++    ) else (
++      >>"%LOG%" echo [ABSENT] TARGET win81_nis.ini
++    )
++  )
++)
++
++>>"%LOG%" echo.
++>>"%LOG%" echo FINAL_RETURN_CODE=%RC%
++>>"%LOG%" echo END_DATE=%DATE%
++>>"%LOG%" echo END_TIME=%TIME%
++>>"%LOG%" echo ============================================================
++
+ echo.
+-echo [INFO] Installation runtime terminee.
+-echo [INFO] Configuration clavier/input = baseline CADENCEFIX1 fourni.
+-echo [INFO] Pour FULLSTACK1, lance maintenant 03-INSTALL_QSV_HELPER_WIN81.bat.
+-echo Appuyez sur une touche lorsque vous voulez fermer cette fenetre.
++echo Installation terminee/interrompue - code %RC%.
++echo Le diagnostic est dans :
++echo "%LOG%"
++echo.
++echo Si cette fenetre se ferme, le fichier LOG reste sur le disque.
++echo Envoie-moi PTAR_INSTALL_LAST.log.
++echo.
++
++rem Try to leave the result visible, but the LOG is authoritative.
+ pause >nul
+-exit /b 0
++exit /b %RC%

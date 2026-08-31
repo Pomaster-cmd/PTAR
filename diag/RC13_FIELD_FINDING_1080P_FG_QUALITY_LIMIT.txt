@@ -1,0 +1,23 @@
+RC13 FIELD FINDING — NATIVE 1080P ISOLATES FG QUALITY LIMIT
+
+Machine: Windows 8.1 x64 / GTX 960M / Warhammer.exe
+Source and native output: 1920x1080
+
+The native test bypasses PTAR spatial reconstruction: the runtime reports the exact 1:1 CopyResource fast path and explicitly reports that PTAR is bypassed at native resolution. FG then runs with SOURCE SIZE 1920x1080 and ME SIZE 960x544.
+
+Representative status from the field run:
+- SOURCE FPS 29
+- DISPLAY FPS 60
+- GENERATED FPS 30
+- REAL DISPLAY FPS 29
+- GENERATED MIDPOINTS 361 / GENERATED PRESENTS 360
+- MAILBOX GENERATED DROPS 0
+- DISPLAY MAILBOX DROPS 0
+- PRESENT CALL BUSY 0
+- RUNTIME FAILURES 0
+- AUTO DISABLES 0
+- LAST STATUS 0
+
+Visual conclusion from the user: deformation is finer in native 1080p, but FG quality remains insufficient. Because PTAR spatial is bypassed in this run, the remaining deformation is intrinsic to the current interpolation path rather than 720p->1080p PTAR scaling.
+
+RC14 response: expose interpolation aggressiveness as profiles instead of hard-coding one game-specific compromise. No temporal PTAR redesign is mixed into this iteration.

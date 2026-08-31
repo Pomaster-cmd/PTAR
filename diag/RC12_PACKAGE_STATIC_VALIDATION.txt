@@ -1,0 +1,62 @@
+RC12 PACKAGE STATIC VALIDATION: PASS 61/61
+[PASS] runtime hash
+[PASS] INI unchanged
+[PASS] RC9 safe base exact
+[PASS] RC10 rejected ref exact
+[PASS] RC11 rejected GTX960M ref exact
+[PASS] final object exact
+[PASS] imports only KERNEL32 USER32
+[PASS] seven D3D11 exports
+[PASS] PE AMD64
+[PASS] PE sections 8
+[PASS] PE32+
+[PASS] GUI subsystem
+[PASS] subsystem 6.0
+[PASS] FG startup off
+[PASS] FG target 60
+[PASS] SharedFlush 1
+[PASS] VideoRecordProfile 3
+[PASS] RC12 identity
+[PASS] runtime marker
+[PASS] RC9 direct base
+[PASS] RC11 rejected marker
+[PASS] GTX960M field marker
+[PASS] legacy marker
+[PASS] resize guard marker
+[PASS] keyed passthrough
+[PASS] off passthrough
+[PASS] AutoVSync deferred
+[PASS] core hash
+[PASS] core GTX
+[PASS] core guard
+[PASS] core keyed
+[PASS] core off
+[PASS] core GATE1
+[PASS] core AutoVSync deferred
+[PASS] verifier hash
+[PASS] verifier guard
+[PASS] verifier keyed
+[PASS] verifier off
+[PASS] collector identity
+[PASS] collector GTX960M marker
+[PASS] RC11 indexed rejected
+[PASS] field finding transport success
+[PASS] binary validator record
+[PASS] determinism record
+[PASS] protocol GTX960M
+[PASS] protocol one attempt
+[PASS] protocol recorder off
+[PASS] no destructive command 01-INSTALL_FULLSTACK1.bat
+[PASS] no destructive command tools/installer/PTAR_CORE_INSTALL.bat
+[PASS] no destructive command VERIFY_FULLSTACK1_INSTALL.bat
+[PASS] no destructive command diag/05-COLLECT_RESULTS.bat
+[PASS] uninstaller unchanged
+[PASS] safe uninstall unchanged
+[PASS] manifest paths exact
+[PASS] manifest hashes exact
+[PASS] ownership namespace
+[PASS] ownership build
+[PASS] ownership paths exact
+[PASS] ownership ids unique
+[PASS] ownership hashes exact
+[PASS] static dirs build

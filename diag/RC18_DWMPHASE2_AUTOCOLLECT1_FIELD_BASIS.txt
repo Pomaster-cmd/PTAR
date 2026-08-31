@@ -1,0 +1,14 @@
+DWMPHASE1 FIELD RESULT -> DWMPHASE2 AUTOCOLLECT1
+==================================================
+
+Le run terrain du 31/08/2026 confirme que le chemin interne RC18 reste sain sous instrumentation passive :
+- 698 GENERATED presents et 703 REAL presents ;
+- 1401 Present attempts / 1401 successes ; Present BUSY 0 ;
+- mailbox 1401, generated drops 0, overwrite generated/real 0 ;
+- QPC resyncs 0 ; runtime failures 0 ; auto disables 0.
+
+Deux preuves decisives n ont cependant pas ete persistees par DWMPHASE1 :
+- le bloc de snapshot DWM dependait d un CTRL+F4 manuel et n apparait pas dans le log collecte ;
+- le visible verifier a bien termine (RC=0), mais son stdout n etait pas copie dans le paquet de resultats.
+
+DWMPHASE2 AUTOCOLLECT1 corrige uniquement ces deux lacunes de collecte. Il ne change pas la politique de presentation RC18.

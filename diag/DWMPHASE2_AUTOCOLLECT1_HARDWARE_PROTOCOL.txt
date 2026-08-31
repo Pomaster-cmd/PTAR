@@ -1,0 +1,46 @@
+PTAR DISPLAY DELIVERY LAB - DWMPHASE2 AUTOCOLLECT1 - RC18 BASE
+==================================================================
+
+BUT
+---
+Obtenir dans UNE SEULE collecte les deux preuves manquantes du run DWMPHASE1 :
+1) histogrammes de phase DWM GENERATED / REAL ;
+2) resume externe VISIBLE UNIQUE / GENERATED / REAL.
+
+CONTRAT RUNTIME
+----------------
+- Base exacte RC18 PRESENTDELIVERY1.
+- Present(1,0), aucun pre-WaitForVBlank ajoute.
+- Aucun Sleep, DwmFlush, flip model ou waitable object ajoute.
+- Echantillonnage DwmGetCompositionTimingInfo(NULL,...) seulement toutes les 8 GENERATED et 8 REAL.
+- Aucun fichier n est ecrit depuis le hot path de presentation.
+- F8 conserve le statut normal puis ajoute automatiquement le snapshot DWM LAB au log.
+- CTRL+F4 reste disponible comme snapshot manuel de secours.
+- Le visible verifier reste le binaire HOTKEYFIX1 ESCSAFE1 exact ; sa sortie texte est sauvegardee dans PTAR_VISIBLE_VERIFIER_LAST_OUTPUT.txt.
+
+PROTOCOLE TERRAIN
+------------------
+1. Installer le paquet et exiger [PASS GLOBAL].
+2. Lancer diag\04-ARM_VISIBLE_FRAME_VERIFIER.bat avant le jeu et accepter UAC.
+3. Lancer Inquisitor dans la meme scene de reference. Garder le profil CONSERVATIVE.
+4. Activer FG avec CTRL+F6. Attendre 2 a 3 secondes.
+5. Appuyer UNE FOIS sur F5 ou CTRL+F5. Le HUD PTAR doit afficher VISIB TEST.
+6. Jouer/mouvoir la camera pendant les 20 secondes de mesure.
+7. Desactiver FG avec CTRL+F6. Attendre 2 a 3 secondes.
+8. Appuyer UNE FOIS sur F8. Le statut normal est ecrit puis DWMPHASE2 ajoute automatiquement le bloc DWM. CTRL+F4 n est plus obligatoire.
+9. Quitter normalement. Laisser FG OFF stable si possible avant fermeture.
+10. Executer diag\05-COLLECT_RESULTS.bat et envoyer le dossier/ZIP de resultats.
+
+PREUVES ATTENDUES DANS LA COLLECTE
+----------------------------------
+- win81_nis.log contient :
+  HOTKEY DIAG DWMPHASE2 AUTODUMP - F8
+  RC18 LAB DWMPHASE2 AUTOCOLLECT1 PASSIVE DWM PHASE SNAPSHOT
+  GS0..GS7 / GE0..GE7 / RS0..RS7 / RE0..RE7 / CP0..CP7
+- PTAR_VISIBLE_VERIFIER_LAST_OUTPUT.txt contient le resume VISIBLE UNIQUE / GENERATED / REAL.
+- PTAR_VISIBLE_VERIFIER_LAST_STATUS.txt contient RESULT=VERIFIER_COMPLETED et VERIFIER_OUTPUT_SAVED=YES.
+
+DECISION
+--------
+Si GENERATED et REAL occupent des phases DWM differenciees, la prochaine correction sera phasee sur le compose/vblank mesure.
+Si leurs distributions sont similaires alors que VISIBLE GENERATED reste faible, l hypothese de simple phase timing est rejetee : la prochaine analyse doit viser la semantique de surface/composition du presenter, pas ajouter un nouveau hold arbitraire.

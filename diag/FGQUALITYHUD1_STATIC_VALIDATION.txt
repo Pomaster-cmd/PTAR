@@ -1,0 +1,74 @@
+RC15 FGQUALITYHUD1 BINARY VALIDATION: PASS 73/73
+[PASS] RC14 base exact
+[PASS] RC15 runtime exact
+[PASS] AMD64 PE32+
+[PASS] image base unchanged
+[PASS] section count unchanged
+[PASS] GUI subsystem unchanged
+[PASS] SizeOfImage unchanged
+[PASS] PE checksum recomputes
+[PASS] .text geometry unchanged
+[PASS] .rdata geometry unchanged
+[PASS] .data geometry unchanged
+[PASS] .pdata geometry unchanged
+[PASS] .reloc geometry unchanged
+[PASS] .fgov geometry unchanged
+[PASS] .fgdat geometry
+[PASS] .fgdia geometry
+[PASS] no overlay
+[PASS] .data bytes byte-identical
+[PASS] .pdata bytes byte-identical
+[PASS] .reloc bytes byte-identical
+[PASS] .fgov bytes byte-identical
+[PASS] .text differs only four wrapper hooks
+[PASS] .fgdat previous bytes 0..EF identical
+[PASS] new active profile seed zero
+[PASS] RC14 .fgdia first 0x600 byte-identical
+[PASS] new .fgdia tail nonempty
+[PASS] call opcode 0x2b46
+[PASS] call opcode 0x2b46
+[PASS] hook target 0x2b46
+[PASS] call opcode 0x220bd
+[PASS] call opcode 0x220bd
+[PASS] hook target 0x220bd
+[PASS] call opcode 0x12225
+[PASS] call opcode 0x12225
+[PASS] hook target 0x12225
+[PASS] call opcode 0x12271
+[PASS] call opcode 0x12271
+[PASS] hook target 0x12271
+[PASS] call opcode 0x2c5d
+[PASS] call opcode 0x2c5d
+[PASS] hook target 0x2c5d
+[PASS] call opcode 0x220cc
+[PASS] call opcode 0x220cc
+[PASS] hook target 0x220cc
+[PASS] runtime string P1U46 HOTKEY FG QUALITY = CTRL+F8
+[PASS] runtime string P1FG7N QUALITY ACTIVE 0 LEGACY
+[PASS] runtime string P1FG7N QUALITY ACTIVE 1 BALANCED
+[PASS] runtime string P1FG7N QUALITY ACTIVE 2 QUALITY
+[PASS] runtime string P1FG7N QUALITY ACTIVE 3 CONSERVATIVE
+[PASS] runtime string P1FG7N QUALITY SELECTED 0 LEGACY
+[PASS] runtime string P1FG7N QUALITY SELECTED 3 CONSERVATIVE
+[PASS] runtime string P1FG7N QUALITY ME TIER DIV3
+[PASS] runtime string P1FG7N QUALITY ME TIER DIV2
+[PASS] runtime string P1FG7N QUALITY RESTART PENDING NO
+[PASS] runtime string P1FG7N QUALITY RESTART PENDING YES - CTRL+F6 OFF/ON TO APPLY ME TIER
+[PASS] notice id 8 immediate
+[PASS] notice 3000ms immediate
+[PASS] call opcode 0x34fd691
+[PASS] call opcode 0x34fd691
+[PASS] notice function call target
+[PASS] feedback source length 6632 unchanged
+[PASS] old HLSL pattern unique m=max(m,Cx(p,o,0,84));m=max(m,Cx(p,o,1,69));m=max(m,Cx(p,o,2,83));m=max(m,Cx(p,o,3,84));
+[PASS] new HLSL glyph pattern m=max(m,Cx(p,o,0,67));m=max(m,Cx(p,o,1,85));m=max(m,Cx(p,o,2,82));m=max(m,Cx(p,o,3,82));
+[PASS] old HLSL pattern unique m=max(m,Cx(p,o,7,79));m=max(m,Cx(p,o,8,70));m=max(m,Cx(p,o,9,52));
+[PASS] new HLSL glyph pattern m=max(m,Cx(p,o,7,78));m=max(m,Cx(p,o,8,79));m=max(m,Cx(p,o,9,87));
+[PASS] old HLSL pattern unique m=max(m,Cx(p,o,0,82));m=max(m,Cx(p,o,1,85));m=max(m,Cx(p,o,2,78));
+[PASS] new HLSL glyph pattern m=max(m,Cx(p,o,0,83));m=max(m,Cx(p,o,1,69));m=max(m,Cx(p,o,2,76));
+[PASS] old HLSL pattern unique m=max(m,Cx(p,o,8,88));
+[PASS] new HLSL glyph pattern m=max(m,Cx(p,o,8,80));
+[PASS] feedback HLSL exact expected diff only
+[PASS] .rdata differs only feedback HLSL glyph constants
+[PASS] imports only KERNEL32 USER32
+[PASS] seven D3D11 exports unchanged

@@ -1,0 +1,28 @@
+RC8 SHAREHR1 FIELD FINDING — INQUISITOR / WINDOWS 8.1 / RTX 3080
+Date: 2026-08-29
+
+Installed RC8 runtime SHA-256:
+f26bbf5919ddeeb39937e5258d6c56f3196936e7d9a755099d55404693326d98
+
+Observed at 1280x720:
+- FG hotkey accepted.
+- Dedicated D3D11 device/context on the game adapter: PASS.
+- Dedicated context multithread protection: PASS.
+- Shared transport initialization: FAIL before any source submit/NVENC/scheduler work.
+- RC6/RC7 localization: slot 0 / stage 1 / producer shared Texture2D creation.
+- RC8 raw HRESULT: decimal 2147942487 = 0x80070057 = E_INVALIDARG.
+- FG remains disabled / scheduler not running.
+- GATE1 remains correct: source F8 telemetry ~59 FPS with FG not active; no 30 FPS leak.
+
+Inherited normalized shared descriptor reconstructed statically from the runtime:
+- Width/Height: source descriptor (field run 1280x720)
+- MipLevels: 1
+- ArraySize: 1
+- Format: source format (field run DXGI_FORMAT_R8G8B8A8_UNORM / 28)
+- SampleDesc: 1 / 0
+- Usage: D3D11_USAGE_DEFAULT
+- BindFlags: D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET = 0x28
+- CPUAccessFlags: 0
+- MiscFlags: D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX = 0x100
+
+The descriptor is nominally within the documented D3D11.1 shared Texture2D contract, so RC9 does not guess a replacement. SHAREPROBE1 performs bounded temporary creation probes only after the inherited path already returned E_INVALIDARG.

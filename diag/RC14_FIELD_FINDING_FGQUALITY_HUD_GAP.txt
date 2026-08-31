@@ -1,0 +1,10 @@
+RC14 FIELD FINDING — QUALITY PROFILE HUD VISIBILITY GAP
+
+Machine: Windows 8.1 x64 / GTX 960M / Warhammer.exe.
+User test: quality profile 3 / CONSERVATIVE.
+
+The run remained operational and the log repeatedly reported ME SIZE 960x544 at native 1920x1080. Representative stable windows included SOURCE FPS 30, DISPLAY FPS 60 or 59, and RUNTIME FAILURES=0 / AUTO DISABLES=0 / LAST STATUS=0.
+
+User-facing defect: pressing CTRL+F8 did not show the current profile nor the selected profile on the HUD. The captured log also contains no QUALITY or CTRL+F8 profile telemetry lines. This is an observability/HUD defect, not evidence of a new transport failure.
+
+RC15 response: wrap the existing RC14 profile parser/hotkey/status/ME-width path with display-only state tracking, emit a dedicated existing HUD notice ID 8 on profile changes, and append explicit quality telemetry. RC14 interpolation math itself is unchanged.

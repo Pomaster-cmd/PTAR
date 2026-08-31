@@ -1,0 +1,24 @@
+RC12 FIELD FINDING — FIRST WORKING INQUISITOR FG, QUALITY ARTIFACT
+
+Machine: Windows 8.1 x64 / NVIDIA GeForce GTX 960M
+Mode: game source 1280x720 -> PTAR presenter 1920x1080, target 60 Hz
+
+Confirmed functional state from the field log:
+- FG enabled; scheduler, QPC cadence, mailbox publisher and isolated display threads active.
+- NVENC session active.
+- Source size 1280x720.
+- ME size 432x240.
+- Stable sample: SOURCE FPS 30, DISPLAY FPS 59, GENERATED FPS 29, REAL DISPLAY FPS 29.
+- ME submits/completions track each other (~1.8k in the captured run).
+- Runtime failures 0; auto disables 0; last status 0.
+- Generated mailbox drops/overwrite/acquire failures were zero in the captured status.
+- Late midpoint drops 8 and real-only fallback presents 9 were bounded protection events, not activation failure.
+
+Visual finding:
+During character movement, screenshots show pronounced local deformation/stretching around the moving character and nearby revealed background, while HUD and global frame geometry remain stable. This points to interpolation quality at motion/occlusion boundaries rather than transport, presentation or PTAR spatial scaling failure.
+
+RC13 hypothesis to test:
+- increase ME detail from 432x240 to 640x368;
+- reduce existing warp trust threshold from Guard 0.65 to 0.35 so incoherent warp falls back sooner toward real-frame blend.
+
+This document records a field observation and a test hypothesis. It does not claim RC13 hardware quality success before the next run.

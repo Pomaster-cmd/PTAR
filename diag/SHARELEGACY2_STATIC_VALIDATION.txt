@@ -1,0 +1,65 @@
+SHARELEGACY2 STATIC VALIDATION: PASS 64/64
+[PASS] RC9 hash
+[PASS] RC11 hash
+[PASS] same file size
+[PASS] PE AMD64
+[PASS] image base unchanged
+[PASS] same eight sections
+[PASS] SizeOfImage unchanged
+[PASS] fgdia geometry stable except VS
+[PASS] fgdia gate at offset zero
+[PASS] fgdia code size
+[PASS] fgdia linked image exact
+[PASS] fgdia tail trapped
+[PASS] fgdat RVA/raw geometry unchanged
+[PASS] fgdat VS bounded expansion
+[PASS] fgdat raw bytes unchanged
+[PASS] fgdat runtime area initially zero
+[PASS] GATE1 governor section exact
+[PASS] RC9 primary transport call exact
+[PASS] RC9 transport descriptor exact
+[PASS] RC9 producer transport QI exact
+[PASS] RC9 consumer transport QI exact
+[PASS] RC9 mailbox call exact
+[PASS] RC9 mailbox descriptor exact
+[PASS] RC9 mailbox producer QI exact
+[PASS] RC9 mailbox display QI exact
+[PASS] shared_primary_call_wrapper call target
+[PASS] shared_desc_misc_helper call target
+[PASS] shared_desc_misc_helper NOP tail
+[PASS] shared_mutex_qi_helper call target
+[PASS] shared_mutex_qi_helper NOP tail
+[PASS] shared_mutex_qi_helper call target
+[PASS] shared_mutex_qi_helper NOP tail
+[PASS] mailbox_call_wrapper call target
+[PASS] mailbox_desc_misc_helper call target
+[PASS] mailbox_desc_misc_helper NOP tail
+[PASS] mailbox_producer_mutex_qi_helper call target
+[PASS] mailbox_producer_mutex_qi_helper NOP tail
+[PASS] mailbox_display_mutex_qi_helper call target
+[PASS] mailbox_display_mutex_qi_helper NOP tail
+[PASS] existing post-constructor gate bytes unchanged
+[PASS] post-constructor gate still targets fgdia start
+[PASS] E_INVALIDARG-only retry
+[PASS] legacy transport descriptor constant
+[PASS] keyed transport descriptor constant retained
+[PASS] legacy mailbox descriptor constant
+[PASS] keyed mailbox descriptor constant retained
+[PASS] primary wrapper clears legacy before constructor
+[PASS] mailbox wrapper calls original constructor
+[PASS] mailbox wrapper clear occurs after nested call opcode
+[PASS] mailbox wrapper returns after clear
+[PASS] retry success does not clear fallback flag
+[PASS] fake Release returns 1
+[PASS] fake Acquire/ReleaseSync return S_OK
+[PASS] fallback flag after governor data
+[PASS] fake vtable room
+[PASS] fake object room
+[PASS] model keyed success never enters fallback
+[PASS] model exact Inquisitor failure enters legacy
+[PASS] model SharedFlush off fails closed
+[PASS] model partial transport fails closed
+[PASS] model unrelated HRESULT fails closed
+[PASS] model legacy transport and mailbox coherent
+[PASS] no unexpected binary changes
+[PASS] PE checksum valid

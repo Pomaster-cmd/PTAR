@@ -1,0 +1,15 @@
+DWMPHASE1 COUNTER MAP
+=====================
+DWM CALLS / FAILS     appels DwmGetCompositionTimingInfo et erreurs
+QPC FAILS             erreurs QueryPerformanceCounter
+G SAMPLES / R SAMPLES echantillons valides par type (diviseur 8)
+NEG START / NEG END    QPC plus ancien que qpcVBlank retourne; doit rester faible/zero
+REFRESH US             qpcRefreshPeriod converti en microsecondes
+GS0..GS7               histogramme phase debut GENERATED
+GE0..GE7               histogramme phase fin GENERATED
+RS0..RS7               histogramme phase debut REAL
+RE0..RE7               histogramme phase fin REAL
+CP0..CP7               histogramme phase qpcCompose
+
+Bucket 0 = [0, 1/8 refresh), ... bucket 7 = [7/8, 1 refresh).
+A 60 Hz, 1 bucket vaut environ 2.08 ms (16.67 ms / 8).

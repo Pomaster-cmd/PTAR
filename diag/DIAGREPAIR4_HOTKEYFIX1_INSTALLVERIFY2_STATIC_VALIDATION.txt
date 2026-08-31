@@ -1,0 +1,72 @@
+PTAR RC17 - DIAGREPAIR4 / HOTKEYFIX1 / INSTALLVERIFY2 STATIC VALIDATION
+====================================================================
+
+SCOPE
+-----
+Repairs only the existing visible-FPS diagnostic chain. The RC17 frame-generation runtime and production INI are unchanged.
+
+ROOT CAUSE ADDRESSED
+--------------------
+The existing visible verifier waited for a global GetAsyncKeyState chord that required both VK_CONTROL and an F5 edge. On the current Inquisitor test this chord did not start the measurement. DIAGREPAIR4 removes the fragile CTRL gate from the existing verifier and elevates the existing 04 entry point before direct launch. F5 alone starts the same 20-second measurement; CTRL+F5 remains compatible.
+
+RUNTIME LOCKS
+-------------
+RC17 DLL SHA-256: 5bdff6f5ecce928cb62f5dbbfe0cd3562eff455054620223cc4ba268c12c92fc
+win81_nis.ini SHA-256: a7673260e016ab2d6b8923850ef53e40e4ba8da2c0a224703140c1ed7ab21499
+Runtime DLL changed: NO
+Production INI changed: NO
+
+VISIBLE VERIFIER
+----------------
+Locked DIAGREPAIR3 input SHA-256: cfeb9be1b1fbdae2fb9a763588a40cc2ea0b81b56469476f02dc82e3ec6c383b
+HOTKEYFIX1 output SHA-256: 6ac4a17bc5f37ebe386b652a911f516762e7357e6f076819f1c97d7433b2ca5a
+Size remains 16384 bytes.
+PE remains x64 / Windows CUI.
+Exactly two two-byte CTRL-gating conditional branches are replaced by NOP NOP.
+The ARMED message is updated in-place; no section, import, capture loop, marker decoder or 20-second measurement code is added/replaced.
+Re-applying patch_visible_verifier_hotkeyfix1.py to the locked input produces a byte-identical HOTKEYFIX1 verifier.
+
+04 ENTRY POINT
+--------------
+diag\04-ARM_VISIBLE_FRAME_VERIFIER.bat remains the single visible-FPS diagnostic entry point.
+It requests elevation through Windows UAC, confirms the elevated token, enables VBlankDiagnostics through the existing Win32 helper, checks the exact HOTKEYFIX1 verifier SHA-256, then launches that verifier directly under CMD /K.
+No parallel verifier, Tee pipeline or detached verifier process is introduced.
+
+INSTALL VERIFY
+--------------
+VERIFY_FULLSTACK1_INSTALL.bat now gates final PASS on the DIAGREPAIR4 marker, Win32 VBlank helper presence and exact HOTKEYFIX1 verifier hash in addition to the existing RC17 runtime checks.
+
+STATIC GATE
+-----------
+PASS runtime DLL unchanged RC17
+PASS win81_nis.ini unchanged
+PASS visible verifier HOTKEYFIX1 exact hash
+PASS visible verifier size unchanged 16384
+PASS visible verifier PE x64
+PASS visible verifier Windows CUI
+PASS CTRL gate 1 bypassed
+PASS CTRL gate 2 bypassed
+PASS ARMED text advertises F5/CTRL+F5
+PASS old CTRL-only ARMED text absent
+PASS 04 batch ASCII
+PASS 04 batch CRLF
+PASS 04 DIAGREPAIR4 marker
+PASS 04 requests elevation
+PASS 04 inner elevated mode
+PASS 04 direct verifier execution
+PASS 04 no installer Tee
+PASS 04 verifier hash gate
+PASS 04 F5 procedure
+PASS FULLSTACK verifier ASCII
+PASS FULLSTACK verifier checks HOTKEYFIX1 hash
+PASS FULLSTACK verifier checks DIAGREPAIR4
+RESULT 22/22 PASS
+
+REPRODUCIBILITY
+---------------
+HOTKEYFIX1 patch reconstruction: PASS byte-identical
+Original -> patched binary diff: 2 code runs (2 bytes each) + in-place ARMED text only
+
+ENVIRONMENTAL LIMIT
+-------------------
+Windows 8.1 UAC, global key-state visibility while Inquisitor has foreground focus, and the actual 20-second GDI marker capture cannot be executed in the Linux build environment. Hardware/runtime confirmation remains required on the target Windows 8.1 machine.

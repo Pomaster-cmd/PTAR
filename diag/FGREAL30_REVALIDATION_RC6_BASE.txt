@@ -1,0 +1,30 @@
+FGREAL30 STATIC VALIDATION: PASS 29/29
+[PASS] base hash :: 0e558350d789e56908a3f4bb866f76ba77e252dd282fe1bfe0df41dc085e8548
+[PASS] new hash :: 309f82ea51cb549a594dfe584b3d9d9039b3b25265af604e6d063cabadff0a00
+[PASS] base five sections :: 5
+[PASS] new seven sections :: 7
+[PASS] image base unchanged 
+[PASS] section alignment unchanged 
+[PASS] file alignment unchanged 
+[PASS] new section names :: ['.fgov', '.fgdat']
+[PASS] fgov geometry :: {'name': '.fgov', 'off': 584, 'vs': 404, 'va': 55554048, 'rs': 512, 'rp': 306688, 'ch': 1610612768}
+[PASS] fgdat geometry :: {'name': '.fgdat', 'off': 624, 'vs': 32, 'va': 55558144, 'rs': 512, 'rp': 307200, 'ch': 3221225536}
+[PASS] size of image :: 0x34fd000
+[PASS] checksum valid :: stored=0x4cb66 calc=0x4cb66
+[PASS] output size :: 0x4b200
+[PASS] old call 0xc798 -> FGSubmit :: 0x1800127c0
+[PASS] new call 0xc798 -> governor :: 0x1834fb000
+[PASS] old call 0xd678 -> FGSubmit :: 0x1800127c0
+[PASS] new call 0xd678 -> governor :: 0x1834fb000
+[PASS] governor tail opcode :: 0xe9
+[PASS] governor tail -> original FGSubmit :: 0x1800127c0
+[PASS] unwind info :: 0104010004820000
+[PASS] pdata expanded exact :: {'name': '.pdata', 'off': 504, 'vs': 4608, 'va': 55541760, 'rs': 4608, 'rp': 301568, 'ch': 1073741888}
+[PASS] runtime function entry :: 00b04f038ab14f038cb14f03
+[PASS] exception directory expanded :: 0x34f8000/0x1200
+[PASS] governor state zero initialized 
+[PASS] no unexpected modifications in RC4 image 
+[PASS] model 60Hz source -> about 30 REAL fps :: 30.000030
+[PASS] model target120 -> about60 REAL fps :: 60.000240
+[PASS] slow source never gets extra 33ms wait :: 50.000/50.000
+[PASS] first FG REAL submits immediately :: 0.0

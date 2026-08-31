@@ -1,0 +1,43 @@
+PTAR RC10 — SHARELEGACY1 HARDWARE PROTOCOL
+
+Purpose
+- Validate the real legacy D3D11 shared-resource fallback identified by RC9 probe result 0xE3000003.
+- Preserve GATE1 behavior outside FG.
+- Do not validate recorder/QSV in this run.
+
+Preconditions
+1. Close Inquisitor completely.
+2. Install RC10 with 01-INSTALL_FULLSTACK1.bat.
+3. Run VERIFY_FULLSTACK1_INSTALL.bat. PASS is required.
+4. Start Inquisitor in 1280x720 with the working PTAR presenter profile.
+5. Keep the game's V-Sync enabled for this diagnostic run. PTAR Auto-VSync is not implemented yet.
+
+Run
+1. Before FG, verify the game is not stuck at 30 FPS.
+2. Press CTRL+F6 once and fully release both keys.
+3. Wait 3 seconds.
+4. If FG visibly becomes active and the game remains stable, play/move for 30-60 seconds.
+5. Press F8 once.
+6. Do NOT press CTRL+F9 and do not start the recorder.
+7. If FG is active, toggle CTRL+F6 OFF once and confirm the source cap is removed again.
+8. Quit normally.
+9. Run diag\05-COLLECT_RESULTS.bat and return the resulting ZIP.
+
+Expected first success signature
+- P1FG7N ENABLED YES
+- P1FG7N SCHEDULER RUNNING YES
+- SOURCE SUBMITS > 0
+- REAL PRESENTS > 0
+- GENERATED PRESENTS > 0
+- NVENC SESSION ACTIVE YES (once initialization reaches that stage)
+- Source pacing near 30 FPS only while FG is actually active for a 60 FPS target.
+
+If the legacy retry fails later
+- RC10 preserves the raw HRESULT from the retry in P1FG7N LAST STATUS.
+- Do not repeatedly toggle FG; one failed attempt plus F8 is sufficient.
+
+Non-regression contract
+- Primary keyed transport remains first choice.
+- Legacy fallback is attempted only after E_INVALIDARG + empty transport + SharedFlush enabled.
+- FG OFF / failed init must not impose the 30 FPS governor.
+- PTAR-NG, INPUTMAP2, presenter, NVENC algorithm, mailbox, VBlank, hotkeys, recorder and INI are otherwise retained.

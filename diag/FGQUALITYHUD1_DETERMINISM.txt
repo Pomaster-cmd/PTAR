@@ -1,0 +1,19 @@
+PTAR RC15 FGQUALITYHUD1 — DETERMINISM / REPRODUCIBILITY
+
+Base RC14 DLL SHA-256:
+3808fcb1681f00342b7ce07e39aebc2b1cabbed8aeb2fd244788744136d1868f
+
+RC15 HUD assembly was compiled twice independently with:
+clang --target=x86_64-w64-windows-gnu -c fgquality_hud1.s
+Both COFF objects are byte-identical.
+Object SHA-256:
+ebb37d71a949c9c20208e362bb8ccf37555c25341bc6d37af1180494b2ecf523
+
+The RC15 patch was applied twice independently to the exact RC14 base with the two independently compiled objects.
+Both resulting DLLs are byte-identical.
+RC15 DLL SHA-256:
+2c978a59cc7053edc6669de18e0dcf2ae5755b9b96da74c452c9b19405c1d785
+
+The packaged fgquality_hud1.s recompiles to the exact packaged object, and the packaged patch_fgqualityhud1_rc14.py reproduces the exact RC15 DLL from the packaged RC14 reference r067.dll + packaged HUD object.
+
+The feedback HLSL allocation remains exactly 6632 bytes. Only same-length numeric glyph-code substitutions are made for notice ID 8; no HLSL structure, resource layout or source allocation size changes.

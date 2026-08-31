@@ -1,0 +1,15 @@
+RC16 FIELD FINDING — GTX 960M / WINDOWS 8.1
+==========================================
+
+User field result:
+- RC16 restores normal startup image and HUD; the RC15 black-startup regression is no longer present.
+- FG quality profile 3 CONSERVATIVE remains functional.
+- The remaining primary visual defect is a visible flicker / unstable halo around the moving player character.
+- Quality improvement is the next priority.
+
+Interpretation used for RC17:
+The existing midpoint shader uses one local motion vector for the warp and a photometric luminance mismatch as its confidence signal. Around a moving 3D object, adjacent motion cells can disagree strongly. A confidence decision based only on warped-image luminance can therefore alternate between warp and fallback at the character boundary, creating a visible flicker/halo.
+
+RC17 does not increase the ME resolution or alter cadence/transport. Instead, profile 3 adds a local motion-discontinuity confidence term using the right/down neighboring motion vectors. Strong disagreement attenuates warp trust and pushes the generated pixel toward the existing truth-frame blend fallback. The extra stabilization is gated to profile 3 (Guard < 0.30), so profiles 0/1/2 retain their prior interpolation policy.
+
+This diagnosis is algorithmic and field-guided; no GPU frame debugger or crash dump is available in the Linux build environment. Hardware visual validation remains required.

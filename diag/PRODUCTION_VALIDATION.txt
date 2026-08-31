@@ -1,0 +1,26 @@
+PTAR 1.0.6 INQUISITORFIX1 RC18 - PRESENTDELIVERY1 VALIDATION
+============================================================
+
+RC18 runtime SHA-256:
+2b6fafabeedc89857dbb6d5a318ca143ce8e30ec912050116f70a4a58ad55ad3
+
+Exact base:
+RC17 SHA-256 5bdff6f5ecce928cb62f5dbbfe0cd3562eff455054620223cc4ba268c12c92fc
+
+Why the prior presentation lock is intentionally superseded:
+The RC17 external visible-marker field measurement proved that the old Present policy did not deliver generated frames as distinct desktop contents: native/REAL ~15.578 FPS, HUD ~30 FPS, visible GENERATED only 0.793 FPS, visible UNIQUE 16.372 FPS, with zero capture/sync/parity failures. This is decisive evidence requiring a presentation change.
+
+RC18 scope:
+1. Bypass exactly two pre-Present FGVblankWaitDisplaySlot calls in the isolated display loop.
+2. Change the existing IDXGISwapChain::Present arguments from (0, DXGI_PRESENT_DO_NOT_WAIT) to (1, 0).
+3. Set package INI policy to FrameGenerationRequireVSync=0 and FrameGenerationPresentSync=1.
+4. Preserve RC17 FGQUALITY3/QUALITYMENU1, CONSERVATIVE stabilizer, mailbox, QPC frame selection, SHARELEGACY3, RESIZEGUARD1, GATE1, INPUTMAP2 and recorder behavior.
+
+Static evidence:
+- file size, image base, SizeOfImage and section geometry unchanged;
+- only the two WaitForVBlank call sites, Present argument setup, one status string and PE checksum differ from RC17;
+- FGVblankWaitDisplaySlot function body byte-identical;
+- .fgov, .fgdat and .fgdia raw bytes byte-identical;
+- Present indirect call opcode remains unchanged;
+- deterministic rebuild from exact RC17 base required byte-identical;
+- runtime hardware validation remains mandatory because only the GTX 960M / Windows 8.1 composed-desktop path can prove visible delivery.

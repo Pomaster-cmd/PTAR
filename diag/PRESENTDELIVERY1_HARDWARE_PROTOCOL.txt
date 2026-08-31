@@ -1,0 +1,45 @@
+PTAR RC18 PRESENTDELIVERY1 - GTX 960M / WINDOWS 8.1 HARDWARE PROTOCOL
+====================================================================
+
+GOAL
+Generated frames must become distinct visible display contents. The HUD alone is not accepted as proof.
+
+PRECONDITIONS
+1. Clean uninstall of previous PTAR; game fully closed.
+2. Extract RC18 package at Inquisitor root.
+3. Run 01-INSTALL_FULLSTACK1.bat and require final PASS.
+4. Launch normally. Do NOT use Alt+Enter as a startup workaround.
+5. Confirm image and HUD appear normally.
+6. Use CONSERVATIVE for comparison because its RC17 visual quality was field-satisfactory.
+
+PRIMARY SAME-SCENE TEST
+Use the same scene that measured about 16 native FPS and about 30 HUD FPS with RC17.
+1. With FG OFF, note native HUD/source cadence (~16 expected on the known scene).
+2. Close/relaunch as needed, then run diag\04-ARM_VISIBLE_FRAME_VERIFIER.bat.
+3. Accept UAC and wait for ARMED.
+4. Launch/return to Inquisitor, select CONSERVATIVE.
+5. If FG was already ON after diagnostic activation: CTRL+F6 OFF then CTRL+F6 ON.
+6. Wait 2-3 seconds; press F5 once.
+7. Let the 20-second measurement complete. ESC in game is safe; close the diagnostic window manually only after completion.
+
+SUCCESS TARGET
+For the known ~16 FPS native scene:
+- VISIBLE REAL should remain roughly 15-16 FPS.
+- VISIBLE GENERATED should rise from RC17's 0.793 FPS into the same order as REAL, ideally ~13-16 FPS.
+- VISIBLE UNIQUE should rise from RC17's 16.372 FPS toward ~28-32 FPS.
+- marker gaps should fall sharply relative to RC17's 292.
+- capture/sync/parity failures should remain 0.
+- no black screen, startup regression, crash, resize regression or large input freeze.
+
+SECONDARY FAST-SCENE TEST
+If a scene provides ~30 native/source FPS, repeat measurement. A healthy 1:1 FG delivery path should scale toward ~55-60 visible UNIQUE FPS on a 60 Hz desktop, not merely report it in the HUD.
+
+FAIL CONDITIONS
+- visible GENERATED remains near 0-2 FPS while HUD nearly doubles;
+- VISIBLE UNIQUE remains near native cadence;
+- output collapses near 30 FPS on a ~30 native scene (would indicate double-VBlank pacing);
+- black screen/startup regression/crash;
+- sustained severe input latency or presenter stalls.
+
+COLLECT
+After test, run diag\05-COLLECT_RESULTS.bat and provide the resulting archive/folder if any failure occurs.

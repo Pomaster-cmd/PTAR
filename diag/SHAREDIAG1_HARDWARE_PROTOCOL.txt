@@ -1,0 +1,52 @@
+PTAR INQUISITORFIX1 RC6 - SHAREDIAG1 HARDWARE PROTOCOL
+======================================================
+
+PURPOSE
+-------
+RC6 does not attempt to fix the FG initialization failure. It identifies the
+first incomplete shared-transport object when the inherited P1FG7N transport
+creation returns failure. RC5 governor/PTAR/input/presenter/NVENC logic is left
+unchanged outside this failure-only diagnostic gate.
+
+TEST
+----
+1. Close Inquisitor completely.
+2. Install RC6 with 01-INSTALL_FULLSTACK1.bat.
+3. Run VERIFY_FULLSTACK1_INSTALL.bat and require PASS.
+4. Launch Inquisitor at 1920x1080 with V-Sync enabled.
+5. Wait until gameplay/menu presentation is stable.
+6. Press CTRL+F6 ONCE and fully release both keys.
+7. Wait 2-3 seconds.
+8. Press F8 once.
+9. Quit normally and run diag\05-COLLECT_RESULTS.bat.
+10. Send the result ZIP. No recorder test is required.
+
+STATUS DECODING
+---------------
+Generic RC5 failure was 61443 = 0xF003.
+SHAREDIAG1 uses 0xF1xy when FGCreateSharedTransport fails:
+  x = slot index (0..3) encoded as x*0x10
+  y = stage (1..6)
+
+Examples:
+  0xF101 / 61697 = slot 0, stage 1
+  0xF104 / 61700 = slot 0, stage 4
+  0xF116 / 61718 = slot 1, stage 6
+  0xF136 / 61750 = slot 3, stage 6
+  0xF1F0 / 61936 = function failed after all four slot object sets appear complete
+
+Stages:
+  1 = producer shared texture missing (CreateTexture2D path)
+  2 = shared handle missing (IDXGIResource / GetSharedHandle path)
+  3 = producer IDXGIKeyedMutex missing
+  4 = consumer/game-device shared texture missing (OpenSharedResource path)
+  5 = consumer IDXGIKeyedMutex missing
+  6 = consumer shader-resource view missing
+
+EXPECTED SAFETY BEHAVIOR
+------------------------
+- FG remains OFF on preparation failure exactly as RC5.
+- Base USR presenter remains active.
+- FG OFF path and FGREAL30 governor logic are unchanged.
+- The diagnostic executes only after the shared-transport function has already
+  returned a failure HRESULT.

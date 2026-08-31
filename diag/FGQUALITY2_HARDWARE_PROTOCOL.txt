@@ -1,0 +1,27 @@
+PTAR RC14 — FGQUALITY2 HARDWARE PROTOCOL
+
+TARGET FIRST PASS
+Windows 8.1 x64 / GTX 960M / Inquisitor / 1280x720 -> 1920x1080. Keep in-game V-Sync ON for this branch; PTAR Auto-VSync is not implemented yet. Recorder remains OFF.
+
+A. INSTALL / BASELINE
+1. Close game + launcher. Install RC14 and run VERIFY_FULLSTACK1_INSTALL.bat.
+2. Confirm FrameGenerationQuality=2 in win81_nis.ini for the first pass.
+3. Start the same movement scene. With FG OFF confirm no PTAR 30 FPS lock.
+4. CTRL+F6 ON, F8: expected profile log QUALITY and ME SIZE 640x368 at 1280x720. Compare visual quality/performance to RC13.
+
+B. PROFILE CYCLE
+5. With FG ON, press CTRL+F8 once: profile 3 CONSERVATIVE. It stays on the /2 tier, so Guard25 is live without FG reconstruction. Capture motion with F9 and use F8.
+6. Press CTRL+F8 again: profile 0 LEGACY. This crosses /2 -> /3 while FG is active. F8/log must state ME TIER PENDING. Do not expect the current ME texture to resize live.
+7. CTRL+F6 OFF, then CTRL+F6 ON once. F8 should now show LEGACY and ME SIZE 432x240 at 1280x720.
+8. CTRL+F8 once -> profile 1 BALANCED. Same /3 tier; no restart needed. Compare Guard50 versus LEGACY Guard65.
+9. To return to profile 2 from profile 1, CTRL+F8 then CTRL+F6 OFF/ON because this crosses /3 -> /2.
+
+C. SUCCESS / SAFETY
+- F8 remains the normal status action; CTRL+F8 must not invoke F8 status as a separate hotkey action.
+- No automatic FG teardown/rebuild may occur solely because quality changed.
+- GATE1 remains: FG OFF releases the 30 FPS governor immediately.
+- RUNTIME FAILURES and AUTO DISABLES should remain 0.
+- Compare deformation vs ghosting. More conservative profiles are allowed to trade some local blend/ghosting for less geometric stretching.
+- Do NOT test recorder in this run.
+
+STOP on crash/TDR, repeated FG rebuild, new persistent 30 FPS cap while FG OFF, or transport regression.

@@ -1,0 +1,7 @@
+FIELD BASIS FOR DWMPHASE1
+=========================
+RC18 remains the best pre-lab delivery base observed before experimental FLIP/wait/hold branches.
+Known external RC18 result: visible REAL about 15.184 FPS, GENERATED about 3.572 FPS, UNIQUE about 18.756 FPS while internal delivery is near 15+15.
+PRESENTTRACE3 established that GENERATED and REAL both reach Present in balanced counts and are not simply separated by <2 ms.
+FLIPWAIT1 was rejected because it reduced internal generated throughput and introduced teardown instability.
+Therefore DWMPHASE1 changes no presentation policy: it measures DWM phase only.

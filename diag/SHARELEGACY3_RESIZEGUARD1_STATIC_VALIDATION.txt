@@ -1,0 +1,69 @@
+SHARELEGACY3 + RESIZEGUARD1 STATIC VALIDATION: PASS 68/68
+[PASS] RC9 hash 
+[PASS] RC11 rejected-base hash 
+[PASS] RC12 hash 
+[PASS] same DLL size :: (308224, 308224, 308224)
+[PASS] PE signature 
+[PASS] AMD64 machine :: 0x8664
+[PASS] PE32+ 
+[PASS] image base :: 0x180000000
+[PASS] PE signature 
+[PASS] AMD64 machine :: 0x8664
+[PASS] PE32+ 
+[PASS] image base :: 0x180000000
+[PASS] PE signature 
+[PASS] AMD64 machine :: 0x8664
+[PASS] PE32+ 
+[PASS] image base :: 0x180000000
+[PASS] 8 sections :: 8
+[PASS] section names :: ['.text', '.rdata', '.data', '.pdata', '.reloc', '.fgov', '.fgdat', '.fgdia']
+[PASS] fgov geometry unchanged 
+[PASS] GATE1 fgov byte-identical to RC9 
+[PASS] fgdat RVA/raw unchanged 
+[PASS] fgdat VS 0x9C :: 0x9c
+[PASS] fgdat raw remains zero-initialized 
+[PASS] legacy active slot in zero data 
+[PASS] fgdia exact 0x200 code 
+[PASS] RC11 fgdia was 0x1C4 
+[PASS] RC9->RC12 diff bounded to hotfix sites/headers :: []
+[PASS] RC9 resize prologue exact 
+[PASS] RC11 resize prologue remained original 
+[PASS] RC12 resize site call+nops :: e80d034f039090909090
+[PASS] call opcode at 0xcec3 :: 0xe8
+[PASS] call opcode at 0xcec3 :: 0xe8
+[PASS] resize call targets helper :: 0x34fd1d5
+[PASS] helper legacy cmp opcode 
+[PASS] helper first cmp imm zero 
+[PASS] helper legacy-active target :: 0x34fc098
+[PASS] helper scheduler cmp opcode 
+[PASS] helper scheduler target :: 0x2c93b94
+[PASS] helper lock HRESULT :: bd01007a88
+[PASS] helper discards CALL return 
+[PASS] helper jmp opcode 
+[PASS] helper jumps outer epilogue :: 0xd2cc
+[PASS] helper passthrough reconstructs mov ebp,edx 
+[PASS] helper passthrough stack offset +150 
+[PASS] helper passthrough ret 
+[PASS] mailbox wrapper loads fallback flag 
+[PASS] mailbox wrapper fallback source :: 0x34fc020
+[PASS] mailbox wrapper stores legacy active 
+[PASS] mailbox wrapper legacy-active target :: 0x34fc098
+[PASS] mailbox wrapper still calls original constructor 
+[PASS] mailbox wrapper clears transient fallback 
+[PASS] model keyed+off passthrough 
+[PASS] model keyed+running passthrough SatGat 
+[PASS] model legacy before scheduler passthrough 
+[PASS] model legacy+running locks resize 
+[PASS] lock is FG-runtime scoped via scheduler state 
+[PASS] PE checksum nonzero :: 0x4f04c
+[PASS] PE checksum recomputes :: 0x4f04c/0x4f04c
+[PASS] object exists 
+[PASS] object SHA :: c9f80bf496e583baad220f2d0782220c860da4cfee9f8d3db0d0da19279fbbb6
+[PASS] export string D3D11CoreCreateDevice 
+[PASS] export string D3D11CoreCreateLayeredDevice 
+[PASS] export string D3D11CoreGetLayeredDeviceSize 
+[PASS] export string D3D11CoreRegisterLayers 
+[PASS] export string D3D11CreateDevice 
+[PASS] export string D3D11CreateDeviceAndSwapChain 
+[PASS] export string D3D11On12CreateDevice 
+[PASS] no new DLL size growth :: 308224

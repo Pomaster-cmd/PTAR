@@ -1,0 +1,14 @@
+PTAR RC18 PRESENTDELIVERY1 BUILD
+===============================
+Exact input runtime SHA-256: 5bdff6f5ecce928cb62f5dbbfe0cd3562eff455054620223cc4ba268c12c92fc
+Exact output runtime SHA-256: 2b6fafabeedc89857dbb6d5a318ca143ce8e30ec912050116f70a4a58ad55ad3
+Patch script: diag\source_hotfix\patch_presentdelivery1_rc17.py
+Validation script: diag\source_hotfix\validate_presentdelivery1_rc18.py
+
+Binary scope:
+- RVA 0x259C9: 5-byte WaitForVBlank call -> 5 NOPs.
+- RVA 0x25B58: 5-byte WaitForVBlank call -> 5 NOPs.
+- RVA 0x265CF: Present args from SyncInterval=0 / Flags=DXGI_PRESENT_DO_NOT_WAIT to SyncInterval=1 / Flags=0.
+- IDXGISwapChain::Present call itself at RVA 0x265D7 is unchanged.
+- One equal-length runtime status string is changed from the old Present(0,DO_NOT_WAIT) claim to PRESENTDELIVERY1 Present(1,0) policy.
+- PE checksum is recomputed.

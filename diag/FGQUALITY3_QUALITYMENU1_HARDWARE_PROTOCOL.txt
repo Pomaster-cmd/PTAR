@@ -1,0 +1,29 @@
+RC17 FGQUALITY3 + QUALITYMENU1 — GTX 960M / WINDOWS 8.1 HARDWARE PROTOCOL
+=========================================================================
+
+1. Close the game completely and install RC17.
+2. Run VERIFY_FULLSTACK1_INSTALL.bat and require PASS.
+3. Launch Inquisitor normally. Do NOT press Alt+Enter. Confirm image and normal HUD appear immediately.
+4. Keep the same 3D scene used to observe the character-edge flicker. Do not test the recorder.
+5. With FG still OFF, press CTRL+F8 once and release both keys. Expected: current profile NAME appears; profile must NOT change.
+6. Let the name disappear completely. Press CTRL+F8 once again. Expected: the same current name appears; still no change.
+7. Release the keys, then press CTRL+F8 again while that name is still visible. Expected: next profile name appears. Further released/re-pressed CTRL+F8 while visible must continue cycling.
+8. Select CONSERVATIVE. If this crosses from /3 to /2 while FG is already active, use CTRL+F6 OFF/ON as indicated by the existing pending contract. For the cleanest test, select CONSERVATIVE before enabling FG.
+9. Enable FG with CTRL+F6. Use the same movement that previously produced the halo/flicker for 30–60 seconds.
+10. Capture 6–10 F9 screenshots during movement and press F8 once while FG is active.
+11. Disable FG with CTRL+F6, exit normally, then run diag\05-COLLECT_RESULTS.bat.
+
+Primary visual criterion:
+- character-edge flicker/halo in CONSERVATIVE should be materially reduced versus RC16 Q3 without a new large ghost trail or obvious global blur.
+
+Performance/safety criteria:
+- source remains near the intended ~30 FPS cadence and display near ~60 on the 60 Hz test path;
+- GENERATED and REAL presentation remain balanced near half the display rate;
+- RUNTIME FAILURES = 0;
+- AUTO DISABLES = 0;
+- no startup black screen;
+- no new ResizeBuffers teardown/rebuild loop;
+- no sustained mailbox/presenter failure.
+
+Comparison:
+If Q3 improves the halo but creates too much local double-image/ghosting, keep RC17 as an experimental quality branch and tune only the Q3 consistency threshold next. Do not broaden changes into transport, cadence or resize lifecycle during this comparison.

@@ -1,0 +1,6 @@
+PTAR RC18 PRESENTDELIVERY1 DETERMINISM CONTRACT
+===============================================
+The patcher refuses any input whose SHA-256 differs from the exact RC17 field base.
+It asserts both original pre-wait CALL rel32 byte sequences and targets, asserts the exact old Present argument bytes, and asserts the indirect Present call opcode.
+It patches fixed RVAs only and recomputes the PE checksum.
+The package validator rebuilds RC18 from diag\r\r070.dll and requires byte-for-byte identity with the shipped runtime.

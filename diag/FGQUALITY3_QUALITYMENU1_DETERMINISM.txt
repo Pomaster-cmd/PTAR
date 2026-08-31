@@ -1,0 +1,28 @@
+RC17 FGQUALITY3 + QUALITYMENU1 DETERMINISM
+=========================================
+
+Assembly source:
+diag/source_hotfix/fgquality3_menuhud1.s
+
+OBJECT_REBUILD_1_SHA256=2e0b377631a25b716a811036171af64941efb05e1dd580195224cac3e733049c
+OBJECT_REBUILD_2_SHA256=2e0b377631a25b716a811036171af64941efb05e1dd580195224cac3e733049c
+PACKAGED_OBJECT_SHA256=2e0b377631a25b716a811036171af64941efb05e1dd580195224cac3e733049c
+OBJECT_REBUILD_1_EQ_2=PASS
+OBJECT_REBUILD_EQ_PACKAGED=PASS
+
+Exact patch base:
+diag/r/r069.dll
+SHA256=f5873962a1add8e5a18dd2f0ee628d01700fb63a269dfe04016ef7104b83820b
+
+DLL_REBUILD_1_SHA256=5bdff6f5ecce928cb62f5dbbfe0cd3562eff455054620223cc4ba268c12c92fc
+DLL_REBUILD_2_SHA256=5bdff6f5ecce928cb62f5dbbfe0cd3562eff455054620223cc4ba268c12c92fc
+PACKAGED_DLL_SHA256=5bdff6f5ecce928cb62f5dbbfe0cd3562eff455054620223cc4ba268c12c92fc
+DLL_REBUILD_1_EQ_2=PASS
+DLL_REBUILD_EQ_PACKAGED=PASS
+
+Patch inputs included in package:
+- diag/source_hotfix/patch_fgquality3_menuhud1_rc16.py
+- diag/source_hotfix/fg_interpolation_quality3.hlsl
+- diag/source_hotfix/fg_quality_menu_hud1.hlsl
+
+ZIP reproducibility is recorded after final manifest/ownership generation in RC17_PACKAGE_STATIC_VALIDATION.txt.
