@@ -1,0 +1,5 @@
+historical_series,known_case_count,historical_result,source_artifacts_status,harness_status,reference_status,provenance_status,notes
+EDGE,64,64/64,MISSING,MISSING,NIS45 exact external benchmark known; exact wrapper/config missing,RECOVERED_AGGREGATE_ONLY,Do not synthesize or backfill original assets.
+horse,64,64/64,MISSING,MISSING,NIS45 exact external benchmark known; exact wrapper/config missing,RECOVERED_AGGREGATE_ONLY,Historical content/type specifics not recovered.
+naturel,48,48/48,MISSING,MISSING,NIS45 exact external benchmark known; exact wrapper/config missing,RECOVERED_AGGREGATE_ONLY,Historical content/type specifics not recovered.
+RASTER,64,64/64,MISSING,MISSING,NIS45 exact external benchmark known; exact wrapper/config missing,RECOVERED_AGGREGATE_ONLY,Do not substitute a newly generated raster corpus for the historical one.

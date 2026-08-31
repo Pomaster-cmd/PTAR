@@ -1,0 +1,18 @@
+{
+  "evidence_id": "PTAR-GTX960M-2026-08-17-V0_10_6",
+  "source": "user-supplied results.zip from real Windows 8.1 / GTX 960M run",
+  "accepted_as_hardware_evidence": true,
+  "parity_cases": 42,
+  "parity_failed_cases": 0,
+  "parity_max_abs_lsb": 1,
+  "parity_global_mismatch_fraction": 0.04194453630217519,
+  "k185_median_ms": 0.497728,
+  "k185_p95_ms": 0.4997584,
+  "k185_p99_ms": 0.5016144,
+  "bilinear_median_ms": 0.502352,
+  "median_delta_ms": -0.004624000000000017,
+  "gpu_png_files": 42,
+  "gpu_png_zero_byte_files": 42,
+  "gpu_png_status": "INVALID_FORENSIC_OUTPUTS_ZERO_BYTE",
+  "note": "Parity comparison happened in memory before PNG persistence; the zero-byte PNG defect does not invalidate the recorded parity result."
+}
