@@ -1,0 +1,41 @@
+name: STRICTPAIR Gate D Lab
+
+on:
+  push:
+    branches:
+      - lab/strictpair-gate-d
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  binary-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install disassembler dependency
+        run: python -m pip install --disable-pip-version-check capstone==5.0.6
+
+      - name: Run STRICTPAIR Gate D audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python diag/source_hotfix/strictpair_gate_d_audit.py win81_nis_dx11_x64.dll | tee STRICTPAIR_GATE_D_AUDIT.log
+          grep -q '^AUDIT_COMPLETE=1$' STRICTPAIR_GATE_D_AUDIT.log
+
+      - name: Upload audit log
+        uses: actions/upload-artifact@v4
+        with:
+          name: strictpair-gate-d-audit
+          path: STRICTPAIR_GATE_D_AUDIT.log
+          if-no-files-found: error
+          retention-days: 7
