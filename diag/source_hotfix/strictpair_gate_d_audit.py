@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""STRICTPAIR Gate D static binary audit for PTAR RC18/DWMPHASE2.
+"""STRICTPAIR Gate D pass 3: compact destructive-path audit.
 
-Second-pass, read-only lab tool.  It never patches the DLL.
+Read-only.  The goal is intentionally narrow:
+  F8 diagnostic label -> backing counter -> every executable writer ->
+  local branch predicate + direct callers of the writer's pdata function.
 
-The first pass only decoded .text.  RC18 also has executable injected sections
-(.fgov/.fgdia/.dwmlab), so this pass decodes every executable PE section,
-resolves diagnostic string xrefs (direct and through pointer cells), and maps
-all readers/writers of the counters involved in source/publisher/mailbox/drop
-handling.
+This is the decision gate between:
+  A) one-pair source back-pressure + legacy transport, or
+  B) bypassing the lossy policy layer with a dedicated STRICTPAIR FIFO.
 """
 from __future__ import annotations
 
@@ -16,47 +16,26 @@ import struct
 import sys
 from pathlib import Path
 
-from capstone import Cs, CS_ARCH_X86, CS_MODE_64, CS_AC_READ, CS_AC_WRITE
-from capstone.x86 import X86_OP_IMM, X86_OP_MEM, X86_REG_RIP
+from capstone import Cs, CS_ARCH_X86, CS_MODE_64, CS_AC_WRITE
+from capstone.x86 import (
+    X86_OP_IMM, X86_OP_MEM, X86_OP_REG,
+    X86_REG_RIP, X86_REG_R8D,
+)
 
-IMAGE_BASE_EXPECTED = 0x180000000
-IMAGE_SCN_MEM_EXECUTE = 0x20000000
+IMAGE_BASE = 0x180000000
+EXECUTE = 0x20000000
 
-LABELS = [
-    b"SOURCE SUBMITS",
-    b"SOURCE FPS",
-    b"SOURCE QUEUE FULL",
-    b"GENERATED BUSY DROPS",
-    b"LATE MIDPOINT DROPS",
-    b"PRESENT QUEUE DROPS",
-    b"MAILBOX GENERATED DROPS",
-    b"NO-FREE-JOB DROPS",
-    b"PUBLISHER GENERATED COALESCED",
-    b"REAL_ONLY",
+TARGET_LABELS = [
+    "SOURCE QUEUE FULL",
+    "GENERATED BUSY DROPS",
+    "LATE MIDPOINT DROPS",
+    "PRESENT QUEUE DROPS",
+    "MAILBOX GENERATED DROPS",
+    "NO-FREE-JOB DROPS",
+    "PUBLISHER GENERATED COALESCED",
+    "REAL_ONLY",
 ]
-
-# RVAs observed in pass 1.  Pass 2 maps *every* executable xref to them and
-# emits neighborhoods so reachability predicates can be inspected.
-COUNTER_RVAS = [
-    0x2CCE55C, 0x2CCE560, 0x2CCE564, 0x2CCE568, 0x2CCE56C, 0x2CCE570,
-    0x2CCE5CC, 0x2CCE5D0, 0x2CCE5F0, 0x2CCE608, 0x2CCE644,
-    0x2C9600C, 0x2C9604C, 0x2C96054, 0x2CCF3F0, 0x2CC4214,
-    0x2C7E068, 0x2C7E06C, 0x2C7E070, 0x2C7E10C, 0x2C92544,
-    0x4B114,
-]
-
-SEEDS = {
-    "source_present_wrapper": 0xC6C0,
-    "source_present1_wrapper": 0xD590,
-    "source_submit_function": 0x127C0,
-    "source_submit_failure_writer": 0x12ACC,
-    "source_pair_pipeline": 0x12C90,
-    "vblank_wait_helper": 0x26400,
-    "present_helper": 0x26540,
-    "mailbox_selector": 0x267D0,
-    "mailbox_selector_failure": 0x26D1D,
-    "post_recovery_candidate": 0x27C20,
-}
+REFERENCE_LABELS = ["SOURCE SUBMITS", "SOURCE FPS"]
 
 
 def u16(b, o): return struct.unpack_from("<H", b, o)[0]
@@ -65,348 +44,287 @@ def u64(b, o): return struct.unpack_from("<Q", b, o)[0]
 
 
 class PE:
-    def __init__(self, blob: bytes):
-        self.b = blob
-        if blob[:2] != b"MZ":
-            raise RuntimeError("MZ signature missing")
-        self.e_lfanew = u32(blob, 0x3C)
-        if blob[self.e_lfanew:self.e_lfanew+4] != b"PE\0\0":
-            raise RuntimeError("PE signature missing")
-        coff = self.e_lfanew + 4
-        self.machine = u16(blob, coff)
-        self.nsec = u16(blob, coff + 2)
-        self.optsz = u16(blob, coff + 16)
-        self.opt = coff + 20
-        if self.machine != 0x8664 or u16(blob, self.opt) != 0x20B:
-            raise RuntimeError("Expected PE32+ x64")
-        self.image_base = u64(blob, self.opt + 24)
-        self.shoff = self.opt + self.optsz
+    def __init__(self, b: bytes):
+        self.b = b
+        if b[:2] != b"MZ": raise RuntimeError("MZ missing")
+        p = u32(b, 0x3C)
+        if b[p:p+4] != b"PE\0\0": raise RuntimeError("PE missing")
+        coff = p + 4
+        if u16(b, coff) != 0x8664: raise RuntimeError("not x64")
+        n = u16(b, coff + 2)
+        optsz = u16(b, coff + 16)
+        opt = coff + 20
+        if u16(b, opt) != 0x20B: raise RuntimeError("not PE32+")
+        self.base = u64(b, opt + 24)
+        sh = opt + optsz
         self.sections = []
-        for i in range(self.nsec):
-            o = self.shoff + i * 40
-            name = blob[o:o+8].rstrip(b"\0").decode("ascii", "replace")
-            vs, va, rs, rp = struct.unpack_from("<IIII", blob, o + 8)
-            chars = u32(blob, o + 36)
-            self.sections.append({
-                "name": name, "vs": vs, "va": va, "rs": rs, "rp": rp,
-                "chars": chars, "exec": bool(chars & IMAGE_SCN_MEM_EXECUTE),
-            })
+        for i in range(n):
+            o = sh + 40*i
+            name = b[o:o+8].rstrip(b"\0").decode("ascii", "replace")
+            vs, va, rs, rp = struct.unpack_from("<IIII", b, o+8)
+            ch = u32(b, o+36)
+            self.sections.append(dict(name=name, vs=vs, va=va, rs=rs, rp=rp,
+                                      exec=bool(ch & EXECUTE)))
 
-    def sec(self, name):
+    def sec_rva(self, rva):
         for s in self.sections:
-            if s["name"] == name:
-                return s
-        raise KeyError(name)
-
-    def section_for_rva(self, rva):
-        for s in self.sections:
-            if s["va"] <= rva < s["va"] + max(s["vs"], s["rs"]):
-                return s
+            if s["va"] <= rva < s["va"] + max(s["vs"], s["rs"]): return s
         return None
-
-    def rva_to_off(self, rva):
-        s = self.section_for_rva(rva)
-        if not s:
-            raise KeyError(f"RVA {rva:#x}")
-        return s["rp"] + (rva - s["va"])
 
     def off_to_rva(self, off):
         for s in self.sections:
             if s["rp"] <= off < s["rp"] + s["rs"]:
-                return s["va"] + (off - s["rp"])
-        raise KeyError(f"offset {off:#x}")
+                return s["va"] + off - s["rp"]
+        return None
+
+    def section(self, name):
+        for s in self.sections:
+            if s["name"] == name: return s
+        return None
 
 
-def pdata_ranges(pe: PE):
-    try:
-        s = pe.sec(".pdata")
-    except KeyError:
-        return []
-    raw = pe.b[s["rp"]:s["rp"] + s["rs"]]
+def pdata(pe: PE):
+    s = pe.section(".pdata")
     out = []
-    for o in range(0, len(raw) - 11, 12):
-        begin, end, unwind = struct.unpack_from("<III", raw, o)
-        if begin == end == unwind == 0:
-            continue
-        if begin < end:
-            out.append((begin, end, unwind))
+    if not s: return out
+    raw = pe.b[s["rp"]:s["rp"]+s["rs"]]
+    for o in range(0, len(raw)-11, 12):
+        a,b,u = struct.unpack_from("<III", raw, o)
+        if a and a < b: out.append((a,b,u))
     out.sort()
     return out
 
 
-def containing_func(ranges, rva):
-    for a, b, u in ranges:
-        if a <= rva < b:
-            return a, b, u
+def func_of(ranges, rva):
+    for a,b,u in ranges:
+        if a <= rva < b: return (a,b)
     return None
 
 
-def fmt_func(pe, ranges, rva):
-    f = containing_func(ranges, rva)
-    if f:
-        return f"{f[0]:#x}-{f[1]:#x}"
-    s = pe.section_for_rva(rva)
-    return f"{s['name']}:no-pdata" if s else "unmapped"
-
-
-def rip_targets(ins):
-    out = []
-    try:
-        operands = ins.operands
-    except Exception:
-        return out
-    for op in operands:
+def rip_refs(ins):
+    refs = []
+    for op in ins.operands:
         if op.type == X86_OP_MEM and op.mem.base == X86_REG_RIP:
-            target = ins.address + ins.size + op.mem.disp
-            rw = []
-            if op.access & CS_AC_READ:
-                rw.append("R")
-            if op.access & CS_AC_WRITE:
-                rw.append("W")
-            # Some Capstone builds leave access unset for LEA. It is an address
-            # reference, not a memory read, but keeping '?' is useful for xrefs.
-            out.append((target, "".join(rw) or "?"))
-    return out
+            refs.append((ins.address + ins.size + op.mem.disp,
+                         bool(op.access & CS_AC_WRITE)))
+    return refs
 
 
-def direct_call_target(ins):
-    if ins.mnemonic != "call":
-        return None
-    try:
-        if len(ins.operands) == 1 and ins.operands[0].type == X86_OP_IMM:
-            return ins.operands[0].imm
-    except Exception:
-        pass
+def direct_call(ins):
+    if ins.mnemonic == "call" and len(ins.operands) == 1 and ins.operands[0].type == X86_OP_IMM:
+        return ins.operands[0].imm
     return None
 
 
-def disasm_exec_sections(pe: PE):
-    md = Cs(CS_ARCH_X86, CS_MODE_64)
-    md.detail = True
-    by_section = {}
-    all_ins = []
+def decode(pe: PE):
+    md = Cs(CS_ARCH_X86, CS_MODE_64); md.detail = True
+    bysec = {}
+    allins = []
     for s in pe.sections:
-        if not s["exec"] or not s["rs"]:
-            continue
-        raw = pe.b[s["rp"]:s["rp"] + s["rs"]]
-        ins = list(md.disasm(raw, pe.image_base + s["va"]))
-        by_section[s["name"]] = ins
-        all_ins.extend(ins)
-    all_ins.sort(key=lambda i: i.address)
-    return by_section, all_ins
+        if not s["exec"] or not s["rs"]: continue
+        raw = pe.b[s["rp"]:s["rp"]+s["rs"]]
+        seq = list(md.disasm(raw, pe.base+s["va"]))
+        bysec[s["name"]] = seq
+        allins.extend(seq)
+    allins.sort(key=lambda x:x.address)
+    return bysec, allins
 
 
-def ins_line(pe, ranges, ins):
-    rva = ins.address - pe.image_base
-    s = pe.section_for_rva(rva)
-    sec = s["name"] if s else "?"
-    refs = rip_targets(ins)
-    suffix = ""
-    if refs:
-        suffix = " ; " + ", ".join(f"{rw}@{(t-pe.image_base):#x}" for t, rw in refs)
-    ct = direct_call_target(ins)
-    if ct is not None:
-        suffix += f" ; CALL_RVA={(ct-pe.image_base):#x}"
-    return f"{sec}:{rva:08x}  {ins.bytes.hex(' '):<28} {ins.mnemonic:<8} {ins.op_str}{suffix}"
+def xref_index(allins):
+    idx = {}
+    for ins in allins:
+        for va,wr in rip_refs(ins): idx.setdefault(va, []).append((ins,wr))
+    return idx
 
 
-def section_window(by_section, pe, center_rva, before=10, after=16):
-    s = pe.section_for_rva(center_rva)
-    if not s or s["name"] not in by_section or not by_section[s["name"]]:
-        return []
-    seq = by_section[s["name"]]
-    target = pe.image_base + center_rva
-    idx = min(range(len(seq)), key=lambda i: abs(seq[i].address - target))
-    return seq[max(0, idx-before):min(len(seq), idx+after+1)]
-
-
-def label_occurrences(pe: PE, label: bytes):
-    out = []
-    pos = 0
+def str_rvas(pe: PE, text: str):
+    needle = text.encode("ascii")
+    out=[]; p=0
     while True:
-        pos = pe.b.find(label, pos)
-        if pos < 0:
-            break
-        try:
-            rva = pe.off_to_rva(pos)
-            out.append((pos, rva))
-        except KeyError:
-            pass
-        pos += 1
+        p=pe.b.find(needle,p)
+        if p<0: break
+        r=pe.off_to_rva(p)
+        if r is not None: out.append(r)
+        p += 1
+    return sorted(set(out))
+
+
+def seq_index(seq, address):
+    # direct xrefs always come from decoded instructions, so equality should work.
+    for i,x in enumerate(seq):
+        if x.address == address: return i
+    return None
+
+
+def fmt(pe: PE, ins):
+    rva=ins.address-pe.base
+    s=pe.sec_rva(rva)
+    sec=s["name"] if s else "?"
+    return f"{sec}:{rva:#x} {ins.mnemonic} {ins.op_str}"
+
+
+def infer_counter_from_label_xref(pe: PE, bysec, label_xref):
+    """FG diagnostics convention: MOV R8D,[counter] shortly before LEA RDX,[label]."""
+    rva=label_xref.address-pe.base
+    s=pe.sec_rva(rva)
+    if not s or s["name"] not in bysec: return None, []
+    seq=bysec[s["name"]]; i=seq_index(seq,label_xref.address)
+    if i is None: return None, []
+    evidence=[]
+    for j in range(i-1,max(-1,i-9),-1):
+        q=seq[j]
+        evidence.append(q)
+        if q.mnemonic != "mov" or len(q.operands)<2: continue
+        if q.operands[0].type != X86_OP_REG or q.operands[0].reg != X86_REG_R8D: continue
+        refs=rip_refs(q)
+        if refs:
+            return refs[0][0]-pe.base, list(reversed(evidence))
+    return None, list(reversed(evidence))
+
+
+def local_window(pe: PE, bysec, ins, before=9, after=5):
+    s=pe.sec_rva(ins.address-pe.base)
+    if not s or s["name"] not in bysec: return []
+    seq=bysec[s["name"]]; i=seq_index(seq,ins.address)
+    if i is None:return []
+    return seq[max(0,i-before):min(len(seq),i+after+1)]
+
+
+def nearest_predicate(pe: PE, bysec, ins):
+    s=pe.sec_rva(ins.address-pe.base)
+    if not s or s["name"] not in bysec:return []
+    seq=bysec[s["name"]]; i=seq_index(seq,ins.address)
+    if i is None:return []
+    found=[]
+    # Keep only recent compare/test + conditional branches. This is compact but
+    # preserves enough machine-code context to classify saturation vs policy loss.
+    for q in seq[max(0,i-14):i+2]:
+        m=q.mnemonic
+        if m in ("cmp","test","bt") or (m.startswith("j") and m not in ("jmp",)):
+            found.append(q)
+    return found[-6:]
+
+
+def is_writer(ins, counter_va):
+    for va,wr in rip_refs(ins):
+        if va != counter_va: continue
+        if wr: return True
+        # Capstone occasionally omits access flags for RMW forms.
+        if ins.mnemonic in ("inc","dec","xadd","cmpxchg","or","and","xor","add","sub"):
+            for op in ins.operands:
+                if op.type==X86_OP_MEM and op.mem.base==X86_REG_RIP:
+                    return True
+    return False
+
+
+def direct_callers(pe: PE, allins, fn):
+    if not fn:return []
+    a,b=fn; target=pe.base+a
+    out=[]
+    for ins in allins:
+        if direct_call(ins)==target: out.append(ins)
     return out
 
 
-def raw_pointer_cells(pe: PE, target_rva):
-    """Find raw section cells containing VA64 or RVA32 of target_rva."""
-    pats = [
-        ("VA64", struct.pack("<Q", pe.image_base + target_rva), 8),
-        ("RVA32", struct.pack("<I", target_rva), 4),
-    ]
-    found = []
-    for kind, pat, width in pats:
-        for s in pe.sections:
-            if not s["rs"]:
-                continue
-            raw = pe.b[s["rp"]:s["rp"] + s["rs"]]
-            p = 0
-            while True:
-                p = raw.find(pat, p)
-                if p < 0:
-                    break
-                rva = s["va"] + p
-                if rva != target_rva:  # suppress self/string coincidence
-                    found.append((kind, rva, s["name"]))
-                p += width
-    return sorted(set(found), key=lambda x: (x[1], x[0]))
-
-
-def build_target_xrefs(all_ins):
-    xrefs = {}
-    for ins in all_ins:
-        for target, rw in rip_targets(ins):
-            xrefs.setdefault(target, []).append((ins, rw))
-    return xrefs
-
-
-def writer_kind(ins, access):
-    m = ins.mnemonic
-    if "W" in access:
-        return "WRITE"
-    if m in ("inc", "dec", "xadd", "cmpxchg", "lock"):
-        return "POSSIBLE_WRITE"
-    return "READ/ADDR"
+def classify_hint(label, writer_count, predicates):
+    # Not a proof: print deterministic audit hints only. Final classification is
+    # made from emitted machine-code context.
+    txt=" ".join(q.mnemonic+" "+q.op_str for q in predicates).lower()
+    if writer_count==0: return "NO_EXEC_WRITER_FOUND"
+    saturation_words=("cmp", "test")
+    if any(x in txt for x in saturation_words): return "HAS_LOCAL_GUARD_REVIEW_REQUIRED"
+    return "UNGUARDED_OR_REMOTE_GUARD_REVIEW_REQUIRED"
 
 
 def main():
-    if len(sys.argv) != 2:
-        raise SystemExit("usage: strictpair_gate_d_audit.py win81_nis_dx11_x64.dll")
-    path = Path(sys.argv[1])
-    blob = path.read_bytes()
-    pe = PE(blob)
-    ranges = pdata_ranges(pe)
-    by_section, all_ins = disasm_exec_sections(pe)
-    target_xrefs = build_target_xrefs(all_ins)
+    if len(sys.argv)!=2: raise SystemExit("usage: script DLL")
+    path=Path(sys.argv[1]); blob=path.read_bytes(); pe=PE(blob)
+    if pe.base!=IMAGE_BASE: raise RuntimeError(f"image base {pe.base:#x}")
+    ranges=pdata(pe); bysec,allins=decode(pe); xrefs=xref_index(allins)
 
-    print("STRICTPAIR_GATE_D_AUDIT=2")
-    print("FILE=" + str(path))
-    print("SIZE=" + str(len(blob)))
-    print("SHA256=" + hashlib.sha256(blob).hexdigest())
-    print(f"IMAGE_BASE={pe.image_base:#x}")
-    print("SECTIONS=" + ",".join(
-        f"{s['name']}@{s['va']:#x}+{max(s['vs'],s['rs']):#x}:exec={int(s['exec'])}"
-        for s in pe.sections))
-    print(f"PDATA_RANGES={len(ranges)}")
-    print("EXEC_INSNS=" + ",".join(f"{k}:{len(v)}" for k,v in by_section.items()))
-    print(f"EXEC_INSNS_TOTAL={len(all_ins)}")
+    print("STRICTPAIR_GATE_D_COMPACT=3")
+    print("SHA256="+hashlib.sha256(blob).hexdigest())
+    print("SIZE="+str(len(blob)))
+    print("EXEC_SECTIONS="+",".join(f"{k}:{len(v)}" for k,v in bysec.items()))
     print()
 
-    if pe.image_base != IMAGE_BASE_EXPECTED:
-        raise RuntimeError(f"unexpected image base {pe.image_base:#x}")
+    mapping={}
+    for label in TARGET_LABELS+REFERENCE_LABELS:
+        candidates=[]
+        for srva in str_rvas(pe,label):
+            for ins,wr in xrefs.get(pe.base+srva,[]):
+                counter,evidence=infer_counter_from_label_xref(pe,bysec,ins)
+                if counter is not None:
+                    candidates.append((srva,ins,counter,evidence))
+        # Diagnostic duplicates can exist. Deduplicate by backing counter.
+        bycounter={}
+        for c in candidates: bycounter.setdefault(c[2],c)
+        mapping[label]=list(bycounter.values())
 
-    print("=== DIAGNOSTIC LABEL XREFS ALL EXEC SECTIONS ===")
-    label_summary = {}
-    for label in LABELS:
-        text = label.decode("ascii")
-        occ = label_occurrences(pe, label)
-        direct_total = 0
-        indirect_total = 0
-        print(f"LABEL {text!r}: occurrences={len(occ)}")
-        for off, rva in occ:
-            direct = target_xrefs.get(pe.image_base + rva, [])
-            direct_total += len(direct)
-            print(f"  string off={off:#x} rva={rva:#x} direct_xrefs={len(direct)}")
-            for ins, rw in direct:
-                irva = ins.address - pe.image_base
-                print(f"    DIRECT {irva:#x} func={fmt_func(pe,ranges,irva)} access={rw} {ins.mnemonic} {ins.op_str}")
-                for q in section_window(by_section, pe, irva, 7, 14):
-                    print("      " + ins_line(pe, ranges, q))
-            cells = raw_pointer_cells(pe, rva)
-            print(f"    pointer_cells={len(cells)}")
-            for kind, crva, csec in cells[:32]:
-                xs = target_xrefs.get(pe.image_base + crva, [])
-                indirect_total += len(xs)
-                print(f"      CELL {kind} {csec}:{crva:#x} exec_xrefs={len(xs)}")
-                for ins, rw in xs:
-                    irva = ins.address - pe.image_base
-                    print(f"        VIA_CELL {irva:#x} func={fmt_func(pe,ranges,irva)} access={rw} {ins.mnemonic} {ins.op_str}")
-                    for q in section_window(by_section, pe, irva, 5, 10):
-                        print("          " + ins_line(pe, ranges, q))
-        label_summary[text] = (direct_total, indirect_total)
-        print()
-
-    print("=== SUSPECT COUNTER READERS/WRITERS ===")
-    function_hits = {}
-    for rva in COUNTER_RVAS:
-        xs = target_xrefs.get(pe.image_base + rva, [])
-        print(f"COUNTER {rva:#x} xrefs={len(xs)}")
-        for ins, rw in xs:
-            irva = ins.address - pe.image_base
-            f = containing_func(ranges, irva)
-            fkey = f[:2] if f else (irva, irva+ins.size)
-            function_hits.setdefault(fkey, set()).add(rva)
-            print(f"  {writer_kind(ins,rw)} at={irva:#x} func={fmt_func(pe,ranges,irva)} access={rw} {ins.mnemonic} {ins.op_str}")
-            for q in section_window(by_section, pe, irva, 7, 10):
-                print("    " + ins_line(pe, ranges, q))
-        print()
-
-    print("=== FUNCTIONS TOUCHING SUSPECT COUNTERS ===")
-    for (a,b), targets in sorted(function_hits.items()):
-        print(f"FUNC {a:#x}-{b:#x} counters=" + ",".join(hex(x) for x in sorted(targets)))
-        # Direct call summary within pdata-backed functions; enough to identify
-        # publisher/selector/recovery relationships without flooding the log.
-        calls = []
-        for ins in all_ins:
-            rva = ins.address - pe.image_base
-            if a <= rva < b:
-                ct = direct_call_target(ins)
-                if ct is not None:
-                    calls.append((rva, ct-pe.image_base))
-        if calls:
-            print("  CALLS " + ", ".join(f"{src:#x}->{dst:#x}" for src,dst in calls))
-        else:
-            print("  CALLS none/direct-not-found")
+    print("=== LABEL_TO_COUNTER ===")
+    for label in TARGET_LABELS+REFERENCE_LABELS:
+        cs=mapping[label]
+        if not cs:
+            print(f"LABEL={label} COUNTER=UNRESOLVED")
+            continue
+        for srva,ins,counter,evidence in cs:
+            print(f"LABEL={label} COUNTER={counter:#x} LABEL_RVA={srva:#x} XREF={ins.address-pe.base:#x}")
     print()
 
-    print("=== KNOWN HOT PATH ENTRY WINDOWS ===")
-    for name, rva in SEEDS.items():
-        print(f"SEED {name} rva={rva:#x} func={fmt_func(pe,ranges,rva)}")
-        for q in section_window(by_section, pe, rva, 12, 20):
-            print("  " + ins_line(pe, ranges, q))
-        print()
+    unresolved=[]
+    multi=[]
+    non_saturation_candidates=[]
+    print("=== DESTRUCTIVE_WRITERS ===")
+    for label in TARGET_LABELS:
+        cs=mapping[label]
+        if not cs:
+            unresolved.append(label)
+            print(f"PATH={label} RESULT=UNRESOLVED_LABEL_COUNTER")
+            continue
+        if len(cs)>1:
+            multi.append(label)
+        for _,_,counter,_ in cs:
+            cva=pe.base+counter
+            writers=[ins for ins in allins if is_writer(ins,cva)]
+            print(f"PATH={label} COUNTER={counter:#x} WRITERS={len(writers)}")
+            if not writers:
+                print("  RESULT=NO_EXEC_WRITER_FOUND")
+            for wi,w in enumerate(writers,1):
+                wrva=w.address-pe.base; fn=func_of(ranges,wrva)
+                callers=direct_callers(pe,allins,fn)
+                preds=nearest_predicate(pe,bysec,w)
+                print(f"  WRITER#{wi} {fmt(pe,w)} FUNC="+(f"{fn[0]:#x}-{fn[1]:#x}" if fn else "NO_PDATA"))
+                print("    PREDICATES="+(" | ".join(fmt(pe,q) for q in preds) if preds else "NONE_LOCAL"))
+                print("    DIRECT_CALLERS="+(" | ".join(fmt(pe,q) for q in callers[:16]) if callers else "NONE"))
+                print("    CONTEXT_BEGIN")
+                for q in local_window(pe,bysec,w): print("      "+fmt(pe,q))
+                print("    CONTEXT_END")
+                hint=classify_hint(label,len(writers),preds)
+                print("    AUDIT_HINT="+hint)
+                if hint=="UNGUARDED_OR_REMOTE_GUARD_REVIEW_REQUIRED":
+                    non_saturation_candidates.append((label,counter,wrva))
+            print()
 
-    # Full writer index for globals touched by the source-pair function.  This
-    # answers whether another function can mutate the same queue/counter state.
-    pair = containing_func(ranges, SEEDS["source_pair_pipeline"])
-    pair_written = set()
-    if pair:
-        a,b,_ = pair
-        for ins in all_ins:
-            rva = ins.address - pe.image_base
-            if a <= rva < b:
-                for target,rw in rip_targets(ins):
-                    trva = target-pe.image_base
-                    if "W" in rw and trva >= 0:
-                        pair_written.add(trva)
-    print("=== SOURCE-PAIR GLOBAL WRITE ALIAS MAP ===")
-    for trva in sorted(pair_written):
-        xs = target_xrefs.get(pe.image_base + trva, [])
-        writers = []
-        for ins,rw in xs:
-            if "W" in rw:
-                irva = ins.address-pe.image_base
-                writers.append((irva, fmt_func(pe,ranges,irva), ins.mnemonic, ins.op_str))
-        if writers:
-            print(f"GLOBAL {trva:#x} writers={len(writers)}")
-            for irva,fn,mn,op in writers:
-                print(f"  {irva:#x} {fn} {mn} {op}")
+    # Also show all writers for source-submit counter(s), useful for proving that
+    # admission can be held before another pair enters the lossy layer.
+    print("=== SOURCE_ADMISSION_REFERENCE ===")
+    for label in REFERENCE_LABELS:
+        for _,_,counter,_ in mapping[label]:
+            writers=[ins for ins in allins if is_writer(ins,pe.base+counter)]
+            print(f"REF={label} COUNTER={counter:#x} WRITERS={len(writers)}")
+            for w in writers:
+                wrva=w.address-pe.base; fn=func_of(ranges,wrva)
+                print(f"  {fmt(pe,w)} FUNC="+(f"{fn[0]:#x}-{fn[1]:#x}" if fn else "NO_PDATA"))
     print()
 
-    print("=== LABEL SUMMARY ===")
-    for name,(d,i) in label_summary.items():
-        print(f"{name}: direct={d} via_pointer_cell={i}")
-
+    print("=== DECISION_INPUT ===")
+    print("UNRESOLVED_LABELS="+(";".join(unresolved) if unresolved else "NONE"))
+    print("MULTI_COUNTER_LABELS="+(";".join(multi) if multi else "NONE"))
+    print("REMOTE_OR_UNGUARDED_CANDIDATES="+(
+        ";".join(f"{a}@{b:#x}/writer={c:#x}" for a,b,c in non_saturation_candidates)
+        if non_saturation_candidates else "NONE"))
+    print("NOTE=HINTS_ARE_NOT_PROOF_REVIEW_WRITER_CONTEXT")
     print("AUDIT_COMPLETE=1")
 
 
-if __name__ == "__main__":
-    main()
+if __name__=="__main__": main()
