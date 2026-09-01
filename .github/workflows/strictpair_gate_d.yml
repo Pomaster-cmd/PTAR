@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - lab/strictpair-gate-d
+  pull_request:
+    branches:
+      - lab/strictpair-gate-d
   workflow_dispatch:
 
 permissions:
