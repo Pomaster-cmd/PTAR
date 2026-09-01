@@ -1,0 +1,2 @@
+STRICTPAIR Gate D CI trigger.
+No runtime/package content is changed by this file.
