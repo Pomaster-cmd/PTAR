@@ -1,0 +1,2 @@
+STRICTPAIR Gate D pass 2 CI trigger.
+Read-only binary audit; no runtime/package modification.
