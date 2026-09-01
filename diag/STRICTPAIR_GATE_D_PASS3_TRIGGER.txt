@@ -1,0 +1,2 @@
+STRICTPAIR Gate D compact pass 3 CI trigger.
+Read-only destructive-path mapping.
