@@ -1,0 +1,46 @@
+PTAR GW15 LOCK30 - LAB STATIC VALIDATION
+Date: 2026-09-03
+
+FIELD BASIS
+-----------
+GW14 hardware result:
+- verifier 60.044 Hz / 1201 valid / 0 sync / 0 parity / 0 marker gaps / 0 same-type
+- visible 31.196 FPS = 15.598 GENERATED + 15.598 REAL
+- median G dwell 33.326 ms, median R dwell 33.245 ms
+- phase median delta 0.080 ms, pair imbalance median 0.443%
+- remaining cadence mismatch 31.350%
+- raw CSV: first ~6 s dominated by G3/R1, then G2/R2 with periodic R1 correction events
+
+GW15 DESIGN
+-----------
+- Runtime is byte-identical to hardware-tested GW13 all-frame SyncInterval=2 runtime:
+  2fbd2343803af619621282fface48c469092c16d5139ec0ce52b35affb83d29d
+- Only package policy changes: FrameGenerationTargetFPS 60 -> 30.
+- Existing FGREAL governor contract is REAL target = FrameGenerationTargetFPS / 2,
+  therefore GW15 REAL target = 15 FPS.
+- On a fixed 60 Hz display, Sync2 G + Sync2 R consumes exactly 4 VBlanks/pair = 15 pairs/s.
+- The observed GW13 field source was 15.387 pairs/s, 2.58% above that service capacity.
+  This positive queue slope is consistent with the pressure/drop behavior observed in GW13.
+- GW15 removes that modelled service-rate mismatch without adding new runtime code.
+
+SYSTEMATIC LAB VALIDATION
+-------------------------
+- GW15 runtime validator: 16/16 PASS
+- PACINGVERIFIER2 single-engine validator: 44/44 PASS
+- Windows 8.1 exact-path validator: 29/29 PASS
+- PowerShell 4 compatibility validator: 29/29 PASS
+- F4 diagnostic field-regression validator: 21/21 PASS
+- GW15 package validator: 252/252 PASS (including exact SHA manifest + ownership coverage)
+- runtime size 320000 bytes / 9 PE sections / KERNEL32+USER32 static imports only
+- GW12 -> GW15 runtime patch deterministic and reproduces the exact GW13 Sync2 binary
+- diagnostic beeps retained: 900 Hz start / 1400 Hz end / 320 Hz marker error
+- no Resolve-Path, Add-Type, invalid New-Item -LiteralPath, Compress-Archive or Expand-Archive in pacing runner
+
+HARDWARE GATE STILL REQUIRED
+----------------------------
+The lab cannot reproduce GTX 960M / Windows 8.1 DWM timing. The hardware test must verify:
+- ~30 visible FPS total, ~15 G + ~15 R
+- G/R dwell close to 33.3/33.3 ms from the start of the measurement
+- gaps and same-type transitions near zero
+- late midpoint/load-shed pressure near zero
+- soft-OFF remains functional

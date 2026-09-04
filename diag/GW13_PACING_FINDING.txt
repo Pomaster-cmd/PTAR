@@ -1,0 +1,46 @@
+GW13 PACE2 DESIGN BASIS - GW12 PACING FIELD FINDING
+Date: 2026-09-03
+Machine: Windows 8.1 x64 / GTX 960M / Warhammer.exe
+Verifier: VBLANK3 single-engine, 60.050 Hz capture / 60 Hz display / sampling ratio 1.001x
+
+GW12 visible delivery is real and complete:
+- UNIQUE 31.323 FPS
+- GENERATED 15.686 FPS
+- REAL 15.637 FPS
+- marker gaps 0
+- parity failures 0
+- same-type transitions 0
+
+But visible pacing is strongly uneven:
+- REAL dwell median 16.942 ms (~1 VBlank)
+- GENERATED dwell median 49.629 ms (~3 VBlanks)
+- G->R median 49.629 ms
+- R->G median 16.942 ms
+- pair period median 66.599 ms
+- pair imbalance median 48.915%
+- 261 GENERATED dwells at ~3 VBlanks
+- 51 GENERATED dwells at ~2 VBlanks
+- 313 REAL dwells at ~1 VBlank
+- verdict STRONGLY UNEVEN / JUDDER-LIKE PACING
+
+Interpretation:
+The 31 FPS average is produced mostly as a 3:1 display rhythm, effectively G G G then R
+in VBlank residence terms. The GENERATED frame arrives one VBlank after the REAL frame,
+then remains visible for roughly three VBlanks before the next REAL. For a 60-Hz output
+and ~15-Hz source + midpoint FG, the desired first-order cadence is ~2 VBlanks per
+visible content (~33.3 ms / ~33.3 ms).
+
+GW13 PACE2 gate:
+- keep exact GW12 LOADSHEDSOFT1 topology and soft OFF;
+- change only the isolated Flip3 IDXGISwapChain::Present SyncInterval from 1 to 2;
+- no extra Sleep, WaitForVBlank, DwmFlush, second HWND, presenter rebuild or per-frame detour;
+- objective: force one visible content every two refreshes and eliminate 1/3-VBlank alternation.
+
+Hardware success gate:
+- capture rate >= 0.90x refresh;
+- visible UNIQUE near 30 FPS;
+- GENERATED and REAL both near 15 FPS;
+- marker gaps/parity/same-type transitions remain 0;
+- GENERATED dwell median ~33 ms;
+- REAL dwell median ~33 ms;
+- pair imbalance median substantially below GW12's 48.9%, target <10%.

@@ -1,0 +1,28 @@
+GWINDOW12 DESIGN BASIS - GWINDOW11 HARDWARE FINDING
+====================================================
+Date: 2026-09-03
+
+GWINDOW11 is rejected. The supplied hardware log reports:
+- P1FG7N SOURCE FPS 9
+- P1FG7N DISPLAY FPS 19
+- P1FG7N GENERATED FPS 9
+- P1FG7N REAL DISPLAY FPS 9
+- 134 GENERATED PRESENTS / 135 REAL PRESENTS
+- runtime failures 0, queue drops 0, pressure inactive
+
+The ON regression therefore occurs despite a healthy NVENC/mailbox path. GWINDOW11's only
+per-frame change relative to GWINDOW8 was a Present detour in the DWMPHASE2 wrapper.
+GWINDOW12 removes that detour completely. The GWINDOW8 presentation hot region and the
+DWM Present call are byte-identical again.
+
+The OFF freeze in GWINDOW5/GWINDOW8 is treated as a presentation-model ownership problem,
+not a game-thread failure: after the first flip-model presentation, legacy BitBlt updates to
+the same HWND are not a valid handoff target. GWINDOW12 therefore retains the same Flip3
+presenter and uses the existing P1FG7N load-shed REAL_ONLY path during soft OFF.
+
+Soft OFF mechanism:
+- internal presenter infrastructure stays armed;
+- existing load-shed remaining counter is atomically set to 0x3fffffff;
+- existing unmodified FGLoadShedConsume path skips generated work and routes REAL_ONLY;
+- no per-Present hook is added;
+- next CTRL+F6 ON clears the synthetic load-shed counter and resumes generation.

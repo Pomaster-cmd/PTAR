@@ -1,0 +1,30 @@
+GW14 G2R1 HARDWARE FINDING - 2026-09-03
+
+Measurement quality:
+- capture 60.044 Hz on 60 Hz display (1.001x), 1201/1201 valid
+- sync failures 0, parity failures 0, marker gaps 0, same-type transitions 0
+
+Visible output:
+- UNIQUE 31.196 FPS
+- GENERATED 15.598 FPS
+- REAL 15.598 FPS
+
+Global pacing:
+- G dwell median 33.326 ms; R dwell median 33.245 ms
+- G->R median 33.326 ms; R->G median 33.245 ms
+- phase median delta 0.080 ms
+- midpoint balance 99.759%
+- pair imbalance median 0.443%
+- BUT cadence mismatch events 195 / 31.350% and verifier global verdict STRONGLY UNEVEN
+
+Raw CSV phase analysis:
+- first ~0-6 s: dominant G=3 VBlank / R=1 VBlank state
+- after ~6 s: G is 2 VBlank throughout; R is mostly 2 VBlank with periodic 1-VBlank corrections
+- after 6 s counts: 219 G@2V; 183 R@2V; 36 R@1V
+- the 36 short REAL corrections are ~16.4% of steady-state pairs, consistent with maintaining ~31.3 FPS on a fixed 60 Hz display instead of an exact 30.0 FPS cadence.
+
+Interpretation:
+GW14 proves type-adaptive Sync2(G)/Sync1(R) can reach an almost perfect 2/2 median without losing frames, unlike GW13 all-Sync2 at TargetFPS=60. Remaining judder has two components: an initial phase state and periodic 3-VBlank pair corrections required by a pair rate above 15 Hz.
+
+GW15 hypothesis:
+Reuse the exact GW13 all-Sync2 runtime but set FrameGenerationTargetFPS=30. Existing FGREAL governor contract then targets REAL=15 FPS. At 60 Hz, two visible contents per source pair with Sync2 each consume exactly 4 VBlanks = 66.667 ms, matching 15 pairs/s. This should remove the queue debt that caused GW13 pressure/drops while guaranteeing 2/2 pacing from the first pair.

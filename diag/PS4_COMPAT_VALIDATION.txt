@@ -1,0 +1,30 @@
+[PASS] PS4 excludes New-Item -LiteralPath
+[PASS] PS4 excludes Resolve-Path in pacing runner
+[PASS] PS4 excludes Add-Type in pacing runner
+[PASS] PS4 excludes Compress-Archive
+[PASS] PS4 excludes Expand-Archive
+[PASS] PS4 excludes ForEach-Object -Parallel
+[PASS] PS4 excludes ConvertFrom-Json -AsHashtable
+[PASS] PS4 excludes Get-FileHash -InputStream
+[PASS] runner temp dir via .NET
+[PASS] runner no dynamic assembly invocation
+[PASS] runner executes dedicated EXE
+[PASS] runner direct Framework4 CSC
+[PASS] runner environment root transport
+[PASS] C#4/5 excludes \$"
+[PASS] C#4/5 excludes \bnameof\s*\(
+[PASS] C#4/5 excludes \?\.
+[PASS] C#4/5 excludes \busing\s+var\b
+[PASS] C#4/5 excludes \brecord\s+
+[PASS] C#4/5 excludes \breadonly\s+struct\b
+[PASS] C#4/5 excludes =>
+[PASS] C# balanced paren :: (537, 537)
+[PASS] C# balanced brace :: (216, 216)
+[PASS] C# balanced bracket :: (94, 94)
+[PASS] BAT explicit WindowsPowerShell host 01-INSTALL_GW15.bat
+[PASS] BAT explicit WindowsPowerShell host 02-VERIFY_INSTALL.bat
+[PASS] BAT explicit WindowsPowerShell host 03-ARM_VISIBLE_FRAME_VERIFIER.bat
+[PASS] BAT explicit WindowsPowerShell host 04-COLLECT_RESULTS.bat
+[PASS] BAT explicit WindowsPowerShell host 05-ROLLBACK_TEST.bat
+[PASS] BAT explicit WindowsPowerShell host 06-DESINSTALLER_PTAR_COMPLET.bat
+PS4_COMPAT_VALIDATION=29/29 PASS

@@ -1,0 +1,45 @@
+[PASS] required diag/visible_pacing/PTARVisiblePacingVerifier.cs
+[PASS] required diag/visible_pacing/run_single_engine_verifier.ps1
+[PASS] required 03-ARM_VISIBLE_FRAME_VERIFIER.bat
+[PASS] required 04-COLLECT_RESULTS.bat
+[PASS] runtime exact GW15 :: 2fbd2343803af619621282fface48c469092c16d5139ec0ce52b35affb83d29d
+[PASS] runtime mirror exact
+[PASS] single engine source has one BitBlt site :: 1
+[PASS] single engine computes G/R
+[PASS] single engine computes serial gaps
+[PASS] single engine computes oriented pacing
+[PASS] single engine measures sampling adequacy
+[PASS] single engine emits raw CSV
+[PASS] runner PS4-safe dedicated EXE compile
+[PASS] runner avoids invalid New-Item LiteralPath
+[PASS] dedicated EXE owns DPI awareness
+[PASS] marker presence gate before timer
+[PASS] start/end beeps restored
+[PASS] zero-marker verdict cannot be VERY EVEN
+[PASS] launcher passes game root via environment
+[PASS] runner has no mandatory GameRoot command argument
+[PASS] runner preflight mode present
+[PASS] preflight executes compiled EXE
+[PASS] runner path error is inside try/catch
+[PASS] field path environment transport preserves exact root
+[PASS] arm runs only unified engine
+[PASS] arm deletes obsolete dual-engine outputs
+[PASS] collector includes unified report+CSV
+[PASS] collector excludes obsolete dual engine raw files
+[PASS] Gray12/G-R marker roundtrip
+[PASS] synthetic parity contract
+[PASS] synthetic guard contract
+[PASS] hardware marker fixture decodes Gray12/G-R/parity/guards
+[PASS] smooth synthetic median ~33.333 :: (33.333, 0.0, 0.0, 100.0)
+[PASS] smooth pair imbalance p95 ~0
+[PASS] judder same average fps
+[PASS] judder midpoint balance near 0% :: 0.001499992500042513
+[PASS] judder pair imbalance p95 ~50% :: 49.99925000374998
+[PASS] synthetic serial skip decodes one gap :: 1
+[PASS] synthetic serial skip preserves same type
+[PASS] C# balanced paren :: (537, 537)
+[PASS] C# balanced brace :: (216, 216)
+[PASS] C# balanced bracket :: (94, 94)
+[PASS] obsolete fluidity directory removed
+[PASS] obsolete legacy verifier process removed
+PACINGVERIFIER2_VALIDATION=44/44 PASS

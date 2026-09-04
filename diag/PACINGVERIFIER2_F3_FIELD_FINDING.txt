@@ -1,0 +1,36 @@
+PACINGVERIFIER2 F3 FIELD FINDING
+Date: 2026-09-03
+Hardware: Windows 8.1 x64 / GTX 960M / Warhammer.exe
+
+Observed F3 result:
+- capture rate: 59.849 Hz against 60 Hz refresh (sampling ratio 0.997x)
+- capture attempts: 1197
+- marker valid samples: 0
+- low-contrast samples: 1197
+- visible FPS counters therefore 0 and pacing metrics unusable
+
+Runtime evidence from the SAME result archive:
+- VBlank diagnostics were active
+- marker rendered: 3373
+- marker accepted by PTAR: 3373
+- marker accepted G: 1684
+- marker accepted R: 1689
+- runtime marker geometry remained X=176 Y=160 W=158 H=10
+
+Interpretation:
+The runtime marker existed and was being rendered correctly; the new C# capture process was sampling
+the wrong physical pixels even though its loop cadence was correct. F3 hosted the dynamically compiled
+capture DLL inside powershell.exe. The historical native verifier is a dedicated native process and had
+already captured the same physical X/Y correctly. The leading compatibility hypothesis is desktop DPI
+virtualization/host awareness at the GDI boundary.
+
+F4 correction:
+- compile and execute a dedicated VBLANK3 EXE instead of loading a DLL into powershell.exe
+- dedicated EXE calls SetProcessDPIAware before any GDI capture object is created
+- target-host preflight actually executes the compiled EXE and validates DPI-aware + GDI access
+- after F5, marker presence is validated immediately before starting the 20-second timer
+- if the marker is not captured, abort in ~200 ms with an explicit error instead of producing a false
+  VERY EVEN zero-sample report
+- restore start and end measurement beeps
+
+Runtime GWINDOW12 is unchanged.

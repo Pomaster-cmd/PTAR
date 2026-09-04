@@ -1,0 +1,19 @@
+PACINGVERIFIER2 WIN81FIX3 FIELD FIX
+===================================
+
+Hardware failure fixed:
+- Windows PowerShell 4 rejects New-Item -LiteralPath. The previous runner used
+  New-Item -ItemType Directory -LiteralPath $tmpDir -Force before compiling the C# engine.
+- WIN81FIX3 removes that cmdlet boundary entirely and creates the temporary directory with
+  [System.IO.Directory]::CreateDirectory().
+
+Additional hardening:
+- game root still travels only through PTAR_GAME_ROOT (no quoted trailing-backslash CLI argument);
+- no Resolve-Path in the VBLANK3 runner;
+- no Add-Type in the VBLANK3 runner;
+- C# source is written with System.IO.File.WriteAllText (no New-Object encoding constructor);
+- the compiled Run method is invoked through MethodInfo.Invoke after the same preflight verifies it;
+- a package-wide PowerShell 4 compatibility validator scans every .ps1/.bat before delivery;
+- package/result ZIP names are shortened to reduce path-length pressure.
+
+Runtime FG remains byte-identical to validated GWINDOW12 LOADSHEDSOFT1.

@@ -23,6 +23,12 @@ try {
 
 $target = $root
 $targetFile = Join-Path $root 'win81_nis_install_target.txt'
+if (-not (Test-Path -LiteralPath $targetFile)) {
+    $parent = Split-Path -Parent $root
+    if ((-not (Test-Path -LiteralPath (Join-Path $root 'Warhammer.exe'))) -and (Test-Path -LiteralPath (Join-Path $parent 'Warhammer.exe'))) {
+        $target = $parent
+    }
+}
 if (Test-Path -LiteralPath $targetFile) {
     $candidate = (Get-Content -LiteralPath $targetFile -TotalCount 1).Trim().Trim('"')
     if ($candidate) {

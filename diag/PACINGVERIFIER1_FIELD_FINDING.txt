@@ -1,0 +1,27 @@
+PACINGVERIFIER1 FIELD FINDING — PARALLEL CAPTURE ALIASING
+=========================================================
+Date: 2026-09-03
+Runtime: exact GWINDOW12 LOADSHEDSOFT1 SHA-256 50cf02fee971e615f0dba26a7614e27b833486a993cf569fe5369a0fa5b41f59
+
+Previous single historical verifier on GWINDOW12:
+- capture attempts 1196 / ~20.155 s = 59.339 Hz
+- visible unique 31.009/s
+- generated 15.479/s
+- real 15.529/s
+- gaps 0
+- same-type transitions 0
+
+PACINGVERIFIER1 integrated hardware result:
+- historical counter capture attempts 598 / ~20.166 s = 29.653 Hz
+- fluidity probe capture attempts 604 / ~20.004 s = 30.193 Hz
+- sampling/refresh ratio 0.50x
+- visible unique 23.405/s
+- generated 7.834/s
+- real 15.570/s
+- gaps 155
+- same-type transitions 155
+
+The exact runtime did not change. The two simultaneous GDI capture loops divided effective desktop sampling and aliased the alternating G/R stream. The integrated report itself flagged SAMPLING QUALITY LIMITED.
+
+Conclusion:
+PACINGVERIFIER1 pacing metrics cannot establish whether the rendered stream is actually uneven. PACINGVERIFIER2 replaces both capture processes with one marker capture loop that performs count + G/R + pacing analysis from the same samples.

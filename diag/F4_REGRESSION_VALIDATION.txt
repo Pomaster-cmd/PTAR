@@ -1,0 +1,22 @@
+[PASS] diagnostic engine bundled with GW15 :: 2fbd2343803af619621282fface48c469092c16d5139ec0ce52b35affb83d29d
+[PASS] F3 field evidence capture rate: 59.849 Hz
+[PASS] F3 field evidence marker valid samples: 0
+[PASS] F3 field evidence low-contrast samples: 1197
+[PASS] F3 field evidence marker rendered: 3373
+[PASS] F3 field evidence marker accepted by PTAR: 3373
+[PASS] dedicated EXE target
+[PASS] no powershell assembly host
+[PASS] DPI awareness API present
+[PASS] DPI awareness precedes Run in Main
+[PASS] target selftest executes EXE
+[PASS] selftest checks DPI
+[PASS] marker presence gate exists
+[PASS] marker gate precedes measurement beep
+[PASS] start beep precedes timer start
+[PASS] end beep follows measurement complete
+[PASS] error beep distinct
+[PASS] no false even verdict on zero marker
+[PASS] launcher documents beeps
+[PASS] short package name
+[PASS] one BitBlt site :: 1
+F4_FIELD_REGRESSION_VALIDATION=21/21 PASS

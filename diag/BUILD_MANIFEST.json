@@ -1,0 +1,38 @@
+{
+  "package": "PTAR_GW15_LOCK30",
+  "build_date": "2026-09-03",
+  "runtime": {
+    "sha256": "2fbd2343803af619621282fface48c469092c16d5139ec0ce52b35affb83d29d",
+    "binary_source": "GW13 all-frames SyncInterval=2",
+    "binary_delta_from_gw13": "none"
+  },
+  "config_delta": {
+    "FrameGenerationTargetFPS": {
+      "from": 60,
+      "to": 30
+    },
+    "real_governor_contract": "target/2 => 15 FPS"
+  },
+  "gw14_field": {
+    "visible_unique_fps": 31.196,
+    "generated_fps": 15.598,
+    "real_fps": 15.598,
+    "g_dwell_median_ms": 33.326,
+    "r_dwell_median_ms": 33.245,
+    "cadence_mismatch_pct": 31.35,
+    "gaps": 0,
+    "same_type": 0
+  },
+  "gw13_field": {
+    "visible_unique_fps": 28.326,
+    "generated_fps": 12.939,
+    "real_fps": 15.387,
+    "pair_imbalance_pct": 0.77,
+    "late_midpoint_drops": 213
+  },
+  "objective": "30.0 visible FPS at exact 2-VBlank G + 2-VBlank R cadence on 60 Hz without GW13 queue pressure",
+  "diagnostic": "VBLANK3 PACINGVERIFIER2 single-engine F4; beeps 900 Hz start / 1400 Hz end",
+  "package_filename": "PTAR_GW15_LOCK30.zip",
+  "results_prefix": "PTAR_GW15_RESULTS_",
+  "uninstall": "production-style exact ownership/SHA"
+}

@@ -1,0 +1,17 @@
+[PASS] GW12 base exact :: 50cf02fee971e615f0dba26a7614e27b833486a993cf569fe5369a0fa5b41f59
+[PASS] GW15 runtime exact :: 2fbd2343803af619621282fface48c469092c16d5139ec0ce52b35affb83d29d
+[PASS] d3d11 mirror exact :: 2fbd2343803af619621282fface48c469092c16d5139ec0ce52b35affb83d29d
+[PASS] patcher exists
+[PASS] size unchanged 320000 :: 320000
+[PASS] section count unchanged 9
+[PASS] section topology identical
+[PASS] GW12 Present SyncInterval immediate is 1 :: ba01000000
+[PASS] GW15 Present SyncInterval immediate is 2 :: ba02000000
+[PASS] binary delta confined to Present immediate + PE checksum :: changed=2 bad=[]
+[PASS] pre-Present hot region byte-identical GW12
+[PASS] post-immediate hot region byte-identical GW12
+[PASS] GW12 soft-OFF cave byte-identical GW12
+[PASS] patcher exits 0 :: BASE_SHA256=50cf02fee971e615f0dba26a7614e27b833486a993cf569fe5369a0fa5b41f59 | OUT_SHA256=2fbd2343803af619621282fface48c469092c16d5139ec0ce52b35affb83d29d | DELTA=Present SyncInterval 1 -> 2 only + PE checksum
+[PASS] patcher reproduces byte-for-byte :: 2fbd2343803af619621282fface48c469092c16d5139ec0ce52b35affb83d29d
+[PASS] static imports remain KERNEL32+USER32 :: ['kernel32.dll', 'user32.dll']
+GW15_RUNTIME_VALIDATION=16/16 PASS
