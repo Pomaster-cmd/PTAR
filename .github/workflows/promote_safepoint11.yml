@@ -1,0 +1,10 @@
+name: PTAR SAFEPOINT11 promotion helper
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  noop:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ready
