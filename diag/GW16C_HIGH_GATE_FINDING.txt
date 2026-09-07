@@ -1,0 +1,42 @@
+PTAR GW16C HIGH-GATE FIELD FINDING — 2026-09-04
+================================================
+
+RESULT: FAIL — HIGH/60 was repeatedly armed but did not remain stable.
+
+User observation:
+- same scene reached about 33 FPS with FG OFF;
+- with GW16C AUTO enabled, visible output did not sustain 60 FPS.
+
+Direct AUTO evidence from PTAR_GW16C_RESULTS_20260904_220130.zip:
+- LOW->HIGH switches: 15
+- HIGH->LOW switches: 15
+- repeated HIGH/LOW chatter, not a controller that simply stayed LOW.
+
+External PACINGVERIFIER3 result during the run:
+- visible unique FPS: 29.196
+- generated FPS: 14.598
+- real FPS: 14.598
+- median frame interval: 33.321 ms
+- p99 frame interval: 50.190 ms
+- max frame interval: 348.934 ms
+- frame interval stddev: 13.816 ms
+- cadence mismatch events: 10
+- long holds >1.5x median: 9
+- pacing verdict: UNEVENTFUL FPS AVERAGE BUT NOTICEABLE PACING VARIANCE
+
+Root cause in GW16C policy:
+- LOW promotion proves <27 ms work for 45 samples, so HIGH is armed;
+- HIGH then used a very tight fallback gate: 6 consecutive work samples >32 ms;
+- a source around 33 FPS without FG has only about 30.3 ms/frame before FG overhead, GPU contention and scheduling variance;
+- the 32 ms gate therefore leaves very little margin and collapses HIGH rapidly;
+- after only 45 LOW source-frame backoff, the LOW branch again looks healthy and retries HIGH, producing repeated chatter.
+
+GW16D HIGHHOLD1 corrective experiment:
+- keep SAFELOWSTART1;
+- HIGH fallback threshold becomes >34 ms;
+- require 24 consecutive >34 ms work samples before fallback;
+- after a failed HIGH attempt, wait 180 LOW source frames before another retry;
+- initial LOW startup backoff remains 45 source frames;
+- upshift qualification remains 45 consecutive <27 ms samples.
+
+This is a hardware-validation experiment. It does not claim 60 FPS until externally measured.

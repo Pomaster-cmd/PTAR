@@ -1,0 +1,53 @@
+PTAR GW16F FIELD FINDING — CTRL+F8 LIVE QUALITY CRASH — 2026-09-05
+===================================================================
+
+Submitted result package: PTAR_GW16F_RESULTS_20260905_102424.zip
+Result ZIP SHA-256: be6713e40ccb3ecf308a787ff911c2fd4e81a67d9b310f989d9106d13b6cbc49
+Runtime SHA-256: b8d5804977ff175bb5e5638d28269c4788a0de209dd24ace7204d94f1fa583ea
+
+Operator report
+---------------
+GW16F NOLOCK30_1 is subjectively satisfactory for mixed-load gameplay, but CTRL+F8 still crashes/fails the active FG path when changing interpolation quality.
+
+Field evidence
+--------------
+The runtime log shows two independent hotkey defects in the inherited polling/quality path:
+
+1. CTRL+F6 still leaks into the plain F6 action.
+   Immediately after FG activation, the log contains:
+     HOTKEY FRAME GENERATION: ... ON
+     OK: ... NVENC ME ring ready at 960x544
+     ========== F6 MANUAL SCALER MODE ==========
+     POINT
+   Therefore the previous late action-call guard did not fully suppress a queued base-F6 action after CTRL release.
+
+2. The CTRL+F8 quality attempt crosses the live ME tier and tears down the FG presenter.
+   The sequence is:
+     GWINDOW5 TEARDOWN DWMFLUSH SUCCESS
+     CAPTRACE EVENT FG_PRESENTER_RELEASE
+     OK: ... NVENC ME ring ready at 640x368
+     WARN: ... isolated display presenter swapchain creation failed
+     WARN: ... separate-device preparation failed
+     HOTKEY STATUS: USR runtime status
+
+The active FG session started with the /2 ME tier at 960x544. The quality action then selected a /3-tier profile, causing a live ME-ring/presenter reprepare at 640x368. Swapchain recreation failed and the runtime dropped back to the USR path with FG disabled. A plain-F8 Status action also leaked from the CTRL+F8 chord.
+
+AUTO evidence
+-------------
+AUTO_SWITCHES.txt contains NO_AUTO_SWITCH_LOG_LINES. The CTRL+F8 failure is therefore independent from the abandoned automatic 60/30 clamp logic.
+
+Corrective contract for GW16G
+-----------------------------
+QUALITYSAFE1:
+- while FG is ON, CTRL+F8 may change quality only inside the already-created ME tier:
+    /2 tier: profile 2 QUALITY <-> profile 3 CONSERVATIVE
+    /3 tier: profile 0 LEGACY <-> profile 1 BALANCED
+- a /2 <-> /3 tier change must be selected while FG is OFF and applied on the next FG activation;
+- live quality selection must not request an ME-ring resize, presenter release or separate-device reprepare.
+
+HOTKEYSAFE2:
+- suppress/consume base F6/F8 actions at the physical CTRL poll boundary, before modifier release can expose a queued base-key action;
+- retain the previous late F6/F8 guards as defense in depth;
+- keep the passive DWM CTRL+F8 diagnostic disabled while preserving CTRL+F4/F5 diagnostics.
+
+GW16F NOLOCK30_1 presentation/performance policy must remain unchanged.

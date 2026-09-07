@@ -1,0 +1,31 @@
+PTAR GW16 BLACK-SCREEN FIELD REGRESSION — ROOT CAUSE / RETURNFIX1
+================================================================
+Field evidence: PTAR_GW16_RESULTS_20260904_200551.zip
+Observed symptom: black game image with movable Windows cursor.
+
+GW16 field log facts:
+- 552 natural ResizeBuffers failures for 1904x1041.
+- only 1 "game-controlled swapchain RTV ready" line (initial creation).
+- 0 "first USR native presenter Present completed" lines.
+- 0 CAPTRACE HEARTBEAT lines.
+- 0 P1U46 STARTUP VALIDATED lines.
+- HIGH->LOW AUTO log still occurred, proving the controller ran while presentation was being skipped.
+
+GW15 hardware-validated comparison:
+- the same natural 1904x1041 ResizeBuffers failure is recoverable and occurs in GW15;
+- each failure is followed by successful RTV recovery, the first USR Present, and continuing CAPTRACE heartbeats.
+Therefore the natural ResizeBuffers failure itself is not the regression.
+
+Exact code defect:
+- original GW12/GW15 callsites at RVA 0xC798 and 0xD678 call the REAL governor and immediately execute TEST EAX,EAX;
+- GW16 replaced that call with AutoGovernorWrapper;
+- AutoGovernorWrapper called the original governor, then QueryPerformanceCounter for telemetry;
+- QueryPerformanceCounter returns BOOL in EAX and the wrapper returned that value instead of the governor value;
+- successful QPC therefore produced EAX=1, making the original callsites take their consumed/skip branch and bypass normal source presentation/recovery.
+
+RETURNFIX1:
+- save governor EAX to wrapper stack immediately after GOV_WRAPPER returns;
+- run post-governor QPC telemetry unchanged;
+- restore governor EAX immediately before wrapper RET.
+
+No AUTO thresholds, GW15 low cadence contract, DWM SyncInterval selection, NVENC path, PTAR-NG MoE path, installer ownership policy, or verifier algorithm is changed by RETURNFIX1.

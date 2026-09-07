@@ -1,0 +1,34 @@
+PTAR GW16H SAFEPOINT6 / TDETAIL2 FIELD FINDING -> SAFEPOINT7 TDETAIL3
+===================================================================
+
+Evidence:
+- TDETAIL2 video: B18K18_QSV_20260906_142840_925_PID11648-PTAR.mp4
+- prior QUALITY reference: B18K18_QSV_20260906_120521_690_PID1176-PTAR.mp4
+- prior Q3 reference: B18K18_QSV_20260906_125219_932_PID10492-PTAR.mp4
+
+Recorder quality of TDETAIL2 run:
+- 1920x1080 / 60 FPS
+- 1040 frames / 17.33 s
+- 26 consecutive duplicates / 1039 transitions, about 2.5%
+
+TDETAIL2 result:
+- removes the strong directional softness bias of old Q3 in comparable movement regions
+- representative directional detail bias falls from roughly -18% to -21% under old Q3 to about -0.2% to -0.3% under TDETAIL2
+- however, high-motion GENERATED frames still oscillate both above and below adjacent REAL detail energy
+- median absolute REAL/G detail excursion in strong motion remains about 12.4% center, 14.0% character, 13.1% ground
+- QUALITY reference remains lower at about 6.4%, 7.6%, 7.2% respectively
+
+Interpretation:
+- removing k^2 and using Guard35-equivalent photometric floor fixed the one-sided blur pulse
+- remaining instability is caused by allowing raw motion-discontinuity trust k to attenuate the warped contribution all the way toward zero
+- this can still swing GENERATED detail sharply depending on local vector discontinuity
+
+SAFEPOINT7 / TDETAIL3 target:
+- retain ME /2, Guard35 photometric floor and denominator base 9.5 from TDETAIL2
+- compress raw trust to k_final = 0.80 + 0.20*k_raw
+- therefore raw k=1 -> 1.00; k=.5 -> .90; k=0 -> .80
+- no hard threshold, no k^2, and no more than 20% trust attenuation from the QUALITY-like warped result
+- profile 2 QUALITY remains mathematically unchanged
+- recorder, state guard, QSV scheduling, pacing, mailbox and spatial PTAR remain unchanged
+
+Hardware gate pending: same-scene PTAR+FG profile-3 TDETAIL3 video; compare REAL/G detail excursions against QUALITY and TDETAIL2 references.

@@ -11,8 +11,8 @@ run=(ROOT/'diag/visible_pacing/run_single_engine_verifier.ps1').read_text(errors
 arm=(ROOT/'03-ARM_VISIBLE_FRAME_VERIFIER.bat').read_text(errors='replace')
 finding=(ROOT/'diag/PACINGVERIFIER2_F3_FIELD_FINDING.txt').read_text(errors='replace')
 manifest=(ROOT/'diag/BUILD_MANIFEST.json').read_text(errors='replace')
-expected='2fbd2343803af619621282fface48c469092c16d5139ec0ce52b35affb83d29d'
-ck('diagnostic engine bundled with GW15',sha(ROOT/'payload/d3d11.dll')==expected,sha(ROOT/'payload/d3d11.dll'))
+expected='864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c'
+ck('diagnostic engine bundled with GW16',sha(ROOT/'payload/d3d11.dll')==expected,sha(ROOT/'payload/d3d11.dll'))
 for token in ['capture rate: 59.849 Hz','marker valid samples: 0','low-contrast samples: 1197','marker rendered: 3373','marker accepted by PTAR: 3373']:
     ck('F3 field evidence '+token,token in finding)
 ck('dedicated EXE target',"'/target:exe'" in run and "'/platform:x64'" in run)
@@ -28,7 +28,7 @@ ck('end beep follows measurement complete',src.index('MEASUREMENT COMPLETE') < s
 ck('error beep distinct','SafeBeep(320, 250)' in src)
 ck('no false even verdict on zero marker','valid == 0 || frames.Count < 3' in src and 'INVALID - MARKER NOT CAPTURED' in src)
 ck('launcher documents beeps','BIP 900 Hz' in arm and 'BIP 1400 Hz' in arm)
-ck('short package name','PTAR_GW15_LOCK30.zip' in manifest)
+ck('short package name','PTAR_GW16H_UNIFIEDREC3_SAFEPOINT11_FUSEDDETAIL1.zip' in manifest)
 ck('one BitBlt site',src.count('BitBlt(memDC')==1,src.count('BitBlt(memDC'))
 bad=[n for n,v,_ in checks if not v]
 print('F4_FIELD_REGRESSION_VALIDATION=%d/%d %s'%(len(checks)-len(bad),len(checks),'PASS' if not bad else 'FAIL'))

@@ -1,0 +1,74 @@
+[PASS] exists diag/base/GW12_BASE.dll
+[PASS] exists payload/win81_nis_dx11_x64.dll
+[PASS] exists payload/d3d11.dll
+[PASS] exists diag/patch_gw16_auto_from_gw12.py
+[PASS] exists diag/patch_gw16g_unified_recorder.py
+[PASS] exists diag/patch_gw16h_recorder_safepoint.py
+[PASS] exists diag/patch_gw16h_recorder_safepoint2.py
+[PASS] exists diag/patch_gw16h_recorder_local_gpu_state.py
+[PASS] GW12 base hash :: 50cf02fee971e615f0dba26a7614e27b833486a993cf569fe5369a0fa5b41f59
+[PASS] runtime size :: 320000
+[PASS] runtime final hash :: 961b7c0211239364920516e990f9f5a6a3284709bcd4a2a17e6a21b1a76556f2
+[PASS] d3d11 mirror byte-identical :: 961b7c0211239364920516e990f9f5a6a3284709bcd4a2a17e6a21b1a76556f2
+[PASS] patch patch_gw16_auto_from_gw12.py exit 0
+[PASS] lineage stage 1 exact hash :: 8481ef8d8694e1f1978191e55c30098c1e836cb1c3defade1e3678956402b84d
+[PASS] patch patch_gw16g_unified_recorder.py exit 0
+[PASS] lineage stage 2 exact hash :: 4c5bc494df5c6feaf01acf37a71ad486eac94b07fb82b9f5f58a78bc6801620f
+[PASS] patch patch_gw16h_recorder_safepoint.py exit 0
+[PASS] lineage stage 3 exact hash :: 6621dc14abb4f7c28f4d14568b2549f822da298fc6db9076dff7f97f252d2cf7
+[PASS] patch patch_gw16h_recorder_safepoint2.py exit 0
+[PASS] lineage stage 4 exact hash :: 7c56148f4d00f7623c4bf44e5f460d81145b660ff5743a5ea5b57610c1d0c630
+[PASS] patch patch_gw16h_recorder_local_gpu_state.py exit 0
+[PASS] lineage stage 5 exact hash :: 961b7c0211239364920516e990f9f5a6a3284709bcd4a2a17e6a21b1a76556f2
+[PASS] rebuild final byte-identical payload :: 961b7c0211239364920516e990f9f5a6a3284709bcd4a2a17e6a21b1a76556f2
+[PASS] PE section topology unchanged
+[PASS] PE optional-header location unchanged :: 144
+[PASS] PE checksum valid :: stored=00056169 calc=00056169
+[PASS] SAFEPOINT2 cave was pristine CC
+[PASS] private owner/VS/RS initialize NULL
+[PASS] recorder init call redirected to local-state wrapper :: 0x34ff4e0
+[PASS] SP2 init call originally targeted recorder GPU init :: 0x2a400
+[PASS] VS precondition SP2 shared target :: 0x2c93a38
+[PASS] VS precondition SAFEPOINT3 private target :: 0x34ff4c8
+[PASS] VS bind SP2 shared target :: 0x2c93a38
+[PASS] VS bind SAFEPOINT3 private target :: 0x34ff4c8
+[PASS] RS precondition SP2 shared target :: 0x2c93a80
+[PASS] RS precondition SAFEPOINT3 private target :: 0x34ff4d0
+[PASS] RS bind SP2 shared target :: 0x2c93a80
+[PASS] RS bind SAFEPOINT3 private target :: 0x34ff4d0
+[PASS] wrapper exact size occupied
+[PASS] wrapper ABI prologue
+[PASS] wrapper ABI epilogue
+[PASS] wrapper CALL 0x34ff4ed -> 0x2a400 :: 0x2a400
+[PASS] wrapper CALL 0x34ff537 -> 0x9fb0 :: 0x9fb0
+[PASS] wrapper CALL 0x34ff543 -> 0x9fb0 :: 0x9fb0
+[PASS] wrapper CALL 0x34ff56f -> 0x21ab0 :: 0x21ab0
+[PASS] wrapper CALL 0x34ff5c3 -> 0x9fb0 :: 0x9fb0
+[PASS] wrapper CALL 0x34ff5e8 -> 0x5b80 :: 0x5b80
+[PASS] wrapper CALL 0x34ff648 -> 0x9fb0 :: 0x9fb0
+[PASS] wrapper CALL 0x34ff654 -> 0x9fb0 :: 0x9fb0
+[PASS] wrapper CALL 0x34ff660 -> 0x9fb0 :: 0x9fb0
+[PASS] CreateVertexShader vtable +0x60 present
+[PASS] CreateRasterizerState vtable +0xB0 present
+[PASS] rasterizer descriptor exact 0x28 memset
+[PASS] rasterizer SOLID/NONE values present
+[PASS] DepthClipEnable=1 present
+[PASS] existing fullscreen VS source reused
+[PASS] existing vs_5_0 target reused
+[PASS] surgical delta has no out-of-scope bytes
+[PASS] surgical delta exact changed-byte count :: 459
+[PASS] VS pre opcode/operands unchanged
+[PASS] VS bind opcode/operands unchanged
+[PASS] RS pre opcode/operands unchanged
+[PASS] RS bind opcode/operands unchanged
+[PASS] conversion four shared FG-state references removed
+[PASS] version token SAFEPOINT3
+[PASS] version token LOCALGPU1
+[PASS] version token 961b7c0211239364920516e990f9f5a6a3284709bcd4a2a17e6a21b1a76556f2
+[PASS] version token RECORDER_LOCAL_VS_RVA=0x034FF4C8
+[PASS] version token RECORDER_LOCAL_RS_RVA=0x034FF4D0
+[PASS] README/finding documents 155
+[PASS] README/finding documents 262
+[PASS] README/finding documents recorder-local
+[PASS] README/finding documents FG OFF
+RECORDER_LOCAL_GPU_STATE_VALIDATION=73/73 PASS

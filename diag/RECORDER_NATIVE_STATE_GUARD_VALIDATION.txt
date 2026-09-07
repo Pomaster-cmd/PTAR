@@ -1,0 +1,55 @@
+[PASS] GW12 frozen base exists
+[PASS] GW12 SHA :: 50cf02fee971e615f0dba26a7614e27b833486a993cf569fe5369a0fa5b41f59
+[PASS] execute patch_gw16_auto_from_gw12.py
+[PASS] GW16G SHA :: 8481ef8d8694e1f1978191e55c30098c1e836cb1c3defade1e3678956402b84d
+[PASS] execute patch_gw16g_unified_recorder.py
+[PASS] UNIFIEDREC2 SHA :: 4c5bc494df5c6feaf01acf37a71ad486eac94b07fb82b9f5f58a78bc6801620f
+[PASS] execute patch_gw16h_recorder_safepoint.py
+[PASS] SAFEPOINT1 SHA :: 6621dc14abb4f7c28f4d14568b2549f822da298fc6db9076dff7f97f252d2cf7
+[PASS] execute patch_gw16h_recorder_safepoint2.py
+[PASS] SAFEPOINT2 SHA :: 7c56148f4d00f7623c4bf44e5f460d81145b660ff5743a5ea5b57610c1d0c630
+[PASS] execute patch_gw16h_recorder_local_gpu_state.py
+[PASS] SAFEPOINT3 SHA :: 961b7c0211239364920516e990f9f5a6a3284709bcd4a2a17e6a21b1a76556f2
+[PASS] execute patch_gw16h_recorder_native_state_guard.py
+[PASS] SAFEPOINT4 SHA :: 1b8e8673ff2b046604b282c55d4d9bcfe053ad046fa2c30a69a6b6ff5ffe6e8b
+[PASS] final size :: 320000
+[PASS] payload exact final SHA :: 1b8e8673ff2b046604b282c55d4d9bcfe053ad046fa2c30a69a6b6ff5ffe6e8b
+[PASS] d3d11 mirror exact final SHA :: 1b8e8673ff2b046604b282c55d4d9bcfe053ad046fa2c30a69a6b6ff5ffe6e8b
+[PASS] rebuilt final byte-identical payload
+[PASS] runtime mirrors byte-identical
+[PASS] PE section topology unchanged
+[PASS] PE checksum valid :: stored=00052339 calc=00052339
+[PASS] SP3 cave pristine 0x34fe804 :: len=109
+[PASS] SP3 cave pristine 0x34fecb3 :: len=282
+[PASS] SP3 cave pristine 0x34feec3 :: len=259
+[PASS] SP3 cave pristine 0x34ff67d :: len=50
+[PASS] surgical delta only :: diff=706 allowed=709
+[PASS] non-empty state-guard delta :: 706
+[PASS] SP3 isolated call original :: 0x27760
+[PASS] SAFEPOINT4 isolated call remains original :: 0x27760
+[PASS] SP3 native call original :: 0x27760
+[PASS] SAFEPOINT4 native call redirected to state guard :: 0x34fe804
+[PASS] main calls original recorder submit exactly once :: ['0x5b80', '0x34fecb3', '0x27760', '0x34feec3', '0x34ff67d']
+[PASS] save getter coverage exact :: 0x248,0x250,0x260,0x268,0x270,0x290,0x298,0x2c8,0x2d8,0x2f0,0x2f8,0x300
+[PASS] restore setter coverage exact :: 0x40,0x48,0x58,0x80,0x88,0xb8,0xc0,0x108,0x118,0x158,0x160,0x168
+[PASS] conversion state category mapping complete
+[PASS] PS SRV slot0 preserved
+[PASS] PS shader preserved
+[PASS] VS shader preserved
+[PASS] PS constant buffer slot0 preserved
+[PASS] IA input layout preserved
+[PASS] GS shader preserved
+[PASS] IA topology preserved
+[PASS] OM render targets+DSV preserved
+[PASS] OM blend state/factor/mask preserved
+[PASS] RS state preserved
+[PASS] RS viewports preserved
+[PASS] RS scissors preserved
+[PASS] save requests 8 render targets
+[PASS] viewport max count 16 encoded
+[PASS] scissor max count 16 encoded
+[PASS] release loop exact 17 COM references
+[PASS] release uses IUnknown::Release slot
+[PASS] guard does not call ClearState slot 0x2e0
+[PASS] original B18K18 conversion helper unchanged from SP3
+RECORDER_NATIVE_STATE_GUARD_VALIDATION=54/54 PASS

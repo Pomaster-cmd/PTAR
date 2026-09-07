@@ -59,9 +59,14 @@ public static class PTARVisiblePacingVerifier
         public int Serial;
         public bool Generated;
         public double StartMs;
-        public UniqueFrame(ushort sig, int serial, bool generated, double startMs)
+        // True when the transition from the previous unique marker to this one
+        // occurred across a verifier capture stall. Such intervals are observer-
+        // contaminated evidence and must not be blamed on PTAR pacing.
+        public bool TransitionContaminated;
+        public UniqueFrame(ushort sig, int serial, bool generated, double startMs, bool transitionContaminated)
         {
             Sig = sig; Serial = serial; Generated = generated; StartMs = startMs;
+            TransitionContaminated = transitionContaminated;
         }
     }
 
@@ -139,6 +144,45 @@ public static class PTARVisiblePacingVerifier
         return (ushort)sig;
     }
 
+    static bool ObserverClassificationSelfTest()
+    {
+        // Reproduce the real GW15 verifier-stall shape: the observer pauses for
+        // ~90 ms, sees serial +2 with the same type, then recovers. Those two
+        // transitions are observer-contaminated, not PTAR gaps/type breaks.
+        int recovery = 0, stalls = 0, obsMiss = 0, trueGaps = 0, trueSame = 0;
+        double refreshMs = 1000.0 / 60.0;
+        double capDt = 89.746;
+        if (capDt > 1.75 * refreshMs) { stalls++; recovery = 2; }
+
+        int lastSerial = 10; bool lastGenerated = false;
+        int serial = 12; bool generated = false;
+        int delta = (serial - lastSerial) & 0x0FFF;
+        bool contaminated = recovery > 0;
+        if (contaminated)
+        {
+            if (delta >= 1 && delta <= 2048 && delta > 1) obsMiss += delta - 1;
+            recovery--;
+        }
+        else
+        {
+            if (delta > 1 && delta <= 2048) trueGaps += delta - 1;
+            if (generated == lastGenerated) trueSame++;
+        }
+
+        lastSerial = serial; lastGenerated = generated;
+        serial = 13; generated = true;
+        delta = (serial - lastSerial) & 0x0FFF;
+        contaminated = recovery > 0;
+        if (contaminated) { recovery--; }
+        else
+        {
+            if (delta > 1 && delta <= 2048) trueGaps += delta - 1;
+            if (generated == lastGenerated) trueSame++;
+        }
+
+        return stalls == 1 && obsMiss == 1 && trueGaps == 0 && trueSame == 0 && recovery == 0;
+    }
+
     public static int SelfTest()
     {
         if (!EnsureDpiAware())
@@ -146,6 +190,12 @@ public static class PTARVisiblePacingVerifier
             Console.WriteLine("SELFTEST=FAIL DPI_AWARE=NO");
             return 3;
         }
+        if (!ObserverClassificationSelfTest())
+        {
+            Console.WriteLine("SELFTEST=FAIL OBSERVER_CLASSIFICATION");
+            return 7;
+        }
+
         int[] serials = new int[] { 0, 1, 2, 17, 1234, 2047, 2048, 4094, 4095 };
         for (int i = 0; i < serials.Length; i++)
         {
@@ -440,6 +490,9 @@ public static class PTARVisiblePacingVerifier
 
             int attempts = 0, captureFailures = 0, lowContrast = 0, valid = 0, syncFailures = 0, parityFailures = 0;
             int unique = 0, gCount = 0, rCount = 0, duplicates = 0, gaps = 0, badSteps = 0, sameType = 0, maxContrast = 0;
+            int observerStalls = 0, observerMissedContents = 0, observerAmbiguousSteps = 0, observerContaminatedTransitions = 0;
+            int observerRecoveryTransitions = 0;
+            double observerStallMaxMs = 0.0;
             List<double> captureIntervals = new List<double>();
             List<UniqueFrame> frames = new List<UniqueFrame>();
             SecondStats[] secs = new SecondStats[durationSeconds];
@@ -466,7 +519,19 @@ public static class PTARVisiblePacingVerifier
                 attempts++;
                 secs[secIndex].Cap++;
                 double capDt = (now - lastCaptureQpc) * 1000.0 / qpf;
-                if (attempts > 1) captureIntervals.Add(capDt);
+                if (attempts > 1)
+                {
+                    captureIntervals.Add(capDt);
+                    // If our own screen-capture loop was descheduled for nearly
+                    // two refreshes or more, any marker jump observed immediately
+                    // afterwards is observer loss, not proof that PTAR dropped it.
+                    if (capDt > 1.75 * refreshMs)
+                    {
+                        observerStalls++;
+                        if (capDt > observerStallMaxMs) observerStallMaxMs = capDt;
+                        observerRecoveryTransitions = 2;
+                    }
+                }
                 lastCaptureQpc = now;
 
                 ushort sig;
@@ -494,17 +559,32 @@ public static class PTARVisiblePacingVerifier
                     if (generated) { gCount++; secs[secIndex].G++; }
                     else { rCount++; secs[secIndex].R++; }
 
+                    bool transitionContaminated = false;
                     if (haveValid)
                     {
                         int delta = (serial - lastSerial) & 0x0FFF;
-                        if (delta >= 1 && delta <= 2048)
+                        transitionContaminated = observerRecoveryTransitions > 0;
+                        if (transitionContaminated)
                         {
-                            if (delta > 1) { int add = delta - 1; gaps += add; secs[secIndex].Gaps += add; }
+                            observerContaminatedTransitions++;
+                            if (delta >= 1 && delta <= 2048)
+                            {
+                                if (delta > 1) observerMissedContents += delta - 1;
+                            }
+                            else observerAmbiguousSteps++;
+                            observerRecoveryTransitions--;
                         }
-                        else { badSteps++; secs[secIndex].Bad++; }
-                        if (generated == lastGenerated) sameType++;
+                        else
+                        {
+                            if (delta >= 1 && delta <= 2048)
+                            {
+                                if (delta > 1) { int add = delta - 1; gaps += add; secs[secIndex].Gaps += add; }
+                            }
+                            else { badSteps++; secs[secIndex].Bad++; }
+                            if (generated == lastGenerated) sameType++;
+                        }
                     }
-                    frames.Add(new UniqueFrame(sig, serial, generated, ms));
+                    frames.Add(new UniqueFrame(sig, serial, generated, ms, transitionContaminated));
                     lastSig = sig;
                     lastSerial = serial;
                     lastGenerated = generated;
@@ -547,13 +627,18 @@ public static class PTARVisiblePacingVerifier
             List<double> pairPeriods = new List<double>();
             List<double> pairImbalance = new List<double>();
             int span1=0, span2=0, span3=0, span4=0, span5plus=0;
-            int cleanAlternatingTransitions=0;
+            int cleanAlternatingTransitions=0, observerExcludedPacingIntervals=0;
 
             for (int i = 1; i < frames.Count; i++)
             {
                 double dt = frames[i].StartMs - frames[i-1].StartMs;
                 if (dt <= 0.0) continue;
-                // Exclude only the first partial dwell from aggregate pacing, like PACINGDIAG1.
+                if (frames[i].TransitionContaminated)
+                {
+                    observerExcludedPacingIntervals++;
+                    continue;
+                }
+                // Exclude only the first partial dwell from the global interval aggregate.
                 if (i >= 2) intervals.Add(dt);
                 if (frames[i-1].Generated) gDwell.Add(dt); else rDwell.Add(dt);
                 if (frames[i-1].Generated && !frames[i].Generated) { gToR.Add(dt); cleanAlternatingTransitions++; }
@@ -567,7 +652,8 @@ public static class PTARVisiblePacingVerifier
             {
                 bool aAlt = frames[i-1].Generated != frames[i].Generated;
                 bool bAlt = frames[i].Generated != frames[i+1].Generated;
-                if (!aAlt || !bAlt) continue;
+                bool observerClean = !frames[i].TransitionContaminated && !frames[i+1].TransitionContaminated;
+                if (!aAlt || !bAlt || !observerClean) continue;
                 double a = frames[i].StartMs - frames[i-1].StartMs;
                 double b = frames[i+1].StartMs - frames[i].StartMs;
                 if (a <= 0.0 || b <= 0.0) continue;
@@ -603,11 +689,15 @@ public static class PTARVisiblePacingVerifier
             double longRatio=intervals.Count>0?100.0*long15/intervals.Count:0.0;
             double mismatchRatio=intervals.Count>0?100.0*cadenceMismatch/intervals.Count:0.0;
             bool samplingGood = samplingRatio >= 0.90;
+            int pacingCandidateTransitions = Math.Max(0, frames.Count - 1);
+            double cleanPacingCoverage = pacingCandidateTransitions > 0 ?
+                100.0 * (pacingCandidateTransitions - observerExcludedPacingIntervals) / pacingCandidateTransitions : 0.0;
+            bool observerCoverageGood = cleanPacingCoverage >= 85.0;
             bool alternationGood = badSteps==0 && sameType==0 && gaps==0;
 
             string pacingVerdict;
             if(valid == 0 || frames.Count < 3) pacingVerdict="INVALID - MARKER NOT CAPTURED";
-            else if(!samplingGood) pacingVerdict="SAMPLING LIMITED - PACING VERDICT NOT RELIABLE";
+            else if(!samplingGood || !observerCoverageGood) pacingVerdict="SAMPLING LIMITED - PACING VERDICT NOT RELIABLE";
             else if(!alternationGood) pacingVerdict="VISIBLE CADENCE HAS DROPS/TYPE BREAKS";
             else if(mismatchRatio <= 5.0 && pairImbP95 <= 10.0 && cv <= 12.0) pacingVerdict="VERY EVEN";
             else if(mismatchRatio <= 12.0 && pairImbP95 <= 20.0 && cv <= 20.0) pacingVerdict="MOSTLY EVEN";
@@ -616,15 +706,16 @@ public static class PTARVisiblePacingVerifier
 
             using(StreamWriter csv=new StreamWriter(csvPath,false))
             {
-                csv.WriteLine("index,start_ms,dwell_ms,signature_hex,serial,type,vblank_span,next_serial_delta");
+                csv.WriteLine("index,start_ms,dwell_ms,signature_hex,serial,type,vblank_span,next_serial_delta,transition_observer_contaminated");
                 for(int i=0;i<frames.Count;i++)
                 {
                     double next=(i+1<frames.Count)?frames[i+1].StartMs:durationMs;
                     double dwell=next-frames[i].StartMs;
                     int span=(int)Math.Round(dwell/refreshMs);
                     int delta=(i+1<frames.Count)?((frames[i+1].Serial-frames[i].Serial)&0x0FFF):0;
-                    csv.WriteLine(string.Format(CultureInfo.InvariantCulture,"{0},{1:0.000},{2:0.000},{3:X4},{4},{5},{6},{7}",
-                        i,frames[i].StartMs,dwell,frames[i].Sig,frames[i].Serial,frames[i].Generated?"G":"R",span,delta));
+                    csv.WriteLine(string.Format(CultureInfo.InvariantCulture,"{0},{1:0.000},{2:0.000},{3:X4},{4},{5},{6},{7},{8}",
+                        i,frames[i].StartMs,dwell,frames[i].Sig,frames[i].Serial,frames[i].Generated?"G":"R",span,delta,
+                        frames[i].TransitionContaminated?"1":"0"));
                 }
             }
 
@@ -645,6 +736,11 @@ public static class PTARVisiblePacingVerifier
                 sw.WriteLine("CAPTURE INTERVAL MEAN MS {0}",F(captureMean));
                 sw.WriteLine("CAPTURE INTERVAL P95 MS {0}",F(captureP95));
                 sw.WriteLine("CAPTURE INTERVAL MAX MS {0}",F(captureMax));
+                sw.WriteLine("OBSERVER STALL EVENTS {0}",observerStalls);
+                sw.WriteLine("OBSERVER STALL MAX MS {0}",F(observerStallMaxMs));
+                sw.WriteLine("OBSERVER MISSED CONTENTS {0}",observerMissedContents);
+                sw.WriteLine("OBSERVER AMBIGUOUS STEPS {0}",observerAmbiguousSteps);
+                sw.WriteLine("OBSERVER CONTAMINATED TRANSITIONS {0}",observerContaminatedTransitions);
                 sw.WriteLine("SAMPLING / REFRESH RATIO {0}x",F(samplingRatio));
                 sw.WriteLine("MARKER VALID SAMPLES {0}",valid);
                 sw.WriteLine("MARKER SYNC FAILURES {0}",syncFailures);
@@ -663,6 +759,8 @@ public static class PTARVisiblePacingVerifier
                 sw.WriteLine();
                 sw.WriteLine("========== VISIBLE FLUIDITY / FRAME PACING ==========");
                 sw.WriteLine("PACING INTERVALS {0}",intervals.Count);
+                sw.WriteLine("PACING OBSERVER-EXCLUDED INTERVALS {0}",observerExcludedPacingIntervals);
+                sw.WriteLine("PACING CLEAN COVERAGE PCT {0}",F(cleanPacingCoverage));
                 sw.WriteLine("FRAME INTERVAL MEAN MS {0}",F(mean));
                 sw.WriteLine("FRAME INTERVAL MEDIAN MS {0}",F(median));
                 sw.WriteLine("FRAME INTERVAL P05 MS {0}",F(p05));
@@ -700,17 +798,21 @@ public static class PTARVisiblePacingVerifier
                 sw.WriteLine("PACING VERDICT {0}",pacingVerdict);
                 sw.WriteLine();
                 sw.WriteLine("NOTE: counts and pacing come from the SAME capture stream; no second screen-capture process is running.");
-                sw.WriteLine("NOTE: pacing verdict is diagnostic, not an industry standard. Sampling ratio <0.90 makes timing conclusions unreliable.");
+                sw.WriteLine("NOTE: verifier capture stalls are classified as OBSERVER evidence and excluded from PTAR gap/type-break and pacing statistics.");
+                sw.WriteLine("NOTE: pacing verdict is diagnostic, not an industry standard. Sampling ratio <0.90 or clean pacing coverage <85% makes timing conclusions unreliable.");
                 sw.WriteLine("RAW PACING CSV {0}",csvPath);
             }
 
             using(StreamWriter st=new StreamWriter(statusPath,false))
             {
-                st.WriteLine("PTAR GW15 VBLANK3 SINGLE ENGINE / PACINGVERIFIER2");
+                st.WriteLine("PTAR GW16 VBLANK3 SINGLE ENGINE / PACINGVERIFIER3");
                 st.WriteLine("RESULT=SINGLE_ENGINE_MEASUREMENT_COMPLETED");
                 st.WriteLine("CAPTURE_RATE_HZ="+F(captureHz));
                 st.WriteLine("DISPLAY_REFRESH_HZ="+refreshHz.ToString(CultureInfo.InvariantCulture));
                 st.WriteLine("SAMPLING_RATIO="+F(samplingRatio));
+                st.WriteLine("OBSERVER_STALL_EVENTS="+observerStalls.ToString(CultureInfo.InvariantCulture));
+                st.WriteLine("OBSERVER_MISSED_CONTENTS="+observerMissedContents.ToString(CultureInfo.InvariantCulture));
+                st.WriteLine("PACING_CLEAN_COVERAGE_PCT="+F(cleanPacingCoverage));
                 st.WriteLine("VISIBLE_FPS="+F(visibleFps));
                 st.WriteLine("GENERATED_FPS="+F(gFps));
                 st.WriteLine("REAL_FPS="+F(rFps));
@@ -722,6 +824,7 @@ public static class PTARVisiblePacingVerifier
             Console.WriteLine("CAPTURE RATE {0} Hz / REFRESH {1} Hz / RATIO {2}x",F(captureHz),refreshHz,F(samplingRatio));
             Console.WriteLine("VISIBLE UNIQUE {0} FPS | GENERATED {1} FPS | REAL {2} FPS",F(visibleFps),F(gFps),F(rFps));
             Console.WriteLine("GAPS {0} | SAME-TYPE {1} | BAD {2}",gaps,sameType,badSteps);
+            Console.WriteLine("OBSERVER STALLS {0} | OBSERVER MISSED CONTENTS {1} | CLEAN PACING {2}%",observerStalls,observerMissedContents,F(cleanPacingCoverage));
             Console.WriteLine("FRAME MEDIAN {0} ms | P95 {1} ms | P99 {2} ms | CV {3}%",F(median),F(p95),F(p99),F(cv));
             Console.WriteLine("G DWELL {0} ms | R DWELL {1} ms | MIDPOINT BALANCE {2}%",F(gMed),F(rMed),F(midpointBalance));
             Console.WriteLine("PAIR IMBALANCE P95 {0}% | CADENCE MISMATCH {1}%",F(pairImbP95),F(mismatchRatio));

@@ -1,0 +1,88 @@
+PTAR GW16B FGGATE1 — HEAVY-SCENE FIELD FINDING
+Date: 2026-09-04
+Evidence package: PTAR_GW16B_RESULTS_20260904_210906.zip
+Evidence package SHA-256: d878c590bc2f06e50272f6f0b08af1b264ba9267dbd68ee1b195d2665728d65a
+Scene classification supplied by operator: HEAVY
+Operator observation: performance felt unstable during this run.
+
+RESULT SUMMARY
+==============
+1. FGGATE1 STARTUP/OFF ISOLATION: HARDWARE PASS
+   - no AUTO switch was logged while startup fgEnabled=0;
+   - CTRL+F6 ON appears before the single HIGH->LOW log;
+   - black-screen/cursor-only regression did not return.
+
+2. SETTLED LOW 30-Hz VISIBLE CADENCE: HARDWARE PASS
+   External VBLANK3/PACINGVERIFIER3 20-second measurement:
+   - visible FPS: 30.045
+   - generated FPS: 14.997
+   - real FPS: 15.047
+   - frame interval median: 33.323 ms
+   - frame interval p95: 33.902 ms
+   - frame interval p99: 34.677 ms
+   - generated dwell median: 33.247 ms
+   - real dwell median: 33.395 ms
+   - pair imbalance median: 0.346%
+   - pair imbalance p95: 2.720%
+   - midpoint balance: 99.556%
+   - clean pacing coverage: 99.667%
+   - one verifier-side observer stall; zero missed contents;
+   - pacing verdict: VERY EVEN.
+
+   Therefore the user's instability impression is NOT explained by sustained 30-Hz
+   presentation chatter during the captured window. AUTO_SWITCHES contains exactly one
+   transition, HIGH->LOW; there is no repeated LOW<->HIGH oscillation.
+
+3. TRANSIENT RUNTIME PRESSURE: REAL EVIDENCE PRESENT
+   The runtime session telemetry captured at CTRL+F6 OFF shows materially larger transient
+   spikes than the preceding GW16A heavy run:
+
+   GW16A heavy -> GW16B heavy
+   - QPC lateness max:       63.328 ms -> 34.769 ms
+   - NVENC event max:        25.804 ms -> 72.980 ms
+   - game submit max:         2.163 ms -> 169.311 ms
+   - NVENC heavy events:          0   -> 1
+   - NVENC admission age trips:   0   -> 1
+   - NVENC oldest age max:    0 ms    -> 71.352 ms
+   - >=50 ms recovery arms:       0   -> 1
+   - QPC resyncs:                 0   -> 1
+
+   The NVENC heavy event is recorded on source sequence 2, with 72.980 ms event latency.
+   This places the pressure event at the very beginning of the FG activation, while GW16B
+   still begins by attempting HIGH and waits for six >32-ms source-work samples before
+   switching to LOW.
+
+INTERPRETATION
+==============
+The operator's observation is credible and is supported by real transient telemetry even
+though the settled external marker cadence is excellent. The likely mechanism is the blind
+initial HIGH probe: on an already-heavy scene, GW16B first asks the pipeline to pursue the
+60-visible target, which can create a short NVENC/source pressure burst before the six-sample
+HIGH->LOW gate finishes.
+
+This is distinct from cadence chatter:
+- one and only one AUTO HIGH->LOW transition occurred;
+- once settled in LOW, the external 20-second cadence remained ~30 FPS and VERY EVEN.
+
+NEXT FIX — GW16C SAFELOWSTART1
+==============================
+Do not probe HIGH blindly when FG is first enabled.
+- FG OFF remains unchanged: neutral AUTO, target120 => up to 60 REAL/s, Sync1.
+- CTRL+F6 ON initializes directly on the already hardware-validated LOW branch:
+  target30 => ~15 REAL + ~15 GENERATED, Sync2 => ~30 visible.
+- LOW waits 45 source frames, then requires 45 consecutive source-work samples <27 ms
+  before promoting to HIGH.
+- Once HIGH is active, six consecutive >32-ms samples still return to LOW.
+
+This changes the controller from 'probe HIGH first, retreat under load' to 'start from the
+safe validated cadence, promote only after measured headroom'. It preserves the same HIGH
+and LOW steady-state contracts and the existing hysteresis thresholds.
+
+FIELD GATE STATUS
+=================
+RETURNFIX1 black-screen correction: PASS
+FGGATE1 startup/OFF isolation: PASS
+GW16B settled LOW cadence: PASS
+GW16B heavy-scene transient stability: NOT SATISFACTORY; transient pressure evidence present
+GW16C SAFELOWSTART1: next targeted hardware gate
+HIGH 60-FPS branch / LOW->HIGH recovery: still not hardware validated

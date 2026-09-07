@@ -63,9 +63,9 @@ foreach($n in @('win81_nis.log','win81_nis_install_target.txt','win81_nis_instal
     $p=Join-Path $target $n;if(Test-Path -LiteralPath $p -PathType Leaf){Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue;L('[OK] Sortie dynamique PTAR retiree : '+$n)}
 }
 
-# Restore registry value only if this exact GW15 install changed it.
+# Restore registry value only if this exact GW16 install changed it.
 if($m.windowstyle -and $m.windowstyle.applied -and $m.windowstyle.exists){
-    if(Test-Path -LiteralPath ([string]$m.windowstyle.key)){Set-ItemProperty -LiteralPath ([string]$m.windowstyle.key) -Name WindowStyle -Value ([int]$m.windowstyle.original);L('[OK] WindowStyle restaure a sa valeur pre-installation GW15.')}
+    if(Test-Path -LiteralPath ([string]$m.windowstyle.key)){Set-ItemProperty -LiteralPath ([string]$m.windowstyle.key) -Name WindowStyle -Value ([int]$m.windowstyle.original);L('[OK] WindowStyle restaure a sa valeur pre-installation GW16.')}
 }
 
 # Cache ownership lists before deleting package control files.
@@ -73,7 +73,7 @@ $rows=@(Get-Content -LiteralPath $Static|Where-Object{$_ -match '^\d+\|'})
 $drows=@(Get-Content -LiteralPath $Dirs|Where-Object{$_ -match '^\d+\|'})
 
 # Dynamic package-side outputs.
-foreach($pat in @('PTAR_GW15_INSTALL_LAST.log','PTAR_VERIFY_LAST.log')){
+foreach($pat in @('PTAR_GW16_INSTALL_LAST.log','PTAR_VERIFY_LAST.log')){
     Get-ChildItem -LiteralPath (Join-Path $Root 'diag') -Filter $pat -File -ErrorAction SilentlyContinue|ForEach-Object{Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue;L('[OK] Journal PTAR retire : '+$_.Name)}
 }
 Get-ChildItem -LiteralPath (Join-Path $Root 'diag') -Directory -Filter 'collect_*' -ErrorAction SilentlyContinue|ForEach-Object{Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue;L('[OK] Staging collecte PTAR retire : '+$_.Name)}

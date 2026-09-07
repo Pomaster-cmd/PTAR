@@ -1,0 +1,46 @@
+[PASS] GW12 base exact :: 50cf02fee971e615f0dba26a7614e27b833486a993cf569fe5369a0fa5b41f59
+[PASS] GW16H SAFEPOINT2 runtime exact :: 864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c
+[PASS] d3d11 mirror exact :: 864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c
+[PASS] plain F6 original call locked :: 0x16950
+[PASS] action8 VideoRecord original call locked :: 0x19dc0
+[PASS] GW16G F6 late guard retained :: 0x34fd980
+[PASS] GW16H action8 VideoRecord routed to SAFEPOINT request :: 0x34fe910
+[PASS] F6 late CTRL guard exact
+[PASS] obsolete recorder CTRL guard is not referenced by action8 :: 0x34fe910
+[PASS] GW12 quality increment context exact :: 8b0501e4ffffffc083e003
+[PASS] quality next site calls helper + six NOP :: e846fdffff909090909090
+[PASS] quality helper loads selected profile :: 8b05b6e6ffff833da76179ff00740483f001c3ffc083e003c3
+[PASS] quality helper gates on active FG :: 8b05b6e6ffff833da76179ff00740483f001c3ffc083e003c3
+[PASS] quality helper FG-ON same-tier toggle :: 740483f001c3
+[PASS] quality helper FG-OFF full cycle :: ffc083e003c3
+[PASS] FG ON map 0<->1 and 2<->3 :: [1, 0, 3, 2]
+[PASS] FG ON ME tier invariant
+[PASS] FG OFF full 0->1->2->3 cycle
+[PASS] downstream tier/restart logic unchanged
+[PASS] GW12 DWM quality call targets original handler :: 0x34fdc00
+[PASS] GW16G DWM quality call targets poll wrapper :: 0x34fda10
+[PASS] poll wrapper stack frame exact :: 4883ec38
+[PASS] poll wrapper calls original quality handler :: e8e7010000
+[PASS] poll wrapper saves original EAX :: 89442430
+[PASS] poll wrapper polls VK_CONTROL :: b911000000ff1590c5b4fc
+[PASS] poll wrapper tests CTRL sign bit :: 6685c0
+[PASS] JNS no-CTRL branch lands at restore-EAX :: 0x34fda3e
+[PASS] CTRL path asks to consume Status/F8 action ID 2 :: b902000000e8998db1fc
+[PASS] CTRL path suppresses base-F6 return :: 31c04883c438c3
+[PASS] no-CTRL path restores original poll result :: 8b4424304883c438c3
+[PASS] GW12 DWM Ctrl+F8 diagnostic branch conditional
+[PASS] GW16G DWM Ctrl+F8 diagnostic skipped
+[PASS] INI documents QUALITYSAFE1
+[PASS] INI documents 0<->1 or 2<->3
+[PASS] INI documents FG OFF
+[PASS] INI documents HOTKEYSAFE2
+[PASS] version marker GW16G_QUALITYSAFE1=CTRL_F8_FG_ON_SAME_ME_TIER
+[PASS] version marker GW16H_HOTKEYMAPFIX2=ACTION8_VIDEORECORD_DIREC
+[PASS] version marker QUALITY_FG_ON_RESTART_PENDING=FORBIDDEN_BY_SE
+[PASS] field finding records F6 MANUAL SCALER MODE
+[PASS] field finding records FG_PRESENTER_RELEASE
+[PASS] field finding records 640x368
+[PASS] field finding records swapchain creation failed
+[PASS] field finding records HOTKEY STATUS: USR runtime status
+[PASS] field finding records NO_AUTO_SWITCH_LOG_LINES
+QUALITY_HOTKEY_VALIDATION=45/45 PASS

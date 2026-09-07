@@ -1,0 +1,80 @@
+PTAR GW16H SAFEPOINT3 / LOCALGPU1 - NATIVE D3D11 CONTEXT STATE LEAK FINDING
+===============================================================================
+
+FIELD RESULT
+------------
+Result pack: PTAR_GW16H_RESULTS_20260906_101103.zip
+Result pack SHA-256: c813ec9a5a334877b68d5b79b924dbae225ca5e7e6132a60a367f1dc332c8762
+
+Recorded file: B18K18_QSV_20260906_100931_953_PID13572.mp4
+MP4 SHA-256: 8e5a8cf08976d6e30cbb6eb6cbb32a9a07f1dae88a629ff8409fdb8ae7a80f4a
+MP4 size: 25,549,804 bytes
+ffprobe: H.264 High, 1920x1080, yuv420p, 60/1 FPS, 642 frames, 10.700 s.
+
+WHAT PASSED
+-----------
+CTRL+F9 was queued and consumed on native USR with FG OFF.
+QSV started and finalized cleanly.
+Target CFR frames: 642
+Output CFR frames: 642
+Unique frames fed: 165
+Timeline duplicates: 477
+GPU ring high water: 2
+Encode queue high water: 5
+DROP NO GPU SLOT: 0
+DROP QUERY ERROR: 0
+MAP busy/errors: 0
+QSV queue full: 0
+PIPE write failures: 0
+FFMPEG exit code: 0
+
+VISUAL FAILURE
+--------------
+The MP4 is structurally valid, but visual output becomes severely red/black/magenta.
+The first decoded video frame is visually normal. By t=0.016 s (the next 60-Hz frame),
+the image is already corrupted. Therefore the corruption begins immediately after the
+first native-USR recorder GPU-conversion submit, not at MP4 finalization.
+
+F9 screenshots win81_nis_capture_1.bmp and _2.bmp were captured while recording and
+show the same corruption. win81_nis_capture_3.bmp and _4.bmp were captured after the
+recorder STOP and remain corrupted. This proves the corruption persists in the live
+native D3D11 rendering context after recording stops.
+
+ROOT CAUSE
+----------
+B18K18 conversion runs on the native game's ID3D11DeviceContext in FG-OFF/USR mode.
+Its conversion helper changes live pipeline state and does not restore it. It changes:
+- PS shader resource slot 0
+- PS shader
+- VS shader
+- PS constant buffer slot 0
+- IA input layout
+- GS shader
+- IA primitive topology
+- OM render targets + depth/stencil
+- OM blend state/factor/sample mask
+- RS rasterizer state
+- RS viewports
+- RS scissor rectangles
+
+SAFEPOINT3 correctly fixed cross-device recorder VS/RS ownership, which is why video
+frames now reach QSV, but exposing the conversion on the game's immediate context made
+this pre-existing state-restoration assumption unsafe.
+
+SAFEPOINT4 / STATEGUARD1
+------------------------
+Only the native-USR recorder submit call is wrapped:
+1. snapshot every pipeline state category modified by B18K18 conversion;
+2. call the original B18K18 recorder submit unchanged;
+3. restore the exact native context state;
+4. Release every COM interface AddRef'd by D3D11 Get* methods;
+5. return the original submit result.
+
+Snapshot bounds:
+- 8 render targets + depth/stencil
+- up to D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE (16) viewports
+- up to 16 scissor rectangles
+- 17 getter-acquired COM interface references released
+
+FG-ON isolated-presenter submit is intentionally unchanged. No ClearState, deferred
+context, encoder/color-conversion change, pacing change, or hotkey change is introduced.

@@ -1,0 +1,47 @@
+PTAR GW16H SAFEPOINT11 / FUSEDDETAIL1 - LAB FINDING
+===================================================
+
+Field target
+------------
+User-visible residual FG shimmer is concentrated mainly on:
+- the selection circle at the character feet;
+- repetitive floor grilles/vents under motion.
+
+Decision
+--------
+Repeated global changes to profile-3 photometric Guard / motion trust were not robust enough. SAFEPOINT11 branches from the field-tested SAFEPOINT8/TDETAIL4 runtime and adds a local detail stabilizer fused into the existing FG compute shader.
+
+Cost architecture
+-----------------
+The stabilizer reuses the four P and four C bilinear texels already loaded by the two existing L() calls. The embedded HLSL has exactly the same source-level texture Load sites as SAFEPOINT8:
+- x.Load: 4 source sites (L is called for P and C as before)
+- P.Load: 1
+- C.Load: 1
+- M.Load: 1
+- total .Load token count: 7 -> 7
+
+No new Texture2D/UAV/register binding, no new Dispatch and no extra presentation/resource synchronization are introduced. The functional delta is confined to the existing 1200-byte FG HLSL source reservation plus the PE checksum.
+
+Visual policy
+-------------
+For profile 3 only, each warped endpoint sample carries a local 2x2 green-channel range in temporary alpha. After the original TDETAIL4 interpolation is computed, the stabilizer compares GENERATED green deviation from the unwarped REAL blend with the endpoint local-range budget. The final correction factor is bounded to 0.30..1.00 and only lerps GENERATED toward the unwarped REAL blend. It cannot sharpen or overshoot away from the REAL blend.
+
+QUALITY safety
+--------------
+The source gate adds +10*(G-.25) to the detail budget. For QUALITY G=.35 this contributes +1.0. Normalized green deviation cannot exceed 1, therefore z saturates to 1 and the fused scale is exactly 1.0. QUALITY and larger-G profiles are mathematically bypassed by the new stabilizer.
+
+Proxy result on supplied TDETAIL4 field capture
+-----------------------------------------------
+A conservative offline proxy used adjacent REAL frames as endpoint references and the recorded GENERATED frame as the pre-stabilizer result. This cannot reproduce exact runtime motion vectors/warped sample positions and is therefore a lab proxy, not a hardware guarantee.
+
+On 16 sampled strong-motion GENERATED triplets per ROI:
+- circle: median absolute detail excursion ~18.08% -> ~10.62%; P90 ~54.96% -> ~24.02%; >30% events 31.25% -> 0%.
+- right floor grille: median ~16.74% -> ~10.16%; P90 ~40.02% -> ~13.29%; >30% events 31.25% -> 0%.
+- left floor grille: median ~9.06% -> ~5.12%; P90 ~15.88% -> ~9.86%.
+
+Low-motion mean pixel change in the same proxy stayed very small (approximately 0.007 / 0.0004 / 0.030 gray levels on 0..255 for circle / right grille / left grille respectively).
+
+Status
+------
+Static/reproducibility gate: PASS.
+Exact GTX 960M GPU time: NOT CLAIMED IN LAB. One real hardware run is required because no local NVIDIA D3D11 device is available. The intended cost advantage is architectural: no added texture fetch site, no added dispatch, no added resources; only additional ALU/min/max/lerp operations inside the existing GENERATED shader.

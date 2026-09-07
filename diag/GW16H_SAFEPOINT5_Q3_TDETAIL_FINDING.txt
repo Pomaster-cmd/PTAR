@@ -1,0 +1,39 @@
+PTAR GW16H SAFEPOINT5 QUALITY-vs-Q3 FIELD FINDING / SAFEPOINT6 TDETAIL2
+====================================================================
+
+Evidence compared:
+- QUALITY reference: B18K18_QSV_20260906_120521_690_PID1176-PTAR.mp4
+- profile 3 CONSERVATIVE/Q3: B18K18_QSV_20260906_125219_932_PID10492-PTAR.mp4
+
+Recorder quality of the Q3 run is sufficient for temporal analysis:
+- 1920x1080 / 60 FPS
+- 776 frames / 12.93 s
+- consecutive duplicates about 2.32%
+
+Observed Q3 visual regression in comparable movement regions:
+- center: generated frames with >5% detail excursion about 53.9%
+- character: about 59.2%
+- ground: about 57.9%
+- directional detail bias: approximately -4.1% center, -5.3% character, -5.1% ground
+- some character generated frames reach roughly -11% to -13% detail energy vs adjacent REAL frames
+
+Root cause in embedded FG HLSL profile-3 path:
+- profile 3 is selected by G < .3
+- motion-discontinuity trust used denominator 1.5 + .35*|v|max
+- trust was squared (k*=k), making fallback aggressive
+- low G also used max(G,.02), so profile-3 photometric trust was more permissive than QUALITY
+- result: generated frames are often pulled toward the unwarped REAL blend and become transiently softer.
+
+SAFEPOINT6 / TDETAIL2 changes ONLY profile-3 effective math:
+- denominator base 1.5 -> 9.5 (softer discontinuity attenuation)
+- k*=k -> linear k (no squaring)
+- max(G,.02) -> max(G,.35): profile 3 gets a Guard35-equivalent photometric floor
+
+Why profile 2 QUALITY is semantically unchanged:
+- QUALITY uses G=.35, so if(G<.3) is false: denominator and k curve are unreachable
+- max(.35,.02) and max(.35,.35) are both .35
+- LEGACY/BALANCED use G>.35 and are likewise unchanged by the floor
+
+The menu label CONSERVATIVE is retained for binary/UI compatibility; in SAFEPOINT6 profile ID 3 executes TDETAIL2 behavior.
+
+Hardware gate pending: same-scene PTAR+FG profile-3 video, compare REAL/G temporal detail stability against QUALITY reference.

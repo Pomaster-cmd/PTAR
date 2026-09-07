@@ -1,0 +1,46 @@
+[PASS] GW12 frozen base exists
+[PASS] GW12 SHA :: 50cf02fee971e615f0dba26a7614e27b833486a993cf569fe5369a0fa5b41f59
+[PASS] execute patch_gw16_auto_from_gw12.py
+[PASS] GW16G SHA :: 8481ef8d8694e1f1978191e55c30098c1e836cb1c3defade1e3678956402b84d
+[PASS] execute patch_gw16g_unified_recorder.py
+[PASS] UNIFIEDREC2 SHA :: 4c5bc494df5c6feaf01acf37a71ad486eac94b07fb82b9f5f58a78bc6801620f
+[PASS] execute patch_gw16h_recorder_safepoint.py
+[PASS] SAFEPOINT1 SHA :: 6621dc14abb4f7c28f4d14568b2549f822da298fc6db9076dff7f97f252d2cf7
+[PASS] execute patch_gw16h_recorder_safepoint2.py
+[PASS] SAFEPOINT2 SHA :: 7c56148f4d00f7623c4bf44e5f460d81145b660ff5743a5ea5b57610c1d0c630
+[PASS] execute patch_gw16h_recorder_local_gpu_state.py
+[PASS] SAFEPOINT3 SHA :: 961b7c0211239364920516e990f9f5a6a3284709bcd4a2a17e6a21b1a76556f2
+[PASS] execute patch_gw16h_recorder_native_state_guard.py
+[PASS] SAFEPOINT4 SHA :: 1b8e8673ff2b046604b282c55d4d9bcfe053ad046fa2c30a69a6b6ff5ffe6e8b
+[PASS] execute patch_gw16h_recorder_qsv_priority.py
+[PASS] SAFEPOINT5 SHA :: 50a329275f410bea032b3a50e81a7838f01f1ef22ee916ad4285df79d146ed92
+[PASS] execute patch_gw16h_fg_tdetail2.py
+[PASS] SAFEPOINT6 SHA :: e7c1b14f263505a64442d16aa1088c43b04a81665641c159a3da1181267bac53
+[PASS] execute patch_gw16h_fg_tdetail3.py
+[PASS] SAFEPOINT7 SHA :: c573b4c4ca102867ca67dbd16e1e6d36e3057f43d85b343fca94803000de0040
+[PASS] execute patch_gw16h_fg_tdetail4.py
+[PASS] SAFEPOINT8 SHA :: 613714f5ac70bc94867a3044dd067f4de18bb3ef65262c60f0febce2ca9d4c70
+[PASS] SAFEPOINT8 payload exact final :: 613714f5ac70bc94867a3044dd067f4de18bb3ef65262c60f0febce2ca9d4c70
+[PASS] SAFEPOINT5 intermediate exact :: 50a329275f410bea032b3a50e81a7838f01f1ef22ee916ad4285df79d146ed92
+[PASS] d3d11 mirror exact final :: 613714f5ac70bc94867a3044dd067f4de18bb3ef65262c60f0febce2ca9d4c70
+[PASS] runtime mirrors byte-identical
+[PASS] full lineage reproduces payload
+[PASS] PE size unchanged :: 320000
+[PASS] section topology unchanged
+[PASS] GPU readback worker remains BELOW_NORMAL
+[PASS] encode thread base was BELOW_NORMAL
+[PASS] encode thread is NORMAL
+[PASS] FFmpeg base flags BELOW_NORMAL+NO_WINDOW
+[PASS] FFmpeg final flags NORMAL+NO_WINDOW
+[PASS] delta confined to consumer priority + PE checksum :: changed=7 bad=[]
+[PASS] exactly five functional bytes changed :: ['0x1ea7a', '0x1ea7b', '0x1ea7c', '0x1ea7d', '0x1fa8c']
+[PASS] state guard machine code byte-identical
+[PASS] SAFEPOINT8 retains encode thread NORMAL
+[PASS] SAFEPOINT8 retains FFmpeg flags
+[PASS] PE checksum recomputed :: 0x59411
+[PASS] static import DLL set unchanged :: ['kernel32.dll', 'user32.dll']
+[PASS] recorder policy string retained h264_qsv
+[PASS] recorder policy string retained fixed-QPC
+[PASS] recorder policy string retained QSV target bitrate kbps
+[PASS] recorder policy string retained B18K18 bounded QSV queue frames
+RECORDER_QSV_PRIORITY_VALIDATION=45/45 PASS

@@ -1,0 +1,27 @@
+[PASS] assembly source present
+[PASS] packaged .text present
+[PASS] packaged reloc map present
+[PASS] packaged .text size 0x295 :: 661
+[PASS] RETURNFIX1 preserves governor EAX
+[PASS] FGGATE1 checks actual FG-enabled state
+[PASS] NOLOCK30 marker present
+[PASS] FG activation initializes HIGH mode
+[PASS] FG activation clears backoff
+[PASS] FG activation targets 60
+[PASS] HIGH never branches to LOW
+[PASS] legacy LOW branch retained
+[PASS] FG OFF neutral target120 retained
+[PASS] packaged reloc count 55 :: 55
+[PASS] all relocations REL32
+[PASS] clang available :: /usr/local/swift/usr/bin/clang
+[PASS] llvm-objcopy available :: /usr/local/swift/usr/bin/llvm-objcopy
+[PASS] llvm-objdump available :: /usr/local/swift/usr/bin/llvm-objdump
+[PASS] a assembly compiles
+[PASS] a .text extraction
+[PASS] b assembly compiles
+[PASS] b .text extraction
+[PASS] two rebuilt .text images byte-identical :: ('de35c7536036e0aaf34c8d46387096689d17812263c13bfa066a92e37934fda6', 'de35c7536036e0aaf34c8d46387096689d17812263c13bfa066a92e37934fda6')
+[PASS] rebuilt .text equals packaged :: de35c7536036e0aaf34c8d46387096689d17812263c13bfa066a92e37934fda6
+[PASS] two rebuilt relocation maps identical :: (55, 55)
+[PASS] rebuilt relocation map equals packaged :: 55
+AUTO_WRAPPER_BUILD_VALIDATION=26/26 PASS

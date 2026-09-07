@@ -1,0 +1,140 @@
+[PASS] GW12 base exists
+[PASS] GW12 exact SHA :: 50cf02fee971e615f0dba26a7614e27b833486a993cf569fe5369a0fa5b41f59
+[PASS] patch present patch_gw16_auto_from_gw12.py
+[PASS] patch present patch_gw16g_unified_recorder.py
+[PASS] patch present patch_gw16h_recorder_safepoint.py
+[PASS] patch present patch_gw16h_recorder_safepoint2.py
+[PASS] patch present patch_gw16h_recorder_local_gpu_state.py
+[PASS] patch present patch_gw16h_recorder_native_state_guard.py
+[PASS] patch present patch_gw16h_recorder_qsv_priority.py
+[PASS] patch present patch_gw16h_fg_tdetail2.py
+[PASS] patch present patch_gw16h_fg_tdetail3.py
+[PASS] final runtime SHA :: c573b4c4ca102867ca67dbd16e1e6d36e3057f43d85b343fca94803000de0040
+[PASS] mirror exact :: c573b4c4ca102867ca67dbd16e1e6d36e3057f43d85b343fca94803000de0040
+[PASS] PE size unchanged :: 320000
+[PASS] execute patch_gw16_auto_from_gw12.py :: BASE_SHA256=50cf02fee971e615f0dba26a7614e27b833486a993cf569fe5369a0fa5b41f59 | OUT_SHA256=8481ef8d8694e1f1978191e55c30098c1e836cb1c3defade1e3678956402b84d | AUTO_WRAPPER_RVA=0x34ffc80 | AUTO_FALLBACK_RVA=0x34fff00 | AUTO_MODE_RVA=0x34fff20 | AUTO_START=HIGH_TARGET60_SYNC1 | AUTO_HIGH=TARGET60_SYNC1 | AUTO_LOW=EMBEDDED_BUT_UNREACHABLE_TARGET30_SYNC2 | AUTO_DOWNSHIFT=DISABLED_NOLOCK30_1 | AUTO_UPSHIFT=NOT_APPLICABLE_STARTS_HIGH | AUTO_FG_OFF_GATE=FG_ENABLED0_OR_SOFT_OFF_TARGET120_REAL60_SYNC1 | DWM_PASSIVE_SAMPLER=BYPASSED_EXTERNAL_VBLANK3_AUTHORITATIVE | HOTKEYSAFE2=POLL_SOURCE_CTRL_F6_NO_PLAIN_F6_CTRL_F8_NO_STATUS_OR_DWM_DIAG | QUALITYSAFE1=FG_ON_SAME_ME_TIER_ONLY_FG_OFF_FULL_4_PROFILE_CYCLE | RELOCS=55
+[PASS] stage 1 SHA :: 8481ef8d8694e1f1978191e55c30098c1e836cb1c3defade1e3678956402b84d
+[PASS] execute patch_gw16g_unified_recorder.py :: BASE_SHA256=8481ef8d8694e1f1978191e55c30098c1e836cb1c3defade1e3678956402b84d | OUT_SHA256=4c5bc494df5c6feaf01acf37a71ad486eac94b07fb82b9f5f58a78bc6801620f | DELTA=HOTKEY_STATUS_CONSUME_2 + RESTORE_ACTION8_DIRECT_RECORDER_DISPATCH + NOP_ORIGINAL_RECORDER_FG_START_GATE + NOP_ORIGINAL_RECORDER_FG_SUBMIT_GATE + PE_CHECKSUM
+[PASS] stage 2 SHA :: 4c5bc494df5c6feaf01acf37a71ad486eac94b07fb82b9f5f58a78bc6801620f
+[PASS] execute patch_gw16h_recorder_safepoint.py :: BASE_SHA256=4c5bc494df5c6feaf01acf37a71ad486eac94b07fb82b9f5f58a78bc6801620f | OUT_SHA256=6621dc14abb4f7c28f4d14568b2549f822da298fc6db9076dff7f97f252d2cf7 | REQUEST_STUB_RVA=0x34fe910 SIZE=12 | WRAPPER_RVA=0x34fe930 SIZE=35 | PENDING_RVA=0x34fe900 | DELTA=DEFER_ACTION8_TOGGLE_TO_COMMON_PRESENTER_SAFEPOINT + ORIGINAL_SUBMIT_FIRST + ORIGINAL_B18K18_TOGGLE + PE_CHECKSUM
+[PASS] stage 3 SHA :: 6621dc14abb4f7c28f4d14568b2549f822da298fc6db9076dff7f97f252d2cf7
+[PASS] execute patch_gw16h_recorder_safepoint2.py :: BASE_SHA256=6621dc14abb4f7c28f4d14568b2549f822da298fc6db9076dff7f97f252d2cf7 | OUT_SHA256=7c56148f4d00f7623c4bf44e5f460d81145b660ff5743a5ea5b57610c1d0c630 | NATIVE_CALL_SITES=0xC810,0xC90E,0xD6F0,0xD7EE | NATIVE_WRAPPER_RVA=0x34FE980 SIZE=217 | RESOURCE_HELPER_RVA=0x34FEA60 SIZE=105 | IDENTITY_HELPER_RVA=0x34FEAD0 SIZE=54 | DELTA=MULTIPATH_NATIVE_USR_FEED + MODE_AWARE_RESOURCE_GUARD + MODE_AWARE_DEVICE_IDENTITY + DIAGNOSTIC_LOGS + PE_CHECKSUM
+[PASS] stage 4 SHA :: 7c56148f4d00f7623c4bf44e5f460d81145b660ff5743a5ea5b57610c1d0c630
+[PASS] execute patch_gw16h_recorder_local_gpu_state.py :: WRAPPER_SIZE 413 | BASE_SHA256=7c56148f4d00f7623c4bf44e5f460d81145b660ff5743a5ea5b57610c1d0c630 | OUT_SHA256=961b7c0211239364920516e990f9f5a6a3284709bcd4a2a17e6a21b1a76556f2 | INIT_WRAPPER_RVA=0x34FF4E0 | PRIVATE_OWNER_RVA=0x34FF4C0 | PRIVATE_VS_RVA=0x34FF4C8 | PRIVATE_RS_RVA=0x34FF4D0 | DELTA=B18K18_RECORDER_LOCAL_VS_RS_BOUND_TO_ACTIVE_DEVICE
+[PASS] stage 5 SHA :: 961b7c0211239364920516e990f9f5a6a3284709bcd4a2a17e6a21b1a76556f2
+[PASS] execute patch_gw16h_recorder_native_state_guard.py :: BASE_SHA256=961b7c0211239364920516e990f9f5a6a3284709bcd4a2a17e6a21b1a76556f2 | OUT_SHA256=1b8e8673ff2b046604b282c55d4d9bcfe053ad046fa2c30a69a6b6ff5ffe6e8b | NATIVE_SUBMIT_CALL_RVA=0x34FEA16 | STATE_GUARD_MAIN_RVA=0x34FE804 | STATE_SAVE_RVA=0x34FECB3 | STATE_RESTORE_RVA=0x34FEEC3 | STATE_RELEASE_RVA=0x34FF67D | DELTA=NATIVE_USR_B18K18_D3D11_IMMEDIATE_CONTEXT_STATE_SAVE_RESTORE
+[PASS] stage 6 SHA :: 1b8e8673ff2b046604b282c55d4d9bcfe053ad046fa2c30a69a6b6ff5ffe6e8b
+[PASS] execute patch_gw16h_recorder_qsv_priority.py :: BASE_SHA256=1b8e8673ff2b046604b282c55d4d9bcfe053ad046fa2c30a69a6b6ff5ffe6e8b | OUT_SHA256=50a329275f410bea032b3a50e81a7838f01f1ef22ee916ad4285df79d146ed92 | ENC_THREAD_PRIORITY_RVA=0x1F679 BELOW_NORMAL_TO_NORMAL | FFMPEG_CREATE_FLAGS_RVA=0x20687 0x08004000_TO_0x08000000 | GPU_READBACK_WORKER_PRIORITY=UNCHANGED_BELOW_NORMAL | DELTA=CONSUMER_SCHEDULING_ONLY
+[PASS] stage 7 SHA :: 50a329275f410bea032b3a50e81a7838f01f1ef22ee916ad4285df79d146ed92
+[PASS] execute patch_gw16h_fg_tdetail2.py :: OUT_SHA=e7c1b14f263505a64442d16aa1088c43b04a81665641c159a3da1181267bac53 | Q3_DENOM_FILEOFF=0x3456e | Q3_UNSQUARE_FILEOFF=0x3458f | BLEND_FLOOR_FILEOFF=0x3465c
+[PASS] stage 8 SHA :: e7c1b14f263505a64442d16aa1088c43b04a81665641c159a3da1181267bac53
+[PASS] execute patch_gw16h_fg_tdetail3.py :: OUT_SHA=c573b4c4ca102867ca67dbd16e1e6d36e3057f43d85b343fca94803000de0040 | TDETAIL3_TRUST_FILEOFF=0x34553 | TDETAIL3_RULE=k_final=0.80+0.20*k_raw
+[PASS] stage 9 SHA :: c573b4c4ca102867ca67dbd16e1e6d36e3057f43d85b343fca94803000de0040
+[PASS] full lineage reproduces final :: c573b4c4ca102867ca67dbd16e1e6d36e3057f43d85b343fca94803000de0040
+[PASS] SP6 stage exact :: e7c1b14f263505a64442d16aa1088c43b04a81665641c159a3da1181267bac53
+[PASS] section topology unchanged
+[PASS] PE checksum exact :: 0x59511
+[PASS] SP6 has one TDETAIL2 trust expression :: 1
+[PASS] SP7 removes old trust expression
+[PASS] SP7 has one TDETAIL3 expression :: 1
+[PASS] functional delta confined to embedded FG source :: (214357, 214418, 59)
+[PASS] no delta outside shader source + PE checksum :: 61
+[PASS] encode priority unchanged
+[PASS] FFmpeg flags unchanged
+[PASS] state guard A unchanged
+[PASS] state guard B unchanged
+[PASS] trust range e=0 v=0 :: (1.0, 1.0)
+[PASS] trust compression exact e=0 v=0 :: (1.0, 1.0)
+[PASS] trust range e=0 v=1 :: (1.0, 1.0)
+[PASS] trust compression exact e=0 v=1 :: (1.0, 1.0)
+[PASS] trust range e=0 v=4 :: (1.0, 1.0)
+[PASS] trust compression exact e=0 v=4 :: (1.0, 1.0)
+[PASS] trust range e=0 v=12 :: (1.0, 1.0)
+[PASS] trust compression exact e=0 v=12 :: (1.0, 1.0)
+[PASS] trust range e=0 v=64 :: (1.0, 1.0)
+[PASS] trust compression exact e=0 v=64 :: (1.0, 1.0)
+[PASS] trust range e=0.5 v=0 :: (0.9473684210526316, 0.9894736842105264)
+[PASS] trust compression exact e=0.5 v=0 :: (0.9473684210526316, 0.9894736842105264)
+[PASS] trust range e=0.5 v=1 :: (0.949238578680203, 0.9898477157360406)
+[PASS] trust compression exact e=0.5 v=1 :: (0.949238578680203, 0.9898477157360406)
+[PASS] trust range e=0.5 v=4 :: (0.9541284403669725, 0.9908256880733946)
+[PASS] trust compression exact e=0.5 v=4 :: (0.9541284403669725, 0.9908256880733946)
+[PASS] trust range e=0.5 v=12 :: (0.9635036496350365, 0.9927007299270074)
+[PASS] trust compression exact e=0.5 v=12 :: (0.9635036496350365, 0.9927007299270074)
+[PASS] trust range e=0.5 v=64 :: (0.9843260188087775, 0.9968652037617556)
+[PASS] trust compression exact e=0.5 v=64 :: (0.9843260188087775, 0.9968652037617556)
+[PASS] trust range e=1 v=0 :: (0.8947368421052632, 0.9789473684210527)
+[PASS] trust compression exact e=1 v=0 :: (0.8947368421052632, 0.9789473684210527)
+[PASS] trust range e=1 v=1 :: (0.8984771573604061, 0.9796954314720813)
+[PASS] trust compression exact e=1 v=1 :: (0.8984771573604061, 0.9796954314720813)
+[PASS] trust range e=1 v=4 :: (0.908256880733945, 0.9816513761467891)
+[PASS] trust compression exact e=1 v=4 :: (0.908256880733945, 0.9816513761467891)
+[PASS] trust range e=1 v=12 :: (0.927007299270073, 0.9854014598540146)
+[PASS] trust compression exact e=1 v=12 :: (0.927007299270073, 0.9854014598540146)
+[PASS] trust range e=1 v=64 :: (0.9686520376175548, 0.9937304075235109)
+[PASS] trust compression exact e=1 v=64 :: (0.9686520376175548, 0.9937304075235109)
+[PASS] trust range e=2 v=0 :: (0.7894736842105263, 0.9578947368421054)
+[PASS] trust compression exact e=2 v=0 :: (0.7894736842105263, 0.9578947368421054)
+[PASS] trust range e=2 v=1 :: (0.7969543147208122, 0.9593908629441625)
+[PASS] trust compression exact e=2 v=1 :: (0.7969543147208122, 0.9593908629441625)
+[PASS] trust range e=2 v=4 :: (0.8165137614678899, 0.963302752293578)
+[PASS] trust compression exact e=2 v=4 :: (0.8165137614678899, 0.963302752293578)
+[PASS] trust range e=2 v=12 :: (0.8540145985401459, 0.9708029197080292)
+[PASS] trust compression exact e=2 v=12 :: (0.8540145985401459, 0.9708029197080292)
+[PASS] trust range e=2 v=64 :: (0.9373040752351097, 0.987460815047022)
+[PASS] trust compression exact e=2 v=64 :: (0.9373040752351097, 0.987460815047022)
+[PASS] trust range e=4 v=0 :: (0.5789473684210527, 0.9157894736842106)
+[PASS] trust compression exact e=4 v=0 :: (0.5789473684210527, 0.9157894736842106)
+[PASS] trust range e=4 v=1 :: (0.5939086294416244, 0.918781725888325)
+[PASS] trust compression exact e=4 v=1 :: (0.5939086294416244, 0.918781725888325)
+[PASS] trust range e=4 v=4 :: (0.6330275229357798, 0.926605504587156)
+[PASS] trust compression exact e=4 v=4 :: (0.6330275229357798, 0.926605504587156)
+[PASS] trust range e=4 v=12 :: (0.7080291970802919, 0.9416058394160585)
+[PASS] trust compression exact e=4 v=12 :: (0.7080291970802919, 0.9416058394160585)
+[PASS] trust range e=4 v=64 :: (0.8746081504702194, 0.974921630094044)
+[PASS] trust compression exact e=4 v=64 :: (0.8746081504702194, 0.974921630094044)
+[PASS] trust range e=8 v=0 :: (0.1578947368421053, 0.8315789473684211)
+[PASS] trust compression exact e=8 v=0 :: (0.1578947368421053, 0.8315789473684211)
+[PASS] trust range e=8 v=1 :: (0.18781725888324874, 0.8375634517766498)
+[PASS] trust compression exact e=8 v=1 :: (0.18781725888324874, 0.8375634517766498)
+[PASS] trust range e=8 v=4 :: (0.2660550458715597, 0.853211009174312)
+[PASS] trust compression exact e=8 v=4 :: (0.2660550458715597, 0.853211009174312)
+[PASS] trust range e=8 v=12 :: (0.4160583941605839, 0.8832116788321168)
+[PASS] trust compression exact e=8 v=12 :: (0.4160583941605839, 0.8832116788321168)
+[PASS] trust range e=8 v=64 :: (0.7492163009404389, 0.9498432601880878)
+[PASS] trust compression exact e=8 v=64 :: (0.7492163009404389, 0.9498432601880878)
+[PASS] trust range e=16 v=0 :: (0.0, 0.8)
+[PASS] trust compression exact e=16 v=0 :: (0.0, 0.8)
+[PASS] trust range e=16 v=1 :: (0.0, 0.8)
+[PASS] trust compression exact e=16 v=1 :: (0.0, 0.8)
+[PASS] trust range e=16 v=4 :: (0.0, 0.8)
+[PASS] trust compression exact e=16 v=4 :: (0.0, 0.8)
+[PASS] trust range e=16 v=12 :: (0.0, 0.8)
+[PASS] trust compression exact e=16 v=12 :: (0.0, 0.8)
+[PASS] trust range e=16 v=64 :: (0.4984326018808777, 0.8996865203761756)
+[PASS] trust compression exact e=16 v=64 :: (0.4984326018808777, 0.8996865203761756)
+[PASS] trust range e=64 v=0 :: (0.0, 0.8)
+[PASS] trust compression exact e=64 v=0 :: (0.0, 0.8)
+[PASS] trust range e=64 v=1 :: (0.0, 0.8)
+[PASS] trust compression exact e=64 v=1 :: (0.0, 0.8)
+[PASS] trust range e=64 v=4 :: (0.0, 0.8)
+[PASS] trust compression exact e=64 v=4 :: (0.0, 0.8)
+[PASS] trust range e=64 v=12 :: (0.0, 0.8)
+[PASS] trust compression exact e=64 v=12 :: (0.0, 0.8)
+[PASS] trust range e=64 v=64 :: (0.0, 0.8)
+[PASS] trust compression exact e=64 v=64 :: (0.0, 0.8)
+[PASS] raw k=1 maps to 1 :: 1.0
+[PASS] raw k=0 maps to .8 :: 0.8
+[PASS] trust monotone with discontinuity :: [1.0, 0.9908256880733946, 0.9816513761467891, 0.963302752293578, 0.926605504587156, 0.853211009174312, 0.8, 0.8, 0.8]
+[PASS] version token GW16H_UNIFIEDREC3_SAFEPOINT7=TDETAIL3_PROFILE3_C
+[PASS] version token FG_PROFILE3_TDETAIL3_TRUST_COMPRESSION=K_FINAL_0
+[PASS] version token FG_PROFILE3_TDETAIL3_MIN_WARP_TRUST=0.80
+[PASS] version token FG_PROFILE2_QUALITY_SEMANTICS=UNCHANGED_GUARD35_
+[PASS] INI TDETAIL3 token CONSERVATIVE/TDETAIL3
+[PASS] INI TDETAIL3 token 80% minimum warped trust
+[PASS] INI TDETAIL3 token profile 2 QUALITY is semantically unchanged
+[PASS] field finding 12.4%
+[PASS] field finding 14.0%
+[PASS] field finding 13.1%
+[PASS] field finding k_final = 0.80 + 0.20*k_raw
+FG_TDETAIL3_VALIDATION=139/139 PASS

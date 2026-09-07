@@ -1,0 +1,40 @@
+PTAR GW16D LIGHT/HOTKEY FIELD FINDING — 2026-09-05
+==================================================
+
+Submitted result package: PTAR_GW16D_RESULTS_20260905_085928.zip
+
+PERFORMANCE FINDING
+-------------------
+AUTO_SWITCHES.txt: NO_AUTO_SWITCH_LOG_LINES
+PACINGVERIFIER3:
+- VISIBLE_FPS=29.197
+- GENERATED_FPS=14.598
+- REAL_FPS=14.598
+- CAPTURE_RATE_HZ=60.043
+- PACING_CLEAN_COVERAGE_PCT=100.000
+- OBSERVER_STALL_EVENTS=0
+- PACING_VERDICT=UNEVENTFUL FPS AVERAGE BUT NOTICEABLE PACING VARIANCE
+
+Conclusion: GW16D remained on LOW for the measured run. The HIGH-retention change was therefore not exercised; the LOW->HIGH admission gate itself remained too strict for this scene. The operator separately reported roughly 33 FPS with FG OFF.
+
+HOTKEY FINDING
+--------------
+The runtime log proves modifier/base-key collisions:
+- immediately after CTRL+F6 enabled FG, the plain "F6 MANUAL SCALER MODE" action also executed and selected POINT;
+- three "HOTKEY DIAG DWMPHASE2 AUTODUMP - F8" blocks occurred during the CTRL+F8 quality-change attempt;
+- after the quality tier changed, the runtime logged GWINDOW5 TEARDOWN DWMFLUSH SUCCESS and CAPTRACE EVENT FG_PRESENTER_RELEASE;
+- re-preparation used an NVENC ME ring at 640x368 (the /3 tier);
+- then "isolated display presenter swapchain creation failed";
+- then "separate-device preparation failed";
+- the runtime fell back to the USR presenter with FG disabled.
+
+Static disassembly of the exact GW12-derived runtime confirms the cause:
+- the CTRL+F8 quality handler is separate from a plain-F8 status poll/action;
+- the DWM diagnostic wrapper also explicitly polls VK_F8 while CTRL is held;
+- the base F6 action is likewise reached independently of the CTRL+F6 chord.
+
+GW16E corrective direction:
+1. isolate CTRL+F6 from the plain F6 action;
+2. isolate CTRL+F8 quality from plain F8 status and the passive DWM F8 snapshot;
+3. retain deferred /2 <-> /3 application via FG OFF/ON;
+4. replace the brittle 45 consecutive <27 ms HIGH-entry criterion with a bounded, jitter-tolerant admission rule.

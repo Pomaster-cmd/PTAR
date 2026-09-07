@@ -1,0 +1,53 @@
+GW16H RECORDER SAFEPOINT2 / NATIVEUSR1 FINDING
+================================================
+
+Field evidence
+--------------
+SAFEPOINT1 runtime SHA-256:
+6621dc14abb4f7c28f4d14568b2549f822da298fc6db9076dff7f97f252d2cf7
+
+Hardware result:
+PTAR_GW16H_RESULTS_20260905_181248.zip
+
+The field log proves the active FG-OFF route was native USR:
+  path=USR
+  usrReady=1
+  fgEnabled=0
+  fgReady=0
+
+No B18K18 START/STOP/FAIL event was emitted after CTRL+F9. Therefore SAFEPOINT1's pending request
+was not consumed on the active route.
+
+Static root cause
+-----------------
+The runtime has four late native-USR presenter branches around RVAs 0xC810, 0xC90E, 0xD6F0 and 0xD7EE.
+Each called the same native post-present helper at RVA 0x14930 immediately before the existing deferred F9
+capture check. SAFEPOINT1 did not wrap these calls.
+
+The D3D11CreateDeviceAndSwapChain wrapper stores the native tuple directly:
+  swapchain -> RVA 0x02C7E010
+  device    -> RVA 0x0004B118
+  context   -> RVA 0x02C7DFA8
+
+This is not inferred from a name: the stores are made from the actual CreateDeviceAndSwapChain arguments.
+The IID at RVA 0x00032058 is the canonical IID_ID3D11Texture2D GUID.
+
+SAFEPOINT2 correction
+---------------------
+1. Preserve SAFEPOINT1 action-8 pending request and isolated path.
+2. Route the four native USR call sites through one wrapper at RVA 0x034FE980.
+3. Wrapper calls the original RVA 0x14930 first, preserving native-presenter behavior.
+4. While FG OFF and recorder active/draining, obtain swapchain Buffer 0 using IID_ID3D11Texture2D.
+5. Feed native device/context/backbuffer to original B18K18 submit RVA 0x27760.
+6. Consume pending CTRL+F9 request on the native route and invoke original toggle handler RVA 0x19DC0.
+7. Replace the old isolated-only resource guard with a mode-aware helper at RVA 0x034FEA60.
+8. Replace the old isolated-only submit device identity guard with a mode-aware helper at RVA 0x034FEAD0.
+9. Native device identity is accepted only when FG is OFF; FG ON retains isolated identity.
+10. Keep explicit FG gates previously removed by UNIFIEDREC2 removed; keep auto-disable safety checks intact.
+
+Expected behavior
+-----------------
+FG ON  -> existing isolated REAL+GENERATED feed -> original B18K18/QSV.
+FG OFF -> native USR swapchain backbuffer REAL -> original B18K18/QSV.
+
+Hardware validation remains required for the final proof. SAFEPOINT1 is invalidated.

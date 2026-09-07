@@ -1,0 +1,42 @@
+PTAR GW16H SAFEPOINT7 TDETAIL3 FIELD FINDING / SAFEPOINT8 TDETAIL4 TARGET
+======================================================================
+
+Evidence:
+- TDETAIL3 field video: B18K18_QSV_20260906_153401_302_PID11980-PTAR.mp4
+- 1920x1080 / 60 FPS / 1276 frames / 21.27 s
+- recorder visually usable; analysis can target REAL/G temporal behavior.
+
+User-localized visible defect:
+- selection circle / halo at the character feet
+- repetitive floor grilles / vent patterns a little farther from the character
+- perceived as local trembling / blinking / shimmer rather than global brightness flicker.
+
+Targeted frame evidence (TDETAIL3 run):
+- frame parity in inspected segment: even=REAL, odd=GENERATED (e.g. 744R/745G/746R)
+- in strong-motion samples (REAL-neighbor ROI MAE >= 4 levels), current TDETAIL3 shows a positive GENERATED detail bias:
+  * circle ROI: median absolute high-frequency excursion about 21.6%, signed mean about +24.2%
+  * grille ROI: median absolute excursion about 19.6%, signed mean about +20.4%
+- specific G frames around 745/749 show very large local excursions in both circle and grille regions.
+- low-motion samples are much more stable; the defect is therefore motion/detail localized, not a global color/exposure instability.
+
+Interpretation:
+- TDETAIL3 compressed motion trust (80-100%) prevents Q3 softness but leaves too much warped contribution on thin / repetitive high-frequency structures.
+- the existing photometric term already provides a spatially selective disagreement gate.
+- TDETAIL2/TDETAIL3 forced profile 3 to a Guard35-equivalent floor. This is stronger warp acceptance than the profile's native Guard25 setting.
+
+SAFEPOINT8 / TDETAIL4 change:
+- keep TDETAIL3 motion trust exactly unchanged: k_final = 0.80 + 0.20*k_raw
+- keep ME /2 and denominator 9.5 unchanged
+- restore profile 3 photometric guard from forced max(G,.35) to max(G,.25)
+- for profile 3, G=.25, therefore effective guard becomes Guard25
+- profile 2 QUALITY uses G=.35, so max(.35,.25)=.35: QUALITY remains mathematically unchanged
+- LEGACY/BALANCED use larger G values and remain unchanged
+
+Why this is targeted:
+- it does not globally lower motion trust.
+- it only reduces warped contribution where the two warped endpoints disagree photometrically enough to trigger the existing gate.
+- thin semi-transparent circle edges and repetitive floor grilles are exactly the structures most likely to produce that disagreement under subpixel motion.
+
+Hardware gate:
+- same scene, profile 3 CONSERVATIVE/TDETAIL4, focus visually on selection circle + floor grilles.
+- recorder and all SAFEPOINT2-5 fixes remain unchanged.

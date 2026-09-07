@@ -1,0 +1,55 @@
+[PASS] required diag/visible_pacing/PTARVisiblePacingVerifier.cs
+[PASS] required diag/visible_pacing/run_single_engine_verifier.ps1
+[PASS] required 03-ARM_VISIBLE_FRAME_VERIFIER.bat
+[PASS] required 04-COLLECT_RESULTS.bat
+[PASS] runtime exact GW16 :: 864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c
+[PASS] runtime mirror exact
+[PASS] single engine source has one BitBlt site :: 1
+[PASS] single engine computes G/R
+[PASS] single engine computes serial gaps
+[PASS] single engine computes oriented pacing
+[PASS] single engine measures sampling adequacy
+[PASS] single engine emits raw CSV
+[PASS] runner PS4-safe dedicated EXE compile
+[PASS] runner avoids invalid New-Item LiteralPath
+[PASS] dedicated EXE owns DPI awareness
+[PASS] marker presence gate before timer
+[PASS] start/end beeps restored
+[PASS] zero-marker verdict cannot be VERY EVEN
+[PASS] observer stall threshold present
+[PASS] observer recovery quarantines two transitions
+[PASS] observer misses separated from PTAR gaps
+[PASS] observer-contaminated pacing excluded
+[PASS] observer clean coverage gates verdict
+[PASS] observer classifier target self-test
+[PASS] launcher passes game root via environment
+[PASS] runner has no mandatory GameRoot command argument
+[PASS] runner preflight mode present
+[PASS] preflight executes compiled EXE
+[PASS] runner path error is inside try/catch
+[PASS] field path environment transport preserves exact root
+[PASS] arm runs only unified engine
+[PASS] arm deletes obsolete dual-engine outputs
+[PASS] collector includes unified report+CSV
+[PASS] collector excludes obsolete dual engine raw files
+[PASS] Gray12/G-R marker roundtrip
+[PASS] synthetic parity contract
+[PASS] synthetic guard contract
+[PASS] hardware marker fixture decodes Gray12/G-R/parity/guards
+[PASS] smooth synthetic median ~33.333 :: (33.333, 0.0, 0.0, 100.0)
+[PASS] smooth pair imbalance p95 ~0
+[PASS] judder same average fps
+[PASS] judder midpoint balance near 0% :: 0.001499992500042513
+[PASS] judder pair imbalance p95 ~50% :: 49.99925000374998
+[PASS] synthetic serial skip decodes one gap :: 1
+[PASS] synthetic serial skip preserves same type
+[PASS] GW15 89.746ms observer fixture => one observer miss :: 1
+[PASS] GW15 observer fixture => no PTAR gap
+[PASS] GW15 observer fixture => no PTAR same-type break
+[PASS] GW15 observer fixture quarantines two pacing transitions :: 2
+[PASS] C# balanced paren :: (577, 577)
+[PASS] C# balanced brace :: (240, 240)
+[PASS] C# balanced bracket :: (98, 98)
+[PASS] obsolete fluidity directory removed
+[PASS] obsolete legacy verifier process removed
+PACINGVERIFIER3_VALIDATION=54/54 PASS

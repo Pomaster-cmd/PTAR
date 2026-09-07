@@ -1,0 +1,391 @@
+[PASS] required 01-INSTALL_GW16.bat
+[PASS] required 02-VERIFY_INSTALL.bat
+[PASS] required 03-ARM_VISIBLE_FRAME_VERIFIER.bat
+[PASS] required 03-INSTALL_QSV_HELPER_WIN81.bat
+[PASS] required 04-COLLECT_RESULTS.bat
+[PASS] required 04-TEST_QSV_5S_MP4.bat
+[PASS] required 05-ROLLBACK_TEST.bat
+[PASS] required 06-DESINSTALLER_PTAR_COMPLET.bat
+[PASS] required README_TEST.txt
+[PASS] required payload/d3d11.dll
+[PASS] required payload/win81_nis_dx11_x64.dll
+[PASS] required payload/win81_nis.ini
+[PASS] required payload/win81_nis_version.txt
+[PASS] required diag/base/GW12_BASE.dll
+[PASS] required diag/patch_gw16_auto_from_gw12.py
+[PASS] required diag/patch_gw16g_unified_recorder.py
+[PASS] required diag/patch_gw16h_recorder_safepoint.py
+[PASS] required diag/patch_gw16h_recorder_safepoint2.py
+[PASS] required diag/GW16H_RECORDER_SAFEPOINT_FINDING.txt
+[PASS] required diag/validate_auto_wrapper_build.py
+[PASS] required diag/validate_gw16_runtime.py
+[PASS] required diag/validate_quality_hotkey_safe.py
+[PASS] required diag/validate_pacingverifier3.py
+[PASS] required diag/validate_win81_path_handoff.py
+[PASS] required diag/validate_ps4_compat.py
+[PASS] required diag/validate_f4_field_regression.py
+[PASS] required diag/validate_prod_recorder_restore.py
+[PASS] required diag/validate_unified_recorder.py
+[PASS] required diag/UNIFIED_RECORDER_VALIDATION.txt
+[PASS] required diag/validate_recorder_safepoint.py
+[PASS] required diag/RECORDER_SAFEPOINT_VALIDATION.txt
+[PASS] required diag/validate_gw16_package.py
+[PASS] required diag/install.ps1
+[PASS] required diag/verify.ps1
+[PASS] required diag/collect.ps1
+[PASS] required tools/installer/INSTALL_QSV_HELPER_WIN81.ps1
+[PASS] required _PTAR_UNINSTALL/PTAR_SAFE_UNINSTALL.ps1
+[PASS] required _PTAR_UNINSTALL/PTAR_STATIC_DIRS.tsv
+[PASS] required _PTAR_UNINSTALL/PTAR_STATIC_OWNERSHIP.tsv
+[PASS] required diag/SHA256SUMS.txt
+[PASS] required diag/BUILD_MANIFEST.json
+[PASS] runtime exact :: 7c56148f4d00f7623c4bf44e5f460d81145b660ff5743a5ea5b57610c1d0c630
+[PASS] d3d11 mirror exact :: 7c56148f4d00f7623c4bf44e5f460d81145b660ff5743a5ea5b57610c1d0c630
+[PASS] GW12 base exact :: 50cf02fee971e615f0dba26a7614e27b833486a993cf569fe5369a0fa5b41f59
+[PASS] no external recorder bridge
+[PASS] INI VideoRecord=CTRL+F9
+[PASS] INI VideoRecordProfile=3
+[PASS] INI FrameGeneration=0
+[PASS] INI FrameGenerationTargetFPS=60
+[PASS] version GW16H_UNIFIEDREC2=SAME_ORIGINAL_B18K18_RECORDER_WI
+[PASS] version GW16H_UNIFIEDREC3_SAFEPOINT2=MULTIPATH_NATIVE_USR_
+[PASS] version RECORDER_RESOURCE_GUARDS=MODE_AWARE_RETAINED_NOT_B
+[PASS] version RECORDER_EXTERNAL_BRIDGE=ABSENT
+[PASS] version RECORDER_START_HUD=ORIGINAL_NOTICE_14
+[PASS] version RECORDER_STOP_HUD=ORIGINAL_NOTICE_16
+[PASS] version DLL_SHA256=7c56148f4d00f7623c4bf44e5f460d81145b660
+[PASS] installer 7c56148f4d00f7623c4bf44e5f460d81145b660f
+[PASS] installer GW16H_UNIFIEDREC3_SAFEPOINT2_NATIVEUSR1
+[PASS] verify runtime hash
+[PASS] installer expected INI hash matches payload :: efa3e8d152628dd9db31e324ddd12be2bd077f2543371afce10ad5b62eb123d1
+[PASS] installer expected version hash matches payload :: da663db8c5a2877c0cf216e35be8e459e0840caf9c55016072831628781f6f5b
+[PASS] verifier expected INI hash matches payload
+[PASS] verifier expected version hash matches payload
+[PASS] collector GW16H prefix
+[PASS] README recorder interne B18K18
+[PASS] README FG ON
+[PASS] README FG OFF
+[PASS] README aucun bridge
+[PASS] README CTRL+F9
+[PASS] production QSV installer BAT exact :: 6e57ef44bc1d76ef3ad62d4fe22f45ef35f9a4b50b76429e73eabb91cfd1935d
+[PASS] production QSV test BAT exact :: cb009622b1e44b3f3666ab3e96950b05647ceac8b4b27880c266f87086e901e2
+[PASS] AUTO validator exits 0 :: AUTO_WRAPPER_BUILD_VALIDATION=26/26 PASS
+[PASS] runtime validator exits 0 :: GW16_RUNTIME_VALIDATION=61/61 PASS
+[PASS] quality/hotkeys validator exits 0 :: QUALITY_HOTKEY_VALIDATION=45/45 PASS
+[PASS] pacing validator exits 0 :: PACINGVERIFIER3_VALIDATION=54/54 PASS
+[PASS] win81 path validator exits 0 :: WIN81_PATH_HANDOFF_VALIDATION=29/29 PASS
+[PASS] PS4 validator exits 0 :: PS4_COMPAT_VALIDATION=30/30 PASS
+[PASS] F4 validator exits 0 :: F4_FIELD_REGRESSION_VALIDATION=21/21 PASS
+[PASS] production recorder validator exits 0 :: TOTAL=29 PASS=29 FAIL=0
+[PASS] unified recorder validator exits 0 :: UNIFIED_RECORDER_VALIDATION=42/42 PASS
+[PASS] recorder safepoint validator exits 0 :: RECORDER_SAFEPOINT2_VALIDATION=59/59 PASS
+[PASS] SHA row format ae1  01-INSTALL_GW16.bat
+[PASS] SHA row format 5  02-VERIFY_INSTALL.bat
+[PASS] SHA row format SIBLE_FRAME_VERIFIER.bat
+[PASS] SHA row format ALL_QSV_HELPER_WIN81.bat
+[PASS] SHA row format   04-COLLECT_RESULTS.bat
+[PASS] SHA row format   04-TEST_QSV_5S_MP4.bat
+[PASS] SHA row format a4  05-ROLLBACK_TEST.bat
+[PASS] SHA row format STALLER_PTAR_COMPLET.bat
+[PASS] SHA row format 1965025  README_TEST.txt
+[PASS] SHA row format /PTAR_SAFE_UNINSTALL.ps1
+[PASS] SHA row format ALL/PTAR_STATIC_DIRS.tsv
+[PASS] SHA row format PER_BUILD_VALIDATION.txt
+[PASS] SHA row format diag/BUILD_MANIFEST.json
+[PASS] SHA row format EGRESSION_VALIDATION.txt
+[PASS] SHA row format /GW13_PACING_FINDING.txt
+[PASS] SHA row format g/GW14_FIELD_FINDING.txt
+[PASS] SHA row format g/GW15_FIELD_FINDING.txt
+[PASS] SHA row format _HEAVY_FIELD_FINDING.txt
+[PASS] SHA row format _HEAVY_FIELD_FINDING.txt
+[PASS] SHA row format 6C_HIGH_GATE_FINDING.txt
+[PASS] SHA row format HOTKEY_FIELD_FINDING.txt
+[PASS] SHA row format AUTO30_FIELD_FINDING.txt
+[PASS] SHA row format TRL_F8_FIELD_FINDING.txt
+[PASS] SHA row format ER_SAFEPOINT_FINDING.txt
+[PASS] SHA row format OOT_CAUSE_RETURNFIX1.txt
+[PASS] SHA row format 6_RUNTIME_VALIDATION.txt
+[PASS] SHA row format INDOW12_GW11_FINDING.txt
+[PASS] SHA row format ag/HARDWARE_PROTOCOL.txt
+[PASS] SHA row format AB_STATIC_VALIDATION.txt
+[PASS] SHA row format IFIER1_FIELD_FINDING.txt
+[PASS] SHA row format ER2_F3_FIELD_FINDING.txt
+[PASS] SHA row format _WIN81FIX3_FIELD_FIX.txt
+[PASS] SHA row format VERIFIER3_VALIDATION.txt
+[PASS] SHA row format R_RESTORE_VALIDATION.txt
+[PASS] SHA row format S4_COMPAT_VALIDATION.txt
+[PASS] SHA row format 5c  diag/PTAR_SHA256.ps1
+[PASS] SHA row format TY_HOTKEY_VALIDATION.txt
+[PASS] SHA row format SAFEPOINT_VALIDATION.txt
+[PASS] SHA row format _RECORDER_VALIDATION.txt
+[PASS] SHA row format IN81_PATH_VALIDATION.txt
+[PASS] SHA row format ag/auto60_30_wrapper.bin
+[PASS] SHA row format 60_30_wrapper.relocs.txt
+[PASS] SHA row format diag/auto60_30_wrapper.s
+[PASS] SHA row format  diag/base/GW12_BASE.dll
+[PASS] SHA row format e96892  diag/collect.ps1
+[PASS] SHA row format d27237  diag/install.ps1
+[PASS] SHA row format h_gw16_auto_from_gw12.py
+[PASS] SHA row format w16g_unified_recorder.py
+[PASS] SHA row format 6h_recorder_safepoint.py
+[PASS] SHA row format h_recorder_safepoint2.py
+[PASS] SHA row format   diag/rollback_test.ps1
+[PASS] SHA row format t_vblank_diagnostics.ps1
+[PASS] SHA row format te_auto_wrapper_build.py
+[PASS] SHA row format e_f4_field_regression.py
+[PASS] SHA row format validate_gw16_package.py
+[PASS] SHA row format validate_gw16_runtime.py
+[PASS] SHA row format idate_pacingverifier3.py
+[PASS] SHA row format prod_recorder_restore.py
+[PASS] SHA row format g/validate_ps4_compat.py
+[PASS] SHA row format e_quality_hotkey_safe.py
+[PASS] SHA row format te_recorder_safepoint.py
+[PASS] SHA row format date_unified_recorder.py
+[PASS] SHA row format te_win81_path_handoff.py
+[PASS] SHA row format b9325df  diag/verify.ps1
+[PASS] SHA row format VisiblePacingVerifier.cs
+[PASS] SHA row format ngle_engine_verifier.ps1
+[PASS] SHA row format 0c630  payload/d3d11.dll
+[PASS] SHA row format 1  payload/win81_nis.ini
+[PASS] SHA row format d/win81_nis_dx11_x64.dll
+[PASS] SHA row format ad/win81_nis_version.txt
+[PASS] SHA row format ALL_QSV_HELPER_WIN81.ps1
+[PASS] SHA no duplicate paths
+[PASS] SHA exact 01-INSTALL_GW16.bat :: 6d704c0b8e5cbc3bacc9a148703ce8836b8b03484e30b8005c6cce64a6b67ae1
+[PASS] SHA exact 02-VERIFY_INSTALL.bat :: ec4ff3a70de39f08ed29c8badd221def3c953210d837dbf8e0ba6a83d3c36ca5
+[PASS] SHA exact 03-ARM_VISIBLE_FRAME_VERIFIER.bat :: 7c4bbfe64b02f8ef971449a95c98ce0dee73c302ac0747f9692d464a7ca7583e
+[PASS] SHA exact 03-INSTALL_QSV_HELPER_WIN81.bat :: 6e57ef44bc1d76ef3ad62d4fe22f45ef35f9a4b50b76429e73eabb91cfd1935d
+[PASS] SHA exact 04-COLLECT_RESULTS.bat :: f4beae44bbe4b2cf99da3c419005ffc8bb46faa477d8f9b4ab1549704d1d759f
+[PASS] SHA exact 04-TEST_QSV_5S_MP4.bat :: cb009622b1e44b3f3666ab3e96950b05647ceac8b4b27880c266f87086e901e2
+[PASS] SHA exact 05-ROLLBACK_TEST.bat :: 3689baed94077951298820f847f04bc860ac8311cee7f90fe30b1822de92f4a4
+[PASS] SHA exact 06-DESINSTALLER_PTAR_COMPLET.bat :: 9063624508709f5104cd00c4745a3e78e06a431e2ec505a1bfe35d14a074295d
+[PASS] SHA exact README_TEST.txt :: ba5f39a85408bfed72baffe969a67d32180375dac98aa651abf4f77591965025
+[PASS] SHA exact _PTAR_UNINSTALL/PTAR_SAFE_UNINSTALL.ps1 :: 6a142afbefc20d2ecd4b3846b97c1434db3b78f19e719a44de7fb736a5e400e6
+[PASS] SHA exact _PTAR_UNINSTALL/PTAR_STATIC_DIRS.tsv :: a1661e12eacb94968d482b42ea86f75d1701190d6abbe0598c9975d6c4dfbd64
+[PASS] SHA exact diag/AUTO_WRAPPER_BUILD_VALIDATION.txt :: 6ff482d33bc4d9e5bdaa47a4845e58910911f0507a7f01e85adef507dc871968
+[PASS] SHA exact diag/BUILD_MANIFEST.json :: d54c9e7505b0d52c552b93ee6a4897c3810685b676d455e14b9529956ca4adeb
+[PASS] SHA exact diag/F4_REGRESSION_VALIDATION.txt :: 3603ec17077a701789524036c700371614ad9786b3066e10a722a6a912f8427b
+[PASS] SHA exact diag/GW13_PACING_FINDING.txt :: fce8c00835632f854098036eb9c765a2e6e7697ba7ba934a10eb2c02fb7aec4e
+[PASS] SHA exact diag/GW14_FIELD_FINDING.txt :: 426f0a36e2cd6930d49c7317027dcdd571d32a52fb45ed8c77df0a3296fdab3f
+[PASS] SHA exact diag/GW15_FIELD_FINDING.txt :: 5e99e3605110f3cbd396fbdc029c3dd82460fa68f57b8d1a5e228a377790be93
+[PASS] SHA exact diag/GW16A_HEAVY_FIELD_FINDING.txt :: 210d4b5f0fc3b6370417f5b74c3a7ba68129ce154a75a5b35bade013bb595466
+[PASS] SHA exact diag/GW16B_HEAVY_FIELD_FINDING.txt :: 620593273b11e4d8c3e13ee37a62b0dd63fd0f7b89de95f378706be462d71912
+[PASS] SHA exact diag/GW16C_HIGH_GATE_FINDING.txt :: 6a01789a23f67bb064269b5e128bb510be098320d9896a0bf22f8295e63cfcfd
+[PASS] SHA exact diag/GW16D_LIGHT_HOTKEY_FIELD_FINDING.txt :: 97a2d0894cb3100dcbbaec4ec9ae07fcdf4f533e4120ceab83dfeccb3873d5cb
+[PASS] SHA exact diag/GW16E_AUTO30_FIELD_FINDING.txt :: ca55bd53a12b346f36ef6fd333ed31205f1a3e706af86a8c16ae3bad74af1b7b
+[PASS] SHA exact diag/GW16F_CTRL_F8_FIELD_FINDING.txt :: 6891271b47f64351daebf534765f9595c090cc7a812407fd7a31a1352aa41170
+[PASS] SHA exact diag/GW16H_RECORDER_SAFEPOINT_FINDING.txt :: b09941aba957044ed06bd478f82635f6c3e665c18d930fb949e0d653054418d0
+[PASS] SHA exact diag/GW16_BLACKSCREEN_ROOT_CAUSE_RETURNFIX1.txt :: b918b3682f09c5ff811e4100ed5925889a64f8f0f6ddf38c92848c5c37d26e93
+[PASS] SHA exact diag/GW16_RUNTIME_VALIDATION.txt :: d57a4b0504f16183845dd654a79f0633c1e03235d4922301d26eacc242723daf
+[PASS] SHA exact diag/GWINDOW12_GW11_FINDING.txt :: b71699475dc87f2d0e4429530e48f1017a10ecee19ed09d01b4c08945d6996da
+[PASS] SHA exact diag/HARDWARE_PROTOCOL.txt :: 779e9137234d4f4ad50bf3bd35e09109a782c9e5cc34326401fe234da9025af1
+[PASS] SHA exact diag/LAB_STATIC_VALIDATION.txt :: e95ce5220cf75a123d459b345ba3e70841f62e4669413977e7c4c392afe233a1
+[PASS] SHA exact diag/PACINGVERIFIER1_FIELD_FINDING.txt :: 070a0dec76cd986e627db032822b42c93c179b1dcd0d1d70d499ac10f82bd0f3
+[PASS] SHA exact diag/PACINGVERIFIER2_F3_FIELD_FINDING.txt :: fe320b4827adc15d4ee00ce4690ad3bbf273cf35915b8c9d6589a57de5243fbc
+[PASS] SHA exact diag/PACINGVERIFIER2_WIN81FIX3_FIELD_FIX.txt :: d250bd236ea98e99d0eb0cdf71c03659fe1f4fe13b87ae8afe781378ad78e8ba
+[PASS] SHA exact diag/PACINGVERIFIER3_VALIDATION.txt :: 20d496e401a0c631851e174dd08ab6f6e2dc8cb7bbbd205a1ac15fc5f742962e
+[PASS] SHA exact diag/PROD_RECORDER_RESTORE_VALIDATION.txt :: eec22591bcdf2a376ba0fd359de39d6864652a8c953dc5b9933f6b6d3136cc0b
+[PASS] SHA exact diag/PS4_COMPAT_VALIDATION.txt :: 1a5e105162a753224718d6d93b8aaffa2301c6e949ec41b9a0e58a1bd6a644a4
+[PASS] SHA exact diag/PTAR_SHA256.ps1 :: 05b156461ade718dfd5404944eb2f89e6bd5bdf01e0567b2c25253c5041b315c
+[PASS] SHA exact diag/QUALITY_HOTKEY_VALIDATION.txt :: ae6c72e7da410c2736379c8984cf43d9be7782bf9e5e63be026370d356c19e0b
+[PASS] SHA exact diag/RECORDER_SAFEPOINT_VALIDATION.txt :: eb54a8da2e568eef4f24dbdc63c356fa909636b1907fe6d5802fe14018410684
+[PASS] SHA exact diag/UNIFIED_RECORDER_VALIDATION.txt :: cf7b1e614175958434b94f739429044ec60ee464834a94ff3a5a72f6ff1a93d5
+[PASS] SHA exact diag/WIN81_PATH_VALIDATION.txt :: 5afbde7ea815a83a8b878259c1f47c12b1a98769c914f9073cb15dcfd5c92576
+[PASS] SHA exact diag/auto60_30_wrapper.bin :: de35c7536036e0aaf34c8d46387096689d17812263c13bfa066a92e37934fda6
+[PASS] SHA exact diag/auto60_30_wrapper.relocs.txt :: 5d2ef7238fff3e81159e5c3abcf539441d6b019b3216fca47ec74c430b4c8888
+[PASS] SHA exact diag/auto60_30_wrapper.s :: 4ec1e2add959fbc81e67b6c510c39320d33ed9bd6a57aaa07f895faa8e20b1e0
+[PASS] SHA exact diag/base/GW12_BASE.dll :: 50cf02fee971e615f0dba26a7614e27b833486a993cf569fe5369a0fa5b41f59
+[PASS] SHA exact diag/collect.ps1 :: a25f127acd31959928f0ed1b0e0c9d8bd0702a4714006e81a91d373464e96892
+[PASS] SHA exact diag/install.ps1 :: 07812fc0beaf24aa6202dc0c8df84134794521214e22a49582d173dcc8d27237
+[PASS] SHA exact diag/patch_gw16_auto_from_gw12.py :: 089e7047b86731f5575fc8cf274c112b8645945f53953d9454519230ffcaf5fe
+[PASS] SHA exact diag/patch_gw16g_unified_recorder.py :: a5d2dc10e44ee024269a42b0349d1ef454c3b340e576bc58ee9324e0c31cdff5
+[PASS] SHA exact diag/patch_gw16h_recorder_safepoint.py :: 4fc7fdb421940244c8f57466c71ab1799204f21300bfd49d1bcfe8f2c3f73476
+[PASS] SHA exact diag/patch_gw16h_recorder_safepoint2.py :: a8cf63a13bd191c1e89ebd8da2a9079c900ddbb7b343c2ccf391c49f93caf8e9
+[PASS] SHA exact diag/rollback_test.ps1 :: 5204852d0be4def91f792c47a74ceacfb898d2350fcaef1ac7758a649b42530e
+[PASS] SHA exact diag/set_vblank_diagnostics.ps1 :: 88f6b746394082c9a3de6c8d4ee946a63dadbeaa7e0b79e19b70a7001de8cee6
+[PASS] SHA exact diag/validate_auto_wrapper_build.py :: 43a7fc0f2d5533954b6717b8cf77736da2f21bcf8310bb6fdfa0716e8c0cb4da
+[PASS] SHA exact diag/validate_f4_field_regression.py :: 4b1c63f33394a9d4f466c7fad0495aeccb3c57c3e2418921097c9d309822198c
+[PASS] SHA exact diag/validate_gw16_package.py :: 8a0e4a6736172a878b1091ccbaf19d60b38dca03babadcf04f061c4f86a76ed0
+[PASS] SHA exact diag/validate_gw16_runtime.py :: fd1f3b603df0ce33a2623c8e94b6cda6aee28164ca07565e34a0ef69ae7c34a4
+[PASS] SHA exact diag/validate_pacingverifier3.py :: 20709807fa38d8ec7cd663379a41a3429e17fa6d7cba46ffee2cf7a11c5b5469
+[PASS] SHA exact diag/validate_prod_recorder_restore.py :: 748cad2dd0eac9135b2043ea4c9992cd6be669c6e6d57c512e3ad74030b9159f
+[PASS] SHA exact diag/validate_ps4_compat.py :: 17d181fa6c4ae0f4ed3c1ba6b6defa71e2681bf64ca4e90c9c54ee062ad3cecf
+[PASS] SHA exact diag/validate_quality_hotkey_safe.py :: 7f859083c873b19de818d3cb0e958138b484705c1cf1bc752f344f7b6e38183d
+[PASS] SHA exact diag/validate_recorder_safepoint.py :: 675402a70ebbd9f125dc276ba40014faa8838b64bfd8baf50e6620c9ddfaeb66
+[PASS] SHA exact diag/validate_unified_recorder.py :: 5f15264af58904f489501cb54bf3e2c775c016de0676718dbe1a18fd039fd8bf
+[PASS] SHA exact diag/validate_win81_path_handoff.py :: bd53db4340e23543e3212ddd773f55a6d18f4ffba64bae6e3250202edcaef1b3
+[PASS] SHA exact diag/verify.ps1 :: 38126e6f03ffa9f20cf22282d2bb23eff4954a527b684e9ffab6185f6b9325df
+[PASS] SHA exact diag/visible_pacing/PTARVisiblePacingVerifier.cs :: d96a190ea7b506efe76edc0b1c519f131477f62af44a0771bee1abd642b88a43
+[PASS] SHA exact diag/visible_pacing/run_single_engine_verifier.ps1 :: 2d5348dfe4c65a58e2d7c213b73f3e8fdc4171e2390373063705ed663ab9c215
+[PASS] SHA exact payload/d3d11.dll :: 7c56148f4d00f7623c4bf44e5f460d81145b660ff5743a5ea5b57610c1d0c630
+[PASS] SHA exact payload/win81_nis.ini :: efa3e8d152628dd9db31e324ddd12be2bd077f2543371afce10ad5b62eb123d1
+[PASS] SHA exact payload/win81_nis_dx11_x64.dll :: 7c56148f4d00f7623c4bf44e5f460d81145b660ff5743a5ea5b57610c1d0c630
+[PASS] SHA exact payload/win81_nis_version.txt :: da663db8c5a2877c0cf216e35be8e459e0840caf9c55016072831628781f6f5b
+[PASS] SHA exact tools/installer/INSTALL_QSV_HELPER_WIN81.ps1 :: 9d62d932615604bc045cbd040d9d6b6e62f02683205a8358a3817482b041f66f
+[PASS] SHA exact static coverage :: (71, 71)
+[PASS] ownership row 3 fields 82600001|01-INSTALL_GW
+[PASS] ownership row 3 fields 82600002|02-VERIFY_INS
+[PASS] ownership row 3 fields 82600003|03-ARM_VISIBL
+[PASS] ownership row 3 fields 82600004|03-INSTALL_QS
+[PASS] ownership row 3 fields 82600005|04-COLLECT_RE
+[PASS] ownership row 3 fields 82600006|04-TEST_QSV_5
+[PASS] ownership row 3 fields 82600007|05-ROLLBACK_T
+[PASS] ownership row 3 fields 82600008|06-DESINSTALL
+[PASS] ownership row 3 fields 82600009|README_TEST.t
+[PASS] ownership row 3 fields 82600010|_PTAR_UNINSTA
+[PASS] ownership row 3 fields 82600011|_PTAR_UNINSTA
+[PASS] ownership row 3 fields 82600012|diag/AUTO_WRA
+[PASS] ownership row 3 fields 82600013|diag/BUILD_MA
+[PASS] ownership row 3 fields 82600014|diag/F4_REGRE
+[PASS] ownership row 3 fields 82600015|diag/GW13_PAC
+[PASS] ownership row 3 fields 82600016|diag/GW14_FIE
+[PASS] ownership row 3 fields 82600017|diag/GW15_FIE
+[PASS] ownership row 3 fields 82600018|diag/GW16A_HE
+[PASS] ownership row 3 fields 82600019|diag/GW16B_HE
+[PASS] ownership row 3 fields 82600020|diag/GW16C_HI
+[PASS] ownership row 3 fields 82600021|diag/GW16D_LI
+[PASS] ownership row 3 fields 82600022|diag/GW16E_AU
+[PASS] ownership row 3 fields 82600023|diag/GW16F_CT
+[PASS] ownership row 3 fields 82600024|diag/GW16H_RE
+[PASS] ownership row 3 fields 82600025|diag/GW16_BLA
+[PASS] ownership row 3 fields 82600026|diag/GW16_RUN
+[PASS] ownership row 3 fields 82600027|diag/GWINDOW1
+[PASS] ownership row 3 fields 82600028|diag/HARDWARE
+[PASS] ownership row 3 fields 82600029|diag/LAB_STAT
+[PASS] ownership row 3 fields 82600030|diag/PACINGVE
+[PASS] ownership row 3 fields 82600031|diag/PACINGVE
+[PASS] ownership row 3 fields 82600032|diag/PACINGVE
+[PASS] ownership row 3 fields 82600033|diag/PACINGVE
+[PASS] ownership row 3 fields 82600034|diag/PROD_REC
+[PASS] ownership row 3 fields 82600035|diag/PS4_COMP
+[PASS] ownership row 3 fields 82600036|diag/PTAR_SHA
+[PASS] ownership row 3 fields 82600037|diag/QUALITY_
+[PASS] ownership row 3 fields 82600038|diag/RECORDER
+[PASS] ownership row 3 fields 82600039|diag/SHA256SU
+[PASS] ownership row 3 fields 82600040|diag/UNIFIED_
+[PASS] ownership row 3 fields 82600041|diag/WIN81_PA
+[PASS] ownership row 3 fields 82600042|diag/auto60_3
+[PASS] ownership row 3 fields 82600043|diag/auto60_3
+[PASS] ownership row 3 fields 82600044|diag/auto60_3
+[PASS] ownership row 3 fields 82600045|diag/base/GW1
+[PASS] ownership row 3 fields 82600046|diag/collect.
+[PASS] ownership row 3 fields 82600047|diag/install.
+[PASS] ownership row 3 fields 82600048|diag/patch_gw
+[PASS] ownership row 3 fields 82600049|diag/patch_gw
+[PASS] ownership row 3 fields 82600050|diag/patch_gw
+[PASS] ownership row 3 fields 82600051|diag/patch_gw
+[PASS] ownership row 3 fields 82600052|diag/rollback
+[PASS] ownership row 3 fields 82600053|diag/set_vbla
+[PASS] ownership row 3 fields 82600054|diag/validate
+[PASS] ownership row 3 fields 82600055|diag/validate
+[PASS] ownership row 3 fields 82600056|diag/validate
+[PASS] ownership row 3 fields 82600057|diag/validate
+[PASS] ownership row 3 fields 82600058|diag/validate
+[PASS] ownership row 3 fields 82600059|diag/validate
+[PASS] ownership row 3 fields 82600060|diag/validate
+[PASS] ownership row 3 fields 82600061|diag/validate
+[PASS] ownership row 3 fields 82600062|diag/validate
+[PASS] ownership row 3 fields 82600063|diag/validate
+[PASS] ownership row 3 fields 82600064|diag/validate
+[PASS] ownership row 3 fields 82600065|diag/verify.p
+[PASS] ownership row 3 fields 82600066|diag/visible_
+[PASS] ownership row 3 fields 82600067|diag/visible_
+[PASS] ownership row 3 fields 82600068|payload/d3d11
+[PASS] ownership row 3 fields 82600069|payload/win81
+[PASS] ownership row 3 fields 82600070|payload/win81
+[PASS] ownership row 3 fields 82600071|payload/win81
+[PASS] ownership row 3 fields 82600072|tools/install
+[PASS] ownership no duplicate paths
+[PASS] ownership exact 01-INSTALL_GW16.bat :: 6d704c0b8e5cbc3bacc9a148703ce8836b8b03484e30b8005c6cce64a6b67ae1
+[PASS] ownership exact 02-VERIFY_INSTALL.bat :: ec4ff3a70de39f08ed29c8badd221def3c953210d837dbf8e0ba6a83d3c36ca5
+[PASS] ownership exact 03-ARM_VISIBLE_FRAME_VERIFIER.bat :: 7c4bbfe64b02f8ef971449a95c98ce0dee73c302ac0747f9692d464a7ca7583e
+[PASS] ownership exact 03-INSTALL_QSV_HELPER_WIN81.bat :: 6e57ef44bc1d76ef3ad62d4fe22f45ef35f9a4b50b76429e73eabb91cfd1935d
+[PASS] ownership exact 04-COLLECT_RESULTS.bat :: f4beae44bbe4b2cf99da3c419005ffc8bb46faa477d8f9b4ab1549704d1d759f
+[PASS] ownership exact 04-TEST_QSV_5S_MP4.bat :: cb009622b1e44b3f3666ab3e96950b05647ceac8b4b27880c266f87086e901e2
+[PASS] ownership exact 05-ROLLBACK_TEST.bat :: 3689baed94077951298820f847f04bc860ac8311cee7f90fe30b1822de92f4a4
+[PASS] ownership exact 06-DESINSTALLER_PTAR_COMPLET.bat :: 9063624508709f5104cd00c4745a3e78e06a431e2ec505a1bfe35d14a074295d
+[PASS] ownership exact README_TEST.txt :: ba5f39a85408bfed72baffe969a67d32180375dac98aa651abf4f77591965025
+[PASS] ownership exact _PTAR_UNINSTALL/PTAR_SAFE_UNINSTALL.ps1 :: 6a142afbefc20d2ecd4b3846b97c1434db3b78f19e719a44de7fb736a5e400e6
+[PASS] ownership exact _PTAR_UNINSTALL/PTAR_STATIC_DIRS.tsv :: a1661e12eacb94968d482b42ea86f75d1701190d6abbe0598c9975d6c4dfbd64
+[PASS] ownership exact diag/AUTO_WRAPPER_BUILD_VALIDATION.txt :: 6ff482d33bc4d9e5bdaa47a4845e58910911f0507a7f01e85adef507dc871968
+[PASS] ownership exact diag/BUILD_MANIFEST.json :: d54c9e7505b0d52c552b93ee6a4897c3810685b676d455e14b9529956ca4adeb
+[PASS] ownership exact diag/F4_REGRESSION_VALIDATION.txt :: 3603ec17077a701789524036c700371614ad9786b3066e10a722a6a912f8427b
+[PASS] ownership exact diag/GW13_PACING_FINDING.txt :: fce8c00835632f854098036eb9c765a2e6e7697ba7ba934a10eb2c02fb7aec4e
+[PASS] ownership exact diag/GW14_FIELD_FINDING.txt :: 426f0a36e2cd6930d49c7317027dcdd571d32a52fb45ed8c77df0a3296fdab3f
+[PASS] ownership exact diag/GW15_FIELD_FINDING.txt :: 5e99e3605110f3cbd396fbdc029c3dd82460fa68f57b8d1a5e228a377790be93
+[PASS] ownership exact diag/GW16A_HEAVY_FIELD_FINDING.txt :: 210d4b5f0fc3b6370417f5b74c3a7ba68129ce154a75a5b35bade013bb595466
+[PASS] ownership exact diag/GW16B_HEAVY_FIELD_FINDING.txt :: 620593273b11e4d8c3e13ee37a62b0dd63fd0f7b89de95f378706be462d71912
+[PASS] ownership exact diag/GW16C_HIGH_GATE_FINDING.txt :: 6a01789a23f67bb064269b5e128bb510be098320d9896a0bf22f8295e63cfcfd
+[PASS] ownership exact diag/GW16D_LIGHT_HOTKEY_FIELD_FINDING.txt :: 97a2d0894cb3100dcbbaec4ec9ae07fcdf4f533e4120ceab83dfeccb3873d5cb
+[PASS] ownership exact diag/GW16E_AUTO30_FIELD_FINDING.txt :: ca55bd53a12b346f36ef6fd333ed31205f1a3e706af86a8c16ae3bad74af1b7b
+[PASS] ownership exact diag/GW16F_CTRL_F8_FIELD_FINDING.txt :: 6891271b47f64351daebf534765f9595c090cc7a812407fd7a31a1352aa41170
+[PASS] ownership exact diag/GW16H_RECORDER_SAFEPOINT_FINDING.txt :: b09941aba957044ed06bd478f82635f6c3e665c18d930fb949e0d653054418d0
+[PASS] ownership exact diag/GW16_BLACKSCREEN_ROOT_CAUSE_RETURNFIX1.txt :: b918b3682f09c5ff811e4100ed5925889a64f8f0f6ddf38c92848c5c37d26e93
+[PASS] ownership exact diag/GW16_RUNTIME_VALIDATION.txt :: d57a4b0504f16183845dd654a79f0633c1e03235d4922301d26eacc242723daf
+[PASS] ownership exact diag/GWINDOW12_GW11_FINDING.txt :: b71699475dc87f2d0e4429530e48f1017a10ecee19ed09d01b4c08945d6996da
+[PASS] ownership exact diag/HARDWARE_PROTOCOL.txt :: 779e9137234d4f4ad50bf3bd35e09109a782c9e5cc34326401fe234da9025af1
+[PASS] ownership exact diag/LAB_STATIC_VALIDATION.txt :: e95ce5220cf75a123d459b345ba3e70841f62e4669413977e7c4c392afe233a1
+[PASS] ownership exact diag/PACINGVERIFIER1_FIELD_FINDING.txt :: 070a0dec76cd986e627db032822b42c93c179b1dcd0d1d70d499ac10f82bd0f3
+[PASS] ownership exact diag/PACINGVERIFIER2_F3_FIELD_FINDING.txt :: fe320b4827adc15d4ee00ce4690ad3bbf273cf35915b8c9d6589a57de5243fbc
+[PASS] ownership exact diag/PACINGVERIFIER2_WIN81FIX3_FIELD_FIX.txt :: d250bd236ea98e99d0eb0cdf71c03659fe1f4fe13b87ae8afe781378ad78e8ba
+[PASS] ownership exact diag/PACINGVERIFIER3_VALIDATION.txt :: 20d496e401a0c631851e174dd08ab6f6e2dc8cb7bbbd205a1ac15fc5f742962e
+[PASS] ownership exact diag/PROD_RECORDER_RESTORE_VALIDATION.txt :: eec22591bcdf2a376ba0fd359de39d6864652a8c953dc5b9933f6b6d3136cc0b
+[PASS] ownership exact diag/PS4_COMPAT_VALIDATION.txt :: 1a5e105162a753224718d6d93b8aaffa2301c6e949ec41b9a0e58a1bd6a644a4
+[PASS] ownership exact diag/PTAR_SHA256.ps1 :: 05b156461ade718dfd5404944eb2f89e6bd5bdf01e0567b2c25253c5041b315c
+[PASS] ownership exact diag/QUALITY_HOTKEY_VALIDATION.txt :: ae6c72e7da410c2736379c8984cf43d9be7782bf9e5e63be026370d356c19e0b
+[PASS] ownership exact diag/RECORDER_SAFEPOINT_VALIDATION.txt :: eb54a8da2e568eef4f24dbdc63c356fa909636b1907fe6d5802fe14018410684
+[PASS] ownership exact diag/SHA256SUMS.txt :: b74780bd7017dbdc119d34521a328e5cd39d47ef7b9137a4f6419f6cfa341fa3
+[PASS] ownership exact diag/UNIFIED_RECORDER_VALIDATION.txt :: cf7b1e614175958434b94f739429044ec60ee464834a94ff3a5a72f6ff1a93d5
+[PASS] ownership exact diag/WIN81_PATH_VALIDATION.txt :: 5afbde7ea815a83a8b878259c1f47c12b1a98769c914f9073cb15dcfd5c92576
+[PASS] ownership exact diag/auto60_30_wrapper.bin :: de35c7536036e0aaf34c8d46387096689d17812263c13bfa066a92e37934fda6
+[PASS] ownership exact diag/auto60_30_wrapper.relocs.txt :: 5d2ef7238fff3e81159e5c3abcf539441d6b019b3216fca47ec74c430b4c8888
+[PASS] ownership exact diag/auto60_30_wrapper.s :: 4ec1e2add959fbc81e67b6c510c39320d33ed9bd6a57aaa07f895faa8e20b1e0
+[PASS] ownership exact diag/base/GW12_BASE.dll :: 50cf02fee971e615f0dba26a7614e27b833486a993cf569fe5369a0fa5b41f59
+[PASS] ownership exact diag/collect.ps1 :: a25f127acd31959928f0ed1b0e0c9d8bd0702a4714006e81a91d373464e96892
+[PASS] ownership exact diag/install.ps1 :: 07812fc0beaf24aa6202dc0c8df84134794521214e22a49582d173dcc8d27237
+[PASS] ownership exact diag/patch_gw16_auto_from_gw12.py :: 089e7047b86731f5575fc8cf274c112b8645945f53953d9454519230ffcaf5fe
+[PASS] ownership exact diag/patch_gw16g_unified_recorder.py :: a5d2dc10e44ee024269a42b0349d1ef454c3b340e576bc58ee9324e0c31cdff5
+[PASS] ownership exact diag/patch_gw16h_recorder_safepoint.py :: 4fc7fdb421940244c8f57466c71ab1799204f21300bfd49d1bcfe8f2c3f73476
+[PASS] ownership exact diag/patch_gw16h_recorder_safepoint2.py :: a8cf63a13bd191c1e89ebd8da2a9079c900ddbb7b343c2ccf391c49f93caf8e9
+[PASS] ownership exact diag/rollback_test.ps1 :: 5204852d0be4def91f792c47a74ceacfb898d2350fcaef1ac7758a649b42530e
+[PASS] ownership exact diag/set_vblank_diagnostics.ps1 :: 88f6b746394082c9a3de6c8d4ee946a63dadbeaa7e0b79e19b70a7001de8cee6
+[PASS] ownership exact diag/validate_auto_wrapper_build.py :: 43a7fc0f2d5533954b6717b8cf77736da2f21bcf8310bb6fdfa0716e8c0cb4da
+[PASS] ownership exact diag/validate_f4_field_regression.py :: 4b1c63f33394a9d4f466c7fad0495aeccb3c57c3e2418921097c9d309822198c
+[PASS] ownership exact diag/validate_gw16_package.py :: 8a0e4a6736172a878b1091ccbaf19d60b38dca03babadcf04f061c4f86a76ed0
+[PASS] ownership exact diag/validate_gw16_runtime.py :: fd1f3b603df0ce33a2623c8e94b6cda6aee28164ca07565e34a0ef69ae7c34a4
+[PASS] ownership exact diag/validate_pacingverifier3.py :: 20709807fa38d8ec7cd663379a41a3429e17fa6d7cba46ffee2cf7a11c5b5469
+[PASS] ownership exact diag/validate_prod_recorder_restore.py :: 748cad2dd0eac9135b2043ea4c9992cd6be669c6e6d57c512e3ad74030b9159f
+[PASS] ownership exact diag/validate_ps4_compat.py :: 17d181fa6c4ae0f4ed3c1ba6b6defa71e2681bf64ca4e90c9c54ee062ad3cecf
+[PASS] ownership exact diag/validate_quality_hotkey_safe.py :: 7f859083c873b19de818d3cb0e958138b484705c1cf1bc752f344f7b6e38183d
+[PASS] ownership exact diag/validate_recorder_safepoint.py :: 675402a70ebbd9f125dc276ba40014faa8838b64bfd8baf50e6620c9ddfaeb66
+[PASS] ownership exact diag/validate_unified_recorder.py :: 5f15264af58904f489501cb54bf3e2c775c016de0676718dbe1a18fd039fd8bf
+[PASS] ownership exact diag/validate_win81_path_handoff.py :: bd53db4340e23543e3212ddd773f55a6d18f4ffba64bae6e3250202edcaef1b3
+[PASS] ownership exact diag/verify.ps1 :: 38126e6f03ffa9f20cf22282d2bb23eff4954a527b684e9ffab6185f6b9325df
+[PASS] ownership exact diag/visible_pacing/PTARVisiblePacingVerifier.cs :: d96a190ea7b506efe76edc0b1c519f131477f62af44a0771bee1abd642b88a43
+[PASS] ownership exact diag/visible_pacing/run_single_engine_verifier.ps1 :: 2d5348dfe4c65a58e2d7c213b73f3e8fdc4171e2390373063705ed663ab9c215
+[PASS] ownership exact payload/d3d11.dll :: 7c56148f4d00f7623c4bf44e5f460d81145b660ff5743a5ea5b57610c1d0c630
+[PASS] ownership exact payload/win81_nis.ini :: efa3e8d152628dd9db31e324ddd12be2bd077f2543371afce10ad5b62eb123d1
+[PASS] ownership exact payload/win81_nis_dx11_x64.dll :: 7c56148f4d00f7623c4bf44e5f460d81145b660ff5743a5ea5b57610c1d0c630
+[PASS] ownership exact payload/win81_nis_version.txt :: da663db8c5a2877c0cf216e35be8e459e0840caf9c55016072831628781f6f5b
+[PASS] ownership exact tools/installer/INSTALL_QSV_HELPER_WIN81.ps1 :: 9d62d932615604bc045cbd040d9d6b6e62f02683205a8358a3817482b041f66f
+[PASS] ownership exact static coverage :: (72, 72)
+[PASS] uninstaller PTAR_STATIC_OWNERSHIP.tsv
+[PASS] uninstaller Get-FileHash
+[PASS] uninstaller [KEEP]
+[PASS] uninstaller install_state.json
+[PASS] no root recursive wipe
+[PASS] manifest package :: PTAR_GW16H_UNIFIEDREC3_SAFEPOINT2_NATIVEUSR1
+[PASS] manifest filename :: PTAR_GW16H_UNIFIEDREC3_SAFEPOINT2_NATIVEUSR1.zip
+[PASS] manifest runtime
+[PASS] manifest unified recorder
+[PASS] manifest no bridge
+[PASS] manifest resource guards mode-aware
+[PASS] manifest device identity mode-aware
+[PASS] manifest multipath timing
+[PASS] manifest safepoint2 RVAs
+[PASS] manifest native call coverage
+[PASS] manifest HUD original
+[PASS] manifest result prefix
+[PASS] manifest SAFEPOINT1 field failure
+[PASS] manifest SAFEPOINT2 hardware pending
+GW16_PACKAGE_VALIDATION=390/390 PASS

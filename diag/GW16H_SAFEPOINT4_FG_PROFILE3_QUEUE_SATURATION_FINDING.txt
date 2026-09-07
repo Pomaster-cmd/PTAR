@@ -1,0 +1,103 @@
+GW16H SAFEPOINT4 FIELD FINDING - FG PROFILE 3 RECORDER QUEUE SATURATION
+====================================================================
+
+Field result supplied by user:
+  PTAR_GW16H_RESULTS_20260906_113420.zip
+Recorded stream:
+  B18K18_QSV_20260906_112108_615_PID8696.mp4
+Mode:
+  PTAR + FG ON, VideoRecordProfile=3, 1920x1080 / 60 FPS / 22000 kbps
+
+SAFEPOINT4 prior gate
+---------------------
+The user confirmed the preceding FG-OFF native-USR SAFEPOINT4 test is good:
+recording works and the live game's visual state remains correct. Therefore the
+SAFEPOINT4 native D3D11 state guard is field-validated for that gate.
+
+FG presenter evidence during the failing FG recording
+------------------------------------------------------
+FULLSTACK1 DISPLAY PRESENT SUCCESSES 778
+FULLSTACK1 REAL PRESENTS 389
+FULLSTACK1 GENERATED PRESENTS 389
+FULLSTACK1 PTAR REAL FRAMES 390
+FULLSTACK1 PTAR GENERATED FRAMES 388
+FULLSTACK1 PRESENT BUSY DELTA 0
+FULLSTACK1 PRESENT QUEUE DROPS DELTA 0
+FULLSTACK1 DISPLAY MAILBOX DROPS DELTA 0
+FULLSTACK1 FG RUNTIME FAILURES DELTA 0
+FULLSTACK1 FG AUTO DISABLES DELTA 0
+FULLSTACK1 NVENC ADMISSION SKIPS DELTA 0
+
+Interpretation: the isolated FG presenter is healthy and delivers an essentially
+perfect REAL/GENERATED alternation. The visual recording cadence regression is not
+caused by frame generation failing to produce intermediate frames.
+
+Recorder evidence
+-----------------
+FULLSTACK1 RECORDER WALL CLOCK MS 12557
+FULLSTACK1 RECORDER TARGET CFR FRAMES 755
+FULLSTACK1 RECORDER OUTPUT CFR FRAMES 755
+FULLSTACK1 RECORDER UNIQUE FRAMES FED 241
+FULLSTACK1 RECORDER TIMELINE DUPLICATES 514
+FULLSTACK1 RECORDER TIMELINE MISSED SLOTS 34
+FULLSTACK1 RECORDER GPU RING HIGH WATER 4
+FULLSTACK1 RECORDER ENCODE QUEUE HIGH WATER 32
+FULLSTACK1 RECORDER DROP NO GPU SLOT 0
+FULLSTACK1 RECORDER DROP QUERY ERROR 0
+FULLSTACK1 RECORDER MAP DO_NOT_WAIT BUSY 0
+FULLSTACK1 RECORDER MAP ERRORS 0
+FULLSTACK1 RECORDER DROP QSV QUEUE FULL 480
+FULLSTACK1 RECORDER PIPE WRITE FAILURES 0
+FULLSTACK1 RECORDER FINALIZE TIMEOUTS 0
+FULLSTACK1 RECORDER FFMPEG EXIT CODE 0
+
+Interpretation: the 32-frame RAM encode queue reaches its hard ceiling and rejects
+480 captured frames. GPU conversion/readback is not failing. FFmpeg/QSV starts and
+finalizes normally. Missing source frames are then reconstructed by the fixed-CFR
+timeline as duplicates, producing the observed repeated-frame pattern in the MP4.
+
+Historical correction
+---------------------
+The earlier hardware-validated B18K18 run with 9213 unique frames / 9352 output
+frames was NOT 1920x1080/60. It was the historical compact B18K18 profile at
+960x540/60, 5000 kbps. Its NV12 payload was 777600 bytes/frame (~44.5 MiB/s at
+60 Hz) and QSV queue-full drops were zero.
+
+Current profile 3 uses 3110400 NV12 bytes/frame, exactly 4x the raw bytes per frame
+and ~178 MiB/s at 60 Hz. Therefore the old compact B18K18 result cannot be used as
+evidence that the current 1080p60 consumer path has already been hardware-validated.
+
+SAFEPOINT5 / QSVPRIORITY1 rationale
+-----------------------------------
+The locked B18K18 implementation deliberately ran both asynchronous recorder workers
+at THREAD_PRIORITY_BELOW_NORMAL and launched FFmpeg with BELOW_NORMAL_PRIORITY_CLASS.
+That policy was validated for compact 540p60, but the field result proves the
+1080p60 profile 3 consumer cannot drain the 32-frame queue fast enough under the
+current scheduling policy.
+
+SAFEPOINT5 changes consumer scheduling only:
+  - encode/pipe-writer thread: BELOW_NORMAL -> NORMAL;
+  - FFmpeg/QSV process: BELOW_NORMAL_PRIORITY_CLASS -> NORMAL priority class by
+    removing only that CreateProcess flag;
+  - CREATE_NO_WINDOW retained;
+  - GPU readback worker remains BELOW_NORMAL;
+  - presenter and FG remain nonblocking and keep absolute priority;
+  - queue size remains 32;
+  - no change to timeline, conversion, bitrate, profile dimensions, QSV command,
+    state guard, SAFEPOINT routing, local VS/RS, or FG algorithm.
+
+Hardware gate for SAFEPOINT5
+----------------------------
+Run only PTAR + FG ON + VideoRecordProfile=3 for about 10 seconds.
+Acceptance for this targeted throughput gate:
+  - playable 1920x1080/60 MP4;
+  - live game image remains normal;
+  - DISPLAY REAL/GENERATED remains near 1:1;
+  - RECORDER DROP QSV QUEUE FULL must collapse to zero or near-zero;
+  - UNIQUE FRAMES FED must rise close to TARGET CFR frames;
+  - no new presenter/FG/mailbox/runtime failures.
+
+If the queue still saturates materially, do not hide it by enlarging the queue.
+The next decision must be based on measured sustained consumer throughput (QSV
+preset/profile or a lower recorder resolution), because a larger queue only masks
+short recordings and consumes additional RAM.

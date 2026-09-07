@@ -1,0 +1,84 @@
+[PASS] required 01-INSTALL_GW16.bat
+[PASS] required 02-VERIFY_INSTALL.bat
+[PASS] required 04-COLLECT_RESULTS.bat
+[PASS] required README_TEST.txt
+[PASS] required payload/d3d11.dll
+[PASS] required payload/win81_nis_dx11_x64.dll
+[PASS] required payload/win81_nis.ini
+[PASS] required payload/win81_nis_version.txt
+[PASS] required diag/base/FUSEDDETAIL1_SAFEPOINT8_BASE.dll
+[PASS] required diag/FUSEDDETAIL1_SOURCE.hlsl
+[PASS] required diag/patch_gw16h_fg_fuseddetail1.py
+[PASS] required diag/validate_fg_fuseddetail1.py
+[PASS] required diag/FG_FUSEDDETAIL1_VALIDATION.txt
+[PASS] required diag/GW16H_SAFEPOINT11_FUSEDDETAIL1_LAB_FINDING.txt
+[PASS] required diag/BUILD_MANIFEST.json
+[PASS] required diag/SHA256SUMS.txt
+[PASS] required _PTAR_UNINSTALL/PTAR_STATIC_OWNERSHIP.tsv
+[PASS] required _PTAR_UNINSTALL/PTAR_STATIC_DIRS.tsv
+[PASS] required _PTAR_UNINSTALL/PTAR_SAFE_UNINSTALL.ps1
+[PASS] runtime SHA :: 864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c
+[PASS] d3d11 SHA :: 864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c
+[PASS] runtime mirrors exact
+[PASS] INI SHA :: bd39b7c703ddf7a8658bed4df620232d00c06972351ca404c2d8386187fd3f50
+[PASS] version SHA :: 8c15a4ab74222f1efc7305315bf25dd06903f45bd568abdd3a04d152501e0c51
+[PASS] SP8 branch base SHA :: 613714f5ac70bc94867a3044dd067f4de18bb3ef65262c60f0febce2ca9d4c70
+[PASS] installer hash lock 864c0ca8
+[PASS] installer hash lock bd39b7c7
+[PASS] installer hash lock 8c15a4ab
+[PASS] verifier hash lock 864c0ca8
+[PASS] verifier hash lock bd39b7c7
+[PASS] verifier hash lock 8c15a4ab
+[PASS] installer package id
+[PASS] installer knows FUSED runtime
+[PASS] collector includes FUSED validation
+[PASS] collector includes FUSED finding
+[PASS] version SAFEPOINT11=FUSEDDETAIL1
+[PASS] version FG_FUSEDDETAIL1_NEW_TEXTURE_FETCH=ZERO_BY_SOURCE_STRUCTURE
+[PASS] version FG_FUSEDDETAIL1_NEW_RESOURCE_BINDINGS=ZERO
+[PASS] version FG_FUSEDDETAIL1_NEW_DISPATCH=ZERO
+[PASS] version SAFEPOINT11_LINEAGE=BRANCH_FROM_SAFEPOINT8
+[PASS] INI CONSERVATIVE/FUSEDDETAIL1
+[PASS] INI No added texture-load token
+[PASS] INI Profile 2 QUALITY is mathematically bypassed
+[PASS] README no new texture resource
+[PASS] README no new Dispatch
+[PASS] README one real GTX 960M test
+[PASS] README QUALITY remains mathematically unchanged
+[PASS] manifest package :: PTAR_GW16H_UNIFIEDREC3_SAFEPOINT11_FUSEDDETAIL1
+[PASS] manifest filename
+[PASS] manifest runtime :: 864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c
+[PASS] manifest branch base
+[PASS] manifest load 7->7
+[PASS] manifest added load zero
+[PASS] manifest bindings zero
+[PASS] manifest dispatch zero
+[PASS] manifest exact timing pending
+[PASS] manifest payload locks
+[PASS] manifest fused validation
+[PASS] execute validate_fg_fuseddetail1.py
+[PASS] execute validate_quality_hotkey_safe.py
+[PASS] execute validate_pacingverifier3.py
+[PASS] execute validate_f4_field_regression.py
+[PASS] execute validate_prod_recorder_restore.py
+[PASS] execute validate_win81_path_handoff.py
+[PASS] execute validate_ps4_compat.py
+[PASS] execute validate_auto_wrapper_build.py
+[PASS] inherited report FG_TDETAIL4_VALIDATION.txt
+[PASS] inherited report UNIFIED_RECORDER_VALIDATION.txt
+[PASS] inherited report RECORDER_QSV_PRIORITY_VALIDATION.txt
+[PASS] inherited report GW16_RUNTIME_VALIDATION.txt
+[PASS] inherited report RECORDER_NATIVE_STATE_GUARD_VALIDATION.txt
+[PASS] SHA registry coverage :: (103, 103)
+[PASS] ownership coverage :: (104, 104)
+[PASS] ownership IDs contiguous :: 104
+[PASS] SHA registry hashes exact
+[PASS] ownership hashes exact
+[PASS] ownership hashes SHA registry
+[PASS] no work product __pycache__
+[PASS] no work product *.pyc
+[PASS] no work product *.pyo
+[PASS] no work product *disasm*
+[PASS] no work product *.bak
+[PASS] no work product fuseddetail1_candidate*.dll
+GW16_PACKAGE_VALIDATION=83/83 PASS

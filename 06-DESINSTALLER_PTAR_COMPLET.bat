@@ -1,9 +1,9 @@
 @echo off
 setlocal EnableExtensions
 cd /d "%~dp0"
-title PTAR GW15 - DESINSTALLATION COMPLETE SECURISEE
+title PTAR GW16 - DESINSTALLATION COMPLETE SECURISEE
 for %%I in ("%~dp0.") do set "ROOT=%%~fI"
-set "TMP=%TEMP%\PTAR_GW15_UNINSTALL_%RANDOM%_%RANDOM%"
+set "TMP=%TEMP%\PTAR_GW16_UNINSTALL_%RANDOM%_%RANDOM%"
 mkdir "%TMP%" >nul 2>&1
 if not exist "%ROOT%\_PTAR_UNINSTALL\PTAR_SAFE_UNINSTALL.ps1" (
   echo [FAIL] Moteur de desinstallation PTAR absent.

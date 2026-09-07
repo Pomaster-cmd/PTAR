@@ -1,0 +1,27 @@
+PTAR GW15 LOCK30 — HARDWARE FINDING
+===================================
+Source: PTAR_GW15_RESULTS_20260904_160348.zip
+Platform: Windows 8.1 x64 / GTX 960M / 60 Hz
+
+Validated low branch:
+- capture rate 59.838 Hz, sampling ratio 0.997x
+- visible unique 29.994 FPS
+- GENERATED 14.997 FPS
+- REAL 14.997 FPS
+- GENERATED dwell median 33.303 ms
+- REAL dwell median 33.345 ms
+- G->R median 33.303 ms
+- R->G median 33.345 ms
+- midpoint balance 99.875%
+- pair imbalance median 0.221%, P95 0.771%
+
+The raw CSV contains one verifier-side observation stall around 1.01 s:
+serial 1067 R -> 1069 R with a measured 89.746 ms dwell, followed by a 10.303 ms dwell.
+The verifier capture interval maximum is also 89.746 ms. This is observer loss evidence,
+not sufficient evidence of a PTAR marker drop. PACINGVERIFIER3 therefore quarantines the
+transition across a verifier stall plus the immediately following transition from PTAR
+gap/type-break and aggregate pacing statistics.
+
+Conclusion: exact 30-Hz low branch is hardware-validated. GW16 AUTO60/30 reuses this
+low-branch contract while adding a high 60-Hz branch and hysteretic selection. GW16 AUTO
+itself remains hardware-unvalidated until the next gate.

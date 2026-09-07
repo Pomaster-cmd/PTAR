@@ -1,29 +1,50 @@
-PTAR GW15 LOCK30
+PTAR GW16H UNIFIEDREC3 SAFEPOINT11 / FUSEDDETAIL1
+===================================================
 
-PURPOSE
--------
-Test an exact 30 FPS visible cadence on a fixed 60 Hz display by combining the already-tested GW13 all-frame SyncInterval=2 presenter with FrameGenerationTargetFPS=30.
+Branch base: SAFEPOINT8/TDETAIL4_1. SAFEPOINT9/10 parameter experiments are intentionally not part of this lineage. Recorder/state/QSV fixes from SAFEPOINT2-5 remain retained.
 
-WHY
----
-GW14 restored ~31.2 visible FPS with zero marker gaps and near-perfect median 33/33 ms pacing, but the raw CSV still contains periodic 1-VBlank correction frames and an initial 3/1 phase. A fixed 60 Hz display cannot represent a perfectly even 31.2 FPS cadence. Exact 30 FPS can be represented as 2 VBlanks per visible content.
+WHY FUSEDDETAIL1
+----------------
+Field videos localized the remaining FG shimmer mainly to the selection circle at the character feet and repetitive floor grilles/vents. Laboratory sweeps showed that further global Guard/trust tuning is not a robust solution.
 
-GW15 changes NO runtime bytes versus GW13. It only sets FrameGenerationTargetFPS=30. The existing FGREAL governor contract targets REAL at target/2 = 15 FPS.
+The retained approach is a local stabilizer fused directly into the existing FG compute shader. It reuses the four bilinear texels already loaded from each REAL endpoint to estimate local 2x2 green-channel range, then limits only excessive GENERATED deviation from the unwarped REAL blend.
 
-TEST
-----
-1. Close game. Run 01-INSTALL_GW15.bat.
-2. Run 02-VERIFY_INSTALL.bat and require VERIFY=PASS.
-3. Launch same scene, CTRL+F6 ON, wait 2-3 s.
-4. Run 03-ARM_VISIBLE_FRAME_VERIFIER.bat, press F5 once.
-5. Wait for 900 Hz start beep and 1400 Hz end beep.
-6. Run 04-COLLECT_RESULTS.bat and send PTAR_GW15_RESULTS_*.zip.
+COST-FIRST DESIGN
+-----------------
+- no new texture resource
+- no new UAV
+- no new resource binding
+- no new Dispatch
+- source-level .Load token count remains exactly 7, identical to TDETAIL4
+- REAL frames are untouched
+- only a small ALU/min/max/lerp tail is added to the existing GENERATED shader
 
-SUCCESS TARGET
---------------
-- capture rate near 60 Hz, sampling ratio >=0.90
-- visible ~30 FPS, ~15 G + ~15 R
-- G dwell ~33.3 ms and R dwell ~33.3 ms
-- gaps/same-type near 0
-- load-shed / late midpoint drops near 0
-- pair imbalance low, with no persistent 1/3 or periodic 2/1 cadence.
+The source-level structure therefore adds no texture-fetch site. Exact GPU time still requires the one real GTX 960M test; no unmeasured hardware timing is claimed by the package.
+
+VISUAL POLICY
+-------------
+FUSEDDETAIL1 never sharpens. For profile 3 it computes a 0.30..1.00 scale and can only move the generated RGB result toward the unwarped REAL blend when local GENERATED deviation exceeds the endpoint 2x2 range budget. Stable/low-motion content is nearly untouched in the lab corpus.
+
+PROFILE 2 QUALITY IS BYPASSED
+-----------------------------
+The stabilizer numerator contains a profile gate based on G. At QUALITY G=.35, its extra +10*(G-.25) term is at least +1.0 while normalized green deviation is <=1, forcing z=1 and therefore scale=1. QUALITY remains mathematically unchanged by the fused stabilizer.
+
+LAB RESULT / TARGET
+-------------------
+On the TDETAIL4 field corpus used for development, the fused proxy materially reduced high-motion excursion on the selection circle and floor grilles while leaving low-motion pixel change near zero. The test is a proxy because the recorded video does not expose exact runtime motion vectors or pre-present surfaces. Hardware visual validation is still required.
+
+INSTALLATION
+------------
+1. Fermer le jeu.
+2. Lancer 01-INSTALL_GW16.bat.
+3. Lancer 02-VERIFY_INSTALL.bat et exiger VERIFY=PASS.
+
+UNIQUE GATE MATERIEL
+--------------------
+1. PTAR 1280x720 -> 1920x1080 + FG actif.
+2. CTRL+F8: selectionner le profil 3 CONSERVATIVE.
+3. Reproduire un deplacement/camera avec le cercle au pied du personnage et les grilles visibles.
+4. Enregistrer 10-15 s avec CTRL+F9.
+5. Envoyer la video et le ZIP de 04-COLLECT_RESULTS.bat.
+
+Le meme run servira a juger simultanement le gain visuel et l'absence de regression de pacing/recorder.

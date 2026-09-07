@@ -1,14 +1,14 @@
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
 cd /d "%~dp0"
-title PTAR GW15 - VBLANK3 VISIBLE + PACING
+title PTAR GW16H UNIFIEDREC1 - VBLANK3 VISIBLE + PACING
 
 if /i "%~1"=="__PTAR_DIAG_INNER__" goto :INNER
 set "PS=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
 set "PTAR_DIAG_SCRIPT=%~f0"
 cls
 echo ============================================================
-echo PTAR GW15 - VBLANK3 VERIFIER
+echo PTAR GW16H UNIFIEDREC1 - VBLANK3 VERIFIER
 echo ============================================================
 echo [INFO] UN seul moteur capture le marqueur et calcule a la fois :
 echo        FPS visibles / GENERATED / REAL / gaps / parite + frame pacing.
@@ -28,7 +28,7 @@ set "HELPER=%~dp0diag\set_vblank_diagnostics.ps1"
 set "SHAHELPER=%~dp0diag\PTAR_SHA256.ps1"
 set "RUNNER=%~dp0diag\visible_pacing\run_single_engine_verifier.ps1"
 set "SOURCE=%~dp0diag\visible_pacing\PTARVisiblePacingVerifier.cs"
-set "EXPECTED_RUNTIME=2fbd2343803af619621282fface48c469092c16d5139ec0ce52b35affb83d29d"
+set "EXPECTED_RUNTIME=8ba879e5f8d84d04877b7aeaa94db5029979de2441b97a05644f6e91a649814b"
 set "GAMEROOT="
 if exist "%~dp0Warhammer.exe" set "GAMEROOT=%~dp0"
 if not defined GAMEROOT for %%I in ("%~dp0..") do if exist "%%~fI\Warhammer.exe" set "GAMEROOT=%%~fI\"
@@ -45,7 +45,7 @@ set "RC=0"
 
 cls
 echo ============================================================
-echo PTAR GW15 - VBLANK3 VERIFIER
+echo PTAR GW16H UNIFIEDREC1 - VBLANK3 VERIFIER
 echo ============================================================
 echo Une seule capture GDI par echantillon :
 echo   - UNIQUE / GENERATED / REAL / gaps / parite
@@ -61,7 +61,7 @@ if errorlevel 1 (
 echo [PASS] Console administrateur confirmee.
 
 echo.
-echo [1/3] Verification GW15 actif + moteur VBLANK3...
+echo [1/3] Verification GW16 actif + moteur VBLANK3...
 if not exist "%RUNTIME%" (
   echo [ERREUR] d3d11.dll actif introuvable.
   set "RC=27"
@@ -69,7 +69,7 @@ if not exist "%RUNTIME%" (
 )
 call :HASH "%RUNTIME%" RUNTIME_HASH
 if /i not "%RUNTIME_HASH%"=="%EXPECTED_RUNTIME%" (
-  echo [ERREUR] Le runtime actif n'est pas GW15 exact.
+  echo [ERREUR] Le runtime actif n'est pas GW16 exact.
   echo Attendu : %EXPECTED_RUNTIME%
   echo Actif   : %RUNTIME_HASH%
   set "RC=29"
@@ -85,7 +85,7 @@ if not exist "%SOURCE%" (
   set "RC=31"
   goto :END
 )
-echo [PASS] Runtime GW15 exact + moteur VBLANK3 present.
+echo [PASS] Runtime GW16 exact + moteur VBLANK3 present.
 
 echo.
 echo [2/3] Activation VBlankDiagnostics=1...

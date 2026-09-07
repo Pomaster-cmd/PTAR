@@ -2,10 +2,10 @@ $ErrorActionPreference='Stop'
 $PackRoot=Split-Path -Parent $PSScriptRoot
 $Payload=Join-Path $PackRoot 'payload'
 $StateRoot=Join-Path $PackRoot '_PTAR_UNINSTALL\state'
-$Log=Join-Path $PSScriptRoot 'PTAR_GW15_INSTALL_LAST.log'
-$ExpectedRuntime='2fbd2343803af619621282fface48c469092c16d5139ec0ce52b35affb83d29d'
-$ExpectedIni='5f1ee54060411ba5b555378cddd3e6d658366a6c8ecc5e9660343e1ef0d0312b'
-$ExpectedVersion='23f1dc86bc6e9c0f7863223acf618d2503795c34146e4947efc1795806634eaa'
+$Log=Join-Path $PSScriptRoot 'PTAR_GW16_INSTALL_LAST.log'
+$ExpectedRuntime='864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c'
+$ExpectedIni='bd39b7c703ddf7a8658bed4df620232d00c06972351ca404c2d8386187fd3f50'
+$ExpectedVersion='8c15a4ab74222f1efc7305315bf25dd06903f45bd568abdd3a04d152501e0c51'
 $KnownPtar=@(
  '60f88d6175c3a42f2a082211503f391309d1381c897909d8dec86398a8c392df',
  '3d4d777c943ced0f475df1371d3a2f9eeb5eeb80c66e9fb217c4d91057f32453',
@@ -23,7 +23,25 @@ $KnownPtar=@(
  '03640c417d5a1b695e8a1082e1cf1fba0aa69f8313bcfe4fb12255b131709458',
  '50cf02fee971e615f0dba26a7614e27b833486a993cf569fe5369a0fa5b41f59',
  '2fbd2343803af619621282fface48c469092c16d5139ec0ce52b35affb83d29d',
- '7f12ff11aaa59e86923d4a697cff584df05faa4401e9122b1898bae0452d40e2'
+ '7f12ff11aaa59e86923d4a697cff584df05faa4401e9122b1898bae0452d40e2',
+ '94dc7d3f9890bd8a1ded0b215e2e9b86c46da65611360ca2c03ea02c047e69ec',
+ '422c81694d43956a1eda22793a10f415ab6873351b9dfbfadabc6cb2b2aecd96',
+ '0a494b58138ebb62eb745c3b07c3669571901ef564921b8c619ed35e7733b10c',
+ '8a14244eff0acfaa0f6d2ba238f27472da27ea3fe9d6b30c25a2a107a3972834',
+ 'ab471f9fd3236a630adabfd9cc761ecefd0887d91f2f97af1c74d1a34a1f8e38',
+ '0529f6d64ccc7dcf9fe01d439dc9a4fc67f7e909334f5940bdbb5c09de6b497e',
+ 'b8d5804977ff175bb5e5638d28269c4788a0de209dd24ace7204d94f1fa583ea',
+ '8481ef8d8694e1f1978191e55c30098c1e836cb1c3defade1e3678956402b84d',
+ '4c5bc494df5c6feaf01acf37a71ad486eac94b07fb82b9f5f58a78bc6801620f',
+ '6621dc14abb4f7c28f4d14568b2549f822da298fc6db9076dff7f97f252d2cf7',
+ '7c56148f4d00f7623c4bf44e5f460d81145b660ff5743a5ea5b57610c1d0c630',
+ '961b7c0211239364920516e990f9f5a6a3284709bcd4a2a17e6a21b1a76556f2',
+ '1b8e8673ff2b046604b282c55d4d9bcfe053ad046fa2c30a69a6b6ff5ffe6e8b',
+ '50a329275f410bea032b3a50e81a7838f01f1ef22ee916ad4285df79d146ed92',
+ 'e7c1b14f263505a64442d16aa1088c43b04a81665641c159a3da1181267bac53',
+ 'c573b4c4ca102867ca67dbd16e1e6d36e3057f43d85b343fca94803000de0040',
+ '613714f5ac70bc94867a3044dd067f4de18bb3ef65262c60f0febce2ca9d4c70',
+ '864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c'
 )
 function Sha([string]$p){if(Test-Path -LiteralPath $p -PathType Leaf){return (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant()}return $null}
 function L([string]$s){$x='['+(Get-Date -Format 'HH:mm:ss')+'] '+$s;Write-Host $x;Add-Content -LiteralPath $Log -Value $x -Encoding UTF8}
@@ -50,7 +68,7 @@ foreach($p in @($a,$c)){
 }
 New-Item -ItemType Directory -Path $StateRoot -Force|Out-Null
 $state=Join-Path $StateRoot ('INSTALL_'+(Get-Date -Format 'yyyyMMdd_HHmmss_fff'));New-Item -ItemType Directory -Path $state -Force|Out-Null
-$m=[ordered]@{schema=3;package='GW15_LOCK30';game_root=$g;pack_root=$PackRoot;installed=@{};original=@{};windowstyle=@{};known_ptar=$KnownPtar}
+$m=[ordered]@{schema=3;package='GW16H_UNIFIEDREC3_SAFEPOINT11_FUSEDDETAIL1';game_root=$g;pack_root=$PackRoot;installed=@{};original=@{};windowstyle=@{};known_ptar=$KnownPtar}
 foreach($r in @(@('d3d11.dll',$a,$ExpectedRuntime),@('win81_nis_dx11_x64.dll',$c,$ExpectedRuntime),@('win81_nis.ini',$i,$ExpectedIni),@('win81_nis_version.txt',$v,$ExpectedVersion))){
  $n=$r[0];$p=$r[1];$installSha=$r[2];$e=Test-Path -LiteralPath $p -PathType Leaf
  $x=[ordered]@{exists=$e;sha=$null;backup=$null;ptar=$false}
@@ -65,6 +83,8 @@ $key='HKCU:\Software\NeoCore Games\Warhammer Martyr\Options';$m.windowstyle.key=
 if(Test-Path -LiteralPath $key){$r=Get-ItemProperty -LiteralPath $key;if($r.PSObject.Properties.Name -contains 'WindowStyle'){$m.windowstyle.exists=$true;$m.windowstyle.original=[int]$r.WindowStyle;if([int]$r.WindowStyle -ne 1){Set-ItemProperty -LiteralPath $key -Name WindowStyle -Value 1;$m.windowstyle.applied=$true}}}
 $m|ConvertTo-Json -Depth 10|Set-Content -LiteralPath (Join-Path $state 'install_state.json') -Encoding UTF8
 Set-Content -LiteralPath (Join-Path $StateRoot 'LATEST_STATE.txt') -Value $state -Encoding UTF8
+# Production 1.0.6 recorder compatibility: hand off the exact game target to the original QSV installer/test scripts.
+Set-Content -LiteralPath (Join-Path $PackRoot 'win81_nis_install_target.txt') -Value $g -Encoding ASCII
 Copy-Item -LiteralPath $pr -Destination $a -Force;Copy-Item -LiteralPath $pc -Destination $c -Force;Copy-Item -LiteralPath $pi -Destination $i -Force;Copy-Item -LiteralPath $pv -Destination $v -Force
 if((Sha $a)-ne $ExpectedRuntime -or (Sha $c)-ne $ExpectedRuntime -or (Sha $i)-ne $ExpectedIni -or (Sha $v)-ne $ExpectedVersion){F 'Post-install hash mismatch.' 30}
-L 'INSTALL=PASS';L ('GAME_ROOT='+$g);L ('RUNTIME_SHA256='+$ExpectedRuntime);L 'GW15 LOCK30: GW13 Sync2 runtime retained byte-for-byte; FrameGenerationTargetFPS=30 => REAL governor target 15 FPS. Safe uninstaller retained.';exit 0
+L 'INSTALL=PASS';L ('GAME_ROOT='+$g);L ('RUNTIME_SHA256='+$ExpectedRuntime);L 'GW16H UNIFIEDREC3 SAFEPOINT11/FUSEDDETAIL1: branch from SAFEPOINT8/TDETAIL4; fused profile-3 detail stabilizer reuses existing FG bilinear texture loads, adds no resource/dispatch, and mathematically bypasses QUALITY.';exit 0

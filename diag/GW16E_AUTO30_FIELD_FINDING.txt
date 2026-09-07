@@ -1,0 +1,30 @@
+PTAR GW16E FIELD FINDING — AUTO 30-LOCK GAMEPLAY VARIATION — 2026-09-05
+=================================================================
+
+Submitted result package: PTAR_GW16E_RESULTS_20260905_095330.zip
+
+MEASURED EVIDENCE
+-----------------
+AUTO_SWITCHES.txt contains four transitions during the captured FG session:
+- LOW->HIGH
+- HIGH->LOW
+- LOW->HIGH
+- HIGH->LOW
+
+PACINGVERIFIER3 report:
+- VISIBLE_FPS=29.197
+- GENERATED_FPS=14.598
+- REAL_FPS=14.598
+- CAPTURE_RATE_HZ=60.043
+- PACING_CLEAN_COVERAGE_PCT=100.000
+- OBSERVER_STALL_EVENTS=0
+- PACING_VERDICT=UNEVENTFUL FPS AVERAGE BUT NOTICEABLE PACING VARIANCE
+
+The runtime log proves that HIGH was actually reached twice, then the controller forced LOW again.
+The operator reported that 60-FPS behaviour works in lighter parts of the scene, but that different parts of the same gameplay area cross the load threshold and the automatic 30-FPS lock creates perceptible performance variation.
+
+DECISION
+--------
+GW16F NOLOCK30_1 removes the automatic LOW target30/Sync2 clamp. FG ON starts and remains on the HIGH target60/Sync1 presentation policy. If the game/GPU cannot sustain the 60-FPS ceiling, visible delivery is allowed to degrade naturally through the existing generation/load-shed path rather than quantizing the whole presenter to 30 FPS.
+
+The GW15/GW16C 30-FPS branch remains preserved as validated historical/provenance material but is not reachable in GW16F's active controller.

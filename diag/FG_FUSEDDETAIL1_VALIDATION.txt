@@ -1,0 +1,71 @@
+[PASS] SAFEPOINT8 branch base present
+[PASS] SAFEPOINT8 branch base exact :: 613714f5ac70bc94867a3044dd067f4de18bb3ef65262c60f0febce2ca9d4c70
+[PASS] source present
+[PASS] patch present
+[PASS] final runtime exact :: 864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c
+[PASS] mirror exact
+[PASS] runtime size unchanged :: (320000, 320000)
+[PASS] source fits reserved block :: 1179
+[PASS] patch executes :: OUT_SHA=864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c | FG_SOURCE_BLOCK=0x34210+1200 | SOURCE_BYTES=1179 | LOAD_TOKENS=7_UNCHANGED
+[PASS] patch reproduces payload :: 864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c
+[PASS] section topology unchanged
+[PASS] PE checksum exact :: 0x4eb36
+[PASS] all functional delta inside FG source block :: (997, '0x342b0', '0x346bc')
+[PASS] no delta outside FG block + PE checksum :: 1000
+[PASS] next embedded shader byte-identical
+[PASS] pre-FG region byte-identical except checksum
+[PASS] embedded source exact
+[PASS] NUL terminator inside reservation
+[PASS] next shader prefix intact
+[PASS] binding/thread token P:register(t0) :: 1
+[PASS] binding/thread token C:register(t1) :: 1
+[PASS] binding/thread token M:register(t2) :: 1
+[PASS] binding/thread token O:register(u0) :: 1
+[PASS] binding/thread token X:register(b0) :: 1
+[PASS] binding/thread token [numthreads(8,8,1)] :: 1
+[PASS] load token unchanged x.Load( :: 4
+[PASS] load token unchanged P.Load( :: 1
+[PASS] load token unchanged C.Load( :: 1
+[PASS] load token unchanged M.Load( :: 1
+[PASS] load token unchanged .Load( :: 7
+[PASS] total Load tokens same as TDETAIL4 :: (7, 7)
+[PASS] no Sample token added
+[PASS] no Gather token added
+[PASS] same resource declarations count
+[PASS] TDETAIL4 token retained 9.5+.35*max(abs(v.x),abs(v.y))
+[PASS] TDETAIL4 token retained k=.8+saturate(
+[PASS] TDETAIL4 token retained max(G,.25)
+[PASS] TDETAIL4 token retained if(G<.3)
+[PASS] FUSEDDETAIL token r.a=max(max(A.g,B.g),max(Q.g,D.g))-min(min(A.g,B.g),min(Q.g,D.g))
+[PASS] FUSEDDETAIL token abs(o.g-f.g)
+[PASS] FUSEDDETAIL token (a.a+b.a)*.38+.01+10*(G-.25)
+[PASS] FUSEDDETAIL token o=lerp(f,o,.3+.7*z)
+[PASS] FUSEDDETAIL token o.a=f.a
+[PASS] QUALITY bypass dev 0.00 :: 1.0
+[PASS] QUALITY bypass dev 0.25 :: 1.0
+[PASS] QUALITY bypass dev 0.50 :: 1.0
+[PASS] QUALITY bypass dev 0.75 :: 1.0
+[PASS] QUALITY bypass dev 1.00 :: 1.0
+[PASS] larger guard profiles bypass :: 1.0
+[PASS] larger guard profiles bypass :: 1.0
+[PASS] profile3 scale bounded 0.30..1 :: [1.0, 1.0, 0.9930693069306931, 0.4397205588822355, 0.3349825087456272, 0.306999300069993]
+[PASS] stable profile3 dev zero bypass :: 1.0
+[PASS] profile3 correction only attenuates :: [1.0, 1.0, 0.9930693069306931, 0.4397205588822355, 0.3349825087456272, 0.306999300069993]
+[PASS] more endpoint detail never increases attenuation :: (0.526754649070186, 0.313997200559888)
+[PASS] ASCII source
+[PASS] balanced braces :: (5, 5)
+[PASS] balanced parens :: (78, 78)
+[PASS] no newline/control bytes
+[PASS] version SAFEPOINT11=FUSEDDETAIL1
+[PASS] version FG_FUSEDDETAIL1_TEXTURE_LOAD_TOKEN_COUNT=7_UNCHANGED
+[PASS] version FG_FUSEDDETAIL1_NEW_RESOURCE_BINDINGS=ZERO
+[PASS] version FG_FUSEDDETAIL1_NEW_DISPATCH=ZERO
+[PASS] version FG_FUSEDDETAIL1_QUALITY_PROFILE2=MATHEMATICALLY_BYPASSED
+[PASS] INI CONSERVATIVE/FUSEDDETAIL1
+[PASS] INI No added texture-load token
+[PASS] INI Profile 2 QUALITY is mathematically bypassed
+[PASS] README no new texture resource
+[PASS] README no new Dispatch
+[PASS] README source-level .Load token count remains exactly 7
+[PASS] README QUALITY remains mathematically unchanged
+FG_FUSEDDETAIL1_VALIDATION=70/70 PASS

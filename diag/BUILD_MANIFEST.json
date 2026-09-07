@@ -1,38 +1,376 @@
 {
-  "package": "PTAR_GW15_LOCK30",
-  "build_date": "2026-09-03",
+  "package": "PTAR_GW16H_UNIFIEDREC3_SAFEPOINT11_FUSEDDETAIL1",
+  "package_filename": "PTAR_GW16H_UNIFIEDREC3_SAFEPOINT11_FUSEDDETAIL1.zip",
+  "build_date": "2026-09-06",
   "runtime": {
-    "sha256": "2fbd2343803af619621282fface48c469092c16d5139ec0ce52b35affb83d29d",
-    "binary_source": "GW13 all-frames SyncInterval=2",
-    "binary_delta_from_gw13": "none"
-  },
-  "config_delta": {
-    "FrameGenerationTargetFPS": {
-      "from": 60,
-      "to": 30
+    "base": "GW12 LOADSHEDSOFT1",
+    "base_sha256": "50cf02fee971e615f0dba26a7614e27b833486a993cf569fe5369a0fa5b41f59",
+    "sha256": "864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c",
+    "auto_wrapper_rva": "0x34FFC80",
+    "auto_mode_rva": "0x34FFF20",
+    "auto_fallback_rva": "0x34FFF00",
+    "quality_next_helper_rva": "0x34FD9E0",
+    "hotkey_poll_helper_rva": "0x34FDA10",
+    "return_fix": "preserve governor EAX across post-governor QPC",
+    "fg_gate": "actual FG-enabled state RVA 0x02C3F6CC must be non-zero and soft-OFF must be zero",
+    "no_lock30": "FG ON initializes AUTO_MODE=0 target60 Sync1; HIGH->LOW branch is unconditionally bypassed",
+    "qualitysafe1": "while FG is ON, selected quality toggles only inside the active ME tier; full four-profile cycle remains available while FG is OFF",
+    "hotkeysafe2": "CTRL+F8 consumes Status action 2 at poll source; action 8 VideoRecord is available for SAFEPOINT1 deferred toggle request",
+    "gw16g_validated_base_sha256": "8481ef8d8694e1f1978191e55c30098c1e836cb1c3defade1e3678956402b84d",
+    "unifiedrec2_base_sha256": "4c5bc494df5c6feaf01acf37a71ad486eac94b07fb82b9f5f58a78bc6801620f",
+    "recorder_safepoint1": {
+      "pending_rva": "0x34FE900",
+      "request_stub_rva": "0x34FE910",
+      "wrapper_rva": "0x34FE930",
+      "action8_site": "0x12304 -> JMP request stub",
+      "common_submit_site": "0x25B49 -> CALL wrapper",
+      "wrapper_order": "original B18K18 submit first; pending toggle second at common presenter safe point"
     },
-    "real_governor_contract": "target/2 => 15 FPS"
+    "safepoint1_base_sha256": "6621dc14abb4f7c28f4d14568b2549f822da298fc6db9076dff7f97f252d2cf7",
+    "recorder_safepoint2": {
+      "pending_rva": "0x34FE900",
+      "request_stub_rva": "0x34FE910",
+      "isolated_wrapper_rva": "0x34FE930",
+      "native_wrapper_rva": "0x34FE980",
+      "resource_helper_rva": "0x34FEA60",
+      "identity_helper_rva": "0x34FEAD0",
+      "native_call_sites": [
+        "0x0000C810",
+        "0x0000C90E",
+        "0x0000D6F0",
+        "0x0000D7EE"
+      ],
+      "native_tuple": {
+        "device_rva": "0x0004B118",
+        "context_rva": "0x02C7DFA8",
+        "swapchain_rva": "0x02C7E010"
+      },
+      "fg_off_texture": "IDXGISwapChain::GetBuffer(0, IID_ID3D11Texture2D)",
+      "fg_on_feed": "existing isolated final REAL+GENERATED texture",
+      "fg_off_feed": "native USR swapchain BackBuffer0 REAL texture",
+      "guard_policy": "fail-closed, mode-aware; no blind guard bypass"
+    },
+    "safepoint2_field_runtime_sha256": "7c56148f4d00f7623c4bf44e5f460d81145b660ff5743a5ea5b57610c1d0c630",
+    "recorder_local_gpu_state": {
+      "base_sha256": "7c56148f4d00f7623c4bf44e5f460d81145b660ff5743a5ea5b57610c1d0c630",
+      "owner_rva": "0x34FF4C0",
+      "vertex_shader_rva": "0x34FF4C8",
+      "rasterizer_state_rva": "0x34FF4D0",
+      "init_wrapper_rva": "0x34FF4E0",
+      "original_recorder_gpu_init_rva": "0x002A400",
+      "patched_init_call_site": "0x0027AD5",
+      "conversion_helper_rva": "0x002B6B0",
+      "redirected_shared_state_sites": [
+        "0x002B747",
+        "0x002BA2D",
+        "0x002B7B1",
+        "0x002BA7C"
+      ],
+      "removed_shared_dependencies": [
+        "isolated fullscreen VS 0x02C93A38",
+        "isolated rasterizer state 0x02C93A80"
+      ],
+      "policy": "create recorder-local VS/RS on exact active recorder device; release/recreate on device change; fail closed on creation failure"
+    },
+    "recorder_native_state_guard": {
+      "base_sha256": "961b7c0211239364920516e990f9f5a6a3284709bcd4a2a17e6a21b1a76556f2",
+      "field_basis": "SAFEPOINT3 encoded 642/642 CFR frames but first frame normal and second frame corrupted; F9 screenshots remained corrupted after STOP",
+      "native_submit_call_rva": "0x34FEA16",
+      "main_rva": "0x34FE804",
+      "save_rva": "0x34FECB3",
+      "restore_rva": "0x34FEEC3",
+      "release_rva": "0x34FF67D",
+      "scope": "FG-OFF native USR recorder submit only; isolated FG-ON route unchanged",
+      "preserved_state": [
+        "PS SRV slot0",
+        "PS shader",
+        "VS shader",
+        "PS constant buffer slot0",
+        "IA input layout",
+        "GS shader",
+        "IA primitive topology",
+        "8 OM render targets + depth/stencil",
+        "OM blend state/factor/sample mask",
+        "RS rasterizer state",
+        "up to 16 viewports",
+        "up to 16 scissor rects"
+      ],
+      "com_references_released": 17,
+      "clear_state": false,
+      "deferred_context": false,
+      "original_b18k18_conversion_changed": false
+    },
+    "recorder_qsv_priority": {
+      "base_sha256": "1b8e8673ff2b046604b282c55d4d9bcfe053ad046fa2c30a69a6b6ff5ffe6e8b",
+      "encode_thread_priority_rva": "0x0001F679",
+      "ffmpeg_create_flags_rva": "0x00020687",
+      "encode_thread": "THREAD_PRIORITY_BELOW_NORMAL -> THREAD_PRIORITY_NORMAL",
+      "gpu_readback_thread": "THREAD_PRIORITY_BELOW_NORMAL unchanged",
+      "ffmpeg_process": "BELOW_NORMAL_PRIORITY_CLASS removed; CREATE_NO_WINDOW retained",
+      "functional_bytes_changed": 5,
+      "queue_frames": 32,
+      "queue_size_changed": false,
+      "timeline_changed": false,
+      "qsv_command_changed": false,
+      "profile_dimensions_changed": false,
+      "fg_presenter_changed": false,
+      "state_guard_changed": false
+    },
+    "fg_tdetail2": {
+      "base_sha256": "50a329275f410bea032b3a50e81a7838f01f1ef22ee916ad4285df79d146ed92",
+      "profile_id": 3,
+      "menu_label": "CONSERVATIVE retained",
+      "me_tier": "/2 unchanged",
+      "motion_denominator_base_before": 1.5,
+      "motion_denominator_base_after": 9.5,
+      "trust_before": "k^2",
+      "trust_after": "linear k",
+      "photometric_floor_before": 0.02,
+      "photometric_floor_after": 0.35,
+      "functional_bytes_changed": 6,
+      "profile2_quality_semantics_changed": false,
+      "recorder_changed": false,
+      "presenter_pacing_changed": false
+    },
+    "fg_tdetail3": {
+      "base_sha256": "e7c1b14f263505a64442d16aa1088c43b04a81665641c159a3da1181267bac53",
+      "profile_id": 3,
+      "menu_label": "CONSERVATIVE retained",
+      "me_tier": "/2 unchanged",
+      "photometric_floor": 0.35,
+      "motion_denominator_base": 9.5,
+      "trust_raw": "linear k from TDETAIL2",
+      "trust_final": "0.80 + 0.20*k_raw",
+      "min_warp_trust": 0.8,
+      "profile2_quality_semantics_changed": false,
+      "recorder_changed": false,
+      "presenter_pacing_changed": false
+    },
+    "fg_tdetail4": {
+      "base_sha256": "c573b4c4ca102867ca67dbd16e1e6d36e3057f43d85b343fca94803000de0040",
+      "profile_id": 3,
+      "menu_label": "CONSERVATIVE retained",
+      "me_tier": "/2 unchanged",
+      "motion_denominator_base": 9.5,
+      "trust_final": "0.80 + 0.20*k_raw unchanged from TDETAIL3",
+      "min_warp_trust": 0.8,
+      "photometric_floor_before": 0.35,
+      "photometric_floor_after": 0.25,
+      "effective_profile3_guard": 0.25,
+      "functional_bytes_changed": 1,
+      "profile2_quality_semantics_changed": false,
+      "recorder_changed": false,
+      "presenter_pacing_changed": false,
+      "target": "selection-circle and repetitive floor-grille shimmer under motion"
+    },
+    "fg_fuseddetail1": {
+      "branch_base": "SAFEPOINT8/TDETAIL4_1",
+      "base_sha256": "613714f5ac70bc94867a3044dd067f4de18bb3ef65262c60f0febce2ca9d4c70",
+      "profile_id": 3,
+      "menu_label": "CONSERVATIVE retained",
+      "source_block_file_offset": "0x34210",
+      "source_block_bytes": 1200,
+      "source_bytes": 1179,
+      "existing_load_token_count": 7,
+      "new_load_token_count": 7,
+      "additional_load_token_sites": 0,
+      "new_resource_bindings": 0,
+      "new_dispatches": 0,
+      "local_feature": "2x2 green range from the P/C bilinear texels already loaded by L()",
+      "correction": "bounded lerp from generated output toward unwarped REAL blend only",
+      "scale_min": 0.3,
+      "scale_max": 1.0,
+      "quality_profile2_bypass": "mathematically exact for normalized channels via +10*(G-.25) gate at G=.35",
+      "output_alpha": "unwarped REAL blend alpha",
+      "presenter_pacing_changed": false,
+      "recorder_changed": false,
+      "resource_topology_changed": false
+    }
   },
-  "gw14_field": {
-    "visible_unique_fps": 31.196,
-    "generated_fps": 15.598,
-    "real_fps": 15.598,
-    "g_dwell_median_ms": 33.326,
-    "r_dwell_median_ms": 33.245,
-    "cadence_mismatch_pct": 31.35,
-    "gaps": 0,
-    "same_type": 0
+  "presentation_policy": {
+    "fg_on": {
+      "mode": "HIGH",
+      "target_fps": 60,
+      "real_governor_target_fps": 30,
+      "present_sync_interval": 1,
+      "visible_ceiling_fps": 60
+    },
+    "automatic_low30_fallback": "disabled",
+    "legacy_low_branch": "embedded but unreachable; retained for provenance/rollback",
+    "fg_off": "clear controller; target120 => up to 60 REAL/s; SyncInterval 1",
+    "degradation": "natural workload/load-shed behavior; no deliberate target30/Sync2 quantization"
   },
-  "gw13_field": {
-    "visible_unique_fps": 28.326,
-    "generated_fps": 12.939,
-    "real_fps": 15.387,
-    "pair_imbalance_pct": 0.77,
-    "late_midpoint_drops": 213
+  "quality_hotkey_policy": {
+    "ctrl_f8": "quality menu only; same ME tier while FG ON",
+    "fg_on_profile_pairs": [
+      "0<->1",
+      "2<->3"
+    ],
+    "fg_off_profile_cycle": "0->1->2->3->0",
+    "me_tier_crossing": "select while FG OFF, apply on next CTRL+F6 ON",
+    "plain_f8": "status only when CTRL is not held",
+    "dwm_ctrl_f8_snapshot": "disabled",
+    "plain_f6_from_ctrl_f6": "suppressed at poll boundary"
   },
-  "objective": "30.0 visible FPS at exact 2-VBlank G + 2-VBlank R cadence on 60 Hz without GW13 queue pressure",
-  "diagnostic": "VBLANK3 PACINGVERIFIER2 single-engine F4; beeps 900 Hz start / 1400 Hz end",
-  "package_filename": "PTAR_GW15_LOCK30.zip",
-  "results_prefix": "PTAR_GW15_RESULTS_",
-  "uninstall": "production-style exact ownership/SHA"
+  "field_basis": {
+    "gw15_low_branch": "hardware validated 29.994 visible FPS baseline",
+    "gw16c_heavy": "safe LOW hardware pass at 30.000 FPS",
+    "gw16e_mixed": "automatic 60/30 lock caused undesirable gameplay variation",
+    "gw16f_no_lock": "operator accepted NOLOCK30_1 gameplay behavior; AUTO_SWITCHES empty",
+    "gw16f_ctrl_f8_failure": "live /2->/3 quality tier change released the FG presenter, recreated the ME ring at 640x368, failed swapchain recreation, leaked plain F8 Status; CTRL+F6 also leaked plain F6"
+  },
+  "diagnostic": {
+    "engine": "VBLANK3 PACINGVERIFIER3 single-engine DPI-aware x64 EXE",
+    "observer_stall_classification": true,
+    "start_beep_hz": 900,
+    "end_beep_hz": 1400,
+    "collector_hotkey_events": true,
+    "quality_hotkey_static_validator": "diag/validate_quality_hotkey_safe.py",
+    "unified_recorder_static_validator": "diag/validate_unified_recorder.py",
+    "recorder_safepoint_static_validator": "diag/validate_recorder_safepoint.py",
+    "recorder_local_gpu_state_static_validator": "diag/validate_recorder_local_gpu_state.py",
+    "safepoint2_field_finding": "diag/GW16H_SAFEPOINT2_ZEROFRAME_FINDING.txt",
+    "recorder_native_state_guard_static_validator": "diag/validate_recorder_native_state_guard.py",
+    "safepoint3_native_context_finding": "diag/GW16H_SAFEPOINT3_NATIVE_CONTEXT_LEAK_FINDING.txt",
+    "recorder_qsv_priority_static_validator": "diag/validate_recorder_qsv_priority.py",
+    "safepoint4_fg_profile3_finding": "diag/GW16H_SAFEPOINT4_FG_PROFILE3_QUEUE_SATURATION_FINDING.txt"
+  },
+  "results_prefix": "PTAR_GW16H_RESULTS_",
+  "uninstall": "production-style exact ownership/SHA with temporary uninstall engine",
+  "recorder_policy": {
+    "architecture": "single original internal B18K18 recorder path",
+    "hotkey": "CTRL+F9",
+    "fg_on": "same production recorder captures final REAL+GENERATED isolated presenter texture",
+    "fg_off": "same production recorder consumes CTRL+F9 on all four native USR presenter routes and captures native swapchain BackBuffer0 REAL texture",
+    "external_bridge": "absent",
+    "start_hud": "original production notice 14",
+    "stop_hud": "original production notice 16",
+    "helper": "tools/qsv/b18k17_ffmpeg.exe",
+    "profiles": "original VideoRecordProfile 1/2/3 retained",
+    "patch_scope": "SAFEPOINT2 routing + SAFEPOINT3 local GPU state + SAFEPOINT4 native state guard retained; SAFEPOINT5 changes only encode-thread and FFmpeg/QSV consumer scheduling from below-normal to normal",
+    "resource_guards": "mode-aware retained",
+    "device_identity_guard": "mode-aware retained",
+    "toggle_timing": "deferred action8 consumed on isolated FG presenter route or native USR presenter route",
+    "native_backbuffer_api": "IDXGISwapChain::GetBuffer(0, IID_ID3D11Texture2D)",
+    "gpu_state": "recorder-local fullscreen VS + rasterizer state, device-owned and recreated on device change",
+    "native_context_state_guard": "save/restore every state category changed by B18K18 conversion; 17 getter-acquired COM refs released",
+    "consumer_scheduling": "encode/pipe thread NORMAL; FFmpeg/QSV process NORMAL; GPU readback worker remains BELOW_NORMAL",
+    "queue_frames": 32,
+    "queue_resize": "NO"
+  },
+  "installer_fix": {
+    "scope": "INSTALLFIX1 hash-lock discipline inherited; exact SAFEPOINT11/FUSEDDETAIL1 payload hashes regenerated",
+    "expected_runtime_sha256": "864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c",
+    "expected_ini_sha256": "bd39b7c703ddf7a8658bed4df620232d00c06972351ca404c2d8386187fd3f50",
+    "expected_version_sha256": "8c15a4ab74222f1efc7305315bf25dd06903f45bd568abdd3a04d152501e0c51",
+    "known_ptar_includes_safepoint1": true,
+    "known_ptar_includes_safepoint2": true,
+    "known_ptar_includes_safepoint3": true,
+    "known_ptar_includes_safepoint4": true,
+    "known_ptar_includes_safepoint5": true,
+    "known_ptar_includes_safepoint6": true,
+    "known_ptar_includes_safepoint7": true,
+    "known_ptar_includes_safepoint8": true,
+    "known_ptar_includes_safepoint11": true
+  },
+  "safepoint1_finding": {
+    "field_result": "PTAR_GW16H_RESULTS_20260905_181248.zip",
+    "installation": "PASS; exact SAFEPOINT1 runtime 6621dc14... installed",
+    "observed_route": "path=USR, usrReady=1, fgEnabled=0, fgReady=0",
+    "observed_failure": "CTRL+F9 produced no B18K18 START/FAIL/STOP event",
+    "root_cause": "SAFEPOINT1 pending request was consumed only by the isolated/common submit route; the active FG-OFF native USR presenter used one of four other late presenter branches",
+    "safepoint2_fix": "wrap all four active native USR post-present sites, obtain BackBuffer0 from the native swapchain, and feed native device/context/texture into the original B18K18 while retaining mode-aware fail-closed guards"
+  },
+  "hardware_state": {
+    "canonical_runtime": "SAFEPOINT8/TDETAIL4 remains the field FG-quality baseline until SAFEPOINT11/FUSEDDETAIL1 visual+cost gate passes",
+    "safepoint1": "FIELD_FAILED_NATIVE_USR_REQUEST_NOT_CONSUMED",
+    "safepoint2": "FIELD_FAILED_ZERO_FRAMES_155_GPU_PREP_FAILURES",
+    "required_targeted_gates": [
+      "One PTAR+FG profile-3 FUSEDDETAIL1 run: same-scene selection-circle + floor-grille video plus collector; judge visual shimmer and verify no pacing/recorder regression. Exact GPU time is not claimed without the GTX 960M run."
+    ],
+    "safepoint3": "FIELD_VIDEO_ENCODE_PASS_642_FRAMES_BUT_NATIVE_CONTEXT_VISUAL_STATE_CORRUPTION",
+    "safepoint4": "FIELD_PASS_FG_OFF_NATIVE_USR_VIDEO_AND_VISUAL_STATE",
+    "safepoint5": "FIELD_VIDEO_USABLE_1080P60_LOW_DUPLICATION",
+    "q3_conservative": "FIELD_REJECTED_TEMPORAL_SOFTNESS_PULSATION",
+    "safepoint6": "FIELD_IMPROVED_VS_Q3_BUT_REJECTED_HIGH_MOTION_BIDIRECTIONAL_DETAIL_OSCILLATION",
+    "safepoint7": "FIELD_LOCALIZED_REMAINING_SHIMMER_TO_SELECTION_CIRCLE_AND_FLOOR_GRILLES",
+    "safepoint8": "LAB_VALIDATED_TARGETED_TDETAIL4_VISUAL_GATE_PENDING",
+    "safepoint11": "LAB_STATIC_AND_PROXY_VALIDATED_HARDWARE_VISUAL_COST_GATE_PENDING"
+  },
+  "safepoint2_finding": {
+    "field_result": "PTAR_GW16H_RESULTS_20260906_093852.zip",
+    "installation": "PASS; exact SAFEPOINT2 runtime installed",
+    "routing": "CTRL+F9 queued and consumed native USR; QSV process started and stopped cleanly",
+    "mp4": "262 bytes, zero streams/frames",
+    "counters": "target 565; output 0; unique fed 0; GPU ring HWM 0; DROP QUERY ERROR 155; map/pipe failures 0; ffmpeg exit 0",
+    "root_cause": "B18K18 conversion retained isolated-presenter fullscreen VS and rasterizer state; absent/wrong-device on native USR",
+    "safepoint3_fix": "recorder-local VS/RS created on exact active recorder device and used by conversion helper"
+  },
+  "safepoint3_finding": {
+    "field_result": "PTAR_GW16H_RESULTS_20260906_101103.zip",
+    "result_sha256": "c813ec9a5a334877b68d5b79b924dbae225ca5e7e6132a60a367f1dc332c8762",
+    "mp4": "B18K18_QSV_20260906_100931_953_PID13572.mp4",
+    "mp4_sha256": "8e5a8cf08976d6e30cbb6eb6cbb32a9a07f1dae88a629ff8409fdb8ae7a80f4a",
+    "mp4_probe": "H.264 High 1920x1080 yuv420p 60 FPS 642 frames 10.700 s",
+    "counters": "target 642; output 642; unique 165; duplicates 477; GPU ring HWM 2; encode queue HWM 5; all drop/map/pipe errors 0; ffmpeg exit 0",
+    "visual_evidence": "first decoded frame normal; t=0.016 s frame corrupted red/black/magenta; F9 captures after recorder STOP remain corrupted",
+    "root_cause": "B18K18 conversion mutates the live native ID3D11DeviceContext pipeline state and does not restore it",
+    "safepoint4_fix": "native-USR-only exact pipeline state snapshot/restore around original B18K18 recorder submit"
+  },
+  "safepoint4_finding": {
+    "field_result": "PTAR_GW16H_RESULTS_20260906_113420.zip",
+    "prior_native_usr_gate": "user confirmed SAFEPOINT4 FG-OFF recording and visual state are good",
+    "fg_presenter": "778 display presents = 389 REAL + 389 GENERATED; PTAR 390 REAL + 388 GENERATED; no presenter/mailbox/runtime failures",
+    "recorder": "12557 ms; target/output 755; unique 241; duplicates 514; encode queue HWM 32; QSV queue-full drops 480; map/pipe/finalize errors 0; ffmpeg exit 0",
+    "root_cause": "profile 3 1080p60 sustained consumer throughput is below producer rate under BELOW_NORMAL encode-thread + FFmpeg process scheduling",
+    "historical_correction": "9213/9352 historical validated B18K18 run was 960x540/60 5000 kbps, not 1920x1080/60",
+    "safepoint5_fix": "raise only encode/pipe thread and FFmpeg/QSV child process to NORMAL; retain GPU readback worker below-normal and all presenter/FG nonblocking policy"
+  },
+  "safepoint5_q3_finding": {
+    "quality_video": "B18K18_QSV_20260906_120521_690_PID1176-PTAR.mp4",
+    "q3_video": "B18K18_QSV_20260906_125219_932_PID10492-PTAR.mp4",
+    "q3_result": "REJECTED_TEMPORAL_SOFTNESS_PULSATION",
+    "safepoint6_fix": "TDETAIL2 soft linear trust + Guard35-equivalent floor only for effective profile-3 semantics"
+  },
+  "validation": {
+    "fg_tdetail2": "64/64 PASS",
+    "unified_recorder": "57/57 PASS",
+    "qsv_priority_retained": "45/45 PASS",
+    "gw16_runtime": "74/74 PASS",
+    "quality_hotkeys": "45/45 PASS",
+    "pacing": "54/54 PASS",
+    "production_recorder": "29/29 PASS",
+    "f4": "21/21 PASS",
+    "win81_path": "29/29 PASS",
+    "powershell4": "30/30 PASS",
+    "auto_wrapper": "26/26 PASS",
+    "inherited_safepoint2": "59/59 PASS",
+    "inherited_safepoint3": "73/73 PASS",
+    "inherited_safepoint4": "54/54 PASS",
+    "fg_tdetail3": "139/139 PASS",
+    "fg_tdetail4": "65/65 PASS",
+    "fg_fuseddetail1": "70/70 PASS"
+  },
+  "safepoint6_tdetail2_finding": {
+    "video": "B18K18_QSV_20260906_142840_925_PID11648-PTAR.mp4",
+    "recorder": "1920x1080/60; 1040 frames; ~2.5% consecutive duplicates",
+    "result": "Q3 directional softness removed but high-motion detail oscillation remains",
+    "strong_motion_abs_detail_excursion": "~12.4% center / 14.0% character / 13.1% ground vs QUALITY ~6.4% / 7.6% / 7.2%",
+    "safepoint7_fix": "compress motion trust to k_final=0.80+0.20*k_raw while retaining TDETAIL2 Guard35 floor, denominator 9.5 and ME /2"
+  },
+  "safepoint7_tdetail3_finding": {
+    "evidence": "B18K18_QSV_20260906_153401_302_PID11980-PTAR.mp4",
+    "localized_defects": [
+      "selection circle/halo at character feet",
+      "repetitive floor grilles/vents"
+    ],
+    "interpretation": "TDETAIL3 retains too much warped detail in motion-localized thin/repetitive structures",
+    "report": "diag/GW16H_SAFEPOINT7_TDETAIL3_FIELD_FINDING.txt"
+  },
+  "safepoint11_fuseddetail1_finding": {
+    "report": "diag/GW16H_SAFEPOINT11_FUSEDDETAIL1_LAB_FINDING.txt",
+    "lineage": "branch from SAFEPOINT8/TDETAIL4; SAFEPOINT9/10 parameter experiments rejected/not required",
+    "lab_proxy": "circle and floor-grille strong-motion excursions materially reduced; low-motion mean pixel change near zero",
+    "cost_claim": "no added source-level texture Load site/resource/Dispatch; exact hardware GPU time pending"
+  }
 }

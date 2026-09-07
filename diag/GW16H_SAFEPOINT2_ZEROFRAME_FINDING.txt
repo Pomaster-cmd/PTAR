@@ -1,0 +1,55 @@
+GW16H SAFEPOINT2 ZERO-FRAME FIELD FINDING
+==========================================
+
+Field evidence
+--------------
+Result pack: PTAR_GW16H_RESULTS_20260906_093852.zip
+Runtime SHA-256: 7c56148f4d00f7623c4bf44e5f460d81145b660ff5743a5ea5b57610c1d0c630
+Produced MP4: B18K18_QSV_20260906_092241_205_PID19968.mp4
+MP4 size: 262 bytes; valid MP4 container, zero streams, zero video packets, empty media payload.
+
+The log proves SAFEPOINT2 routing and QSV process startup succeeded:
+  HOTKEY B18K18 SAFEPOINT2 request queued
+  HOTKEY B18K18 SAFEPOINT2 consumed native USR
+  HOTKEY B18K18 QSV RECORD: ON requested
+  OK: B18K18 compact readback luma plane ready 1920x1080
+  OK: B18K18 compact readback chroma plane ready 960x540
+  OK: B18K18 QSV encoder process started
+
+The complete-session counters localize the failure before readback/map/queue/pipe:
+  RECORDER TARGET CFR FRAMES       565
+  RECORDER OUTPUT CFR FRAMES       0
+  RECORDER UNIQUE FRAMES FED       0
+  RECORDER GPU RING HIGH WATER     0
+  RECORDER ENCODE QUEUE HIGH WATER 0
+  RECORDER DROP QUERY ERROR        155
+  RECORDER MAP DO_NOT_WAIT BUSY    0
+  RECORDER MAP ERRORS              0
+  RECORDER PIPE WRITE FAILURES     0
+  RECORDER FFMPEG EXIT CODE        0
+
+Static root cause
+-----------------
+The counter named DROP QUERY ERROR is incremented when the B18K18 GPU conversion helper at RVA 0x002B6B0
+returns failure. Before SAFEPOINT3 this helper required and bound two shared isolated-presenter D3D11 objects:
+  fullscreen vertex shader : RVA 0x02C93A38
+  rasterizer state          : RVA 0x02C93A80
+
+Those objects are created by the isolated FG presenter on its own D3D11 device. They are not valid recorder
+resources for the native USR device used with FG OFF. All other conversion resources tested by this helper are
+created by the original B18K18 GPU initializer on the device passed to the recorder.
+
+SAFEPOINT3 correction
+---------------------
+1. Keep SAFEPOINT2 native/isolated feed routing unchanged.
+2. Keep original B18K18 GPU initializer RVA 0x002A400.
+3. Wrap its caller at RVA 0x0027AD5 with local-state initializer RVA 0x034FF4E0.
+4. Create recorder-local fullscreen VS at RVA 0x034FF4C8 on the exact active recorder device.
+5. Create recorder-local rasterizer state at RVA 0x034FF4D0 on the exact active recorder device.
+6. Track owning device at RVA 0x034FF4C0 and recreate local state on device changes.
+7. Redirect the four B18K18 conversion references at RVAs 0x002B747, 0x002BA2D, 0x002B7B1 and 0x002BA7C
+   from the shared FG objects to the recorder-local objects.
+8. Do not NOP resource checks and do not alter QSV/pipe/readback/pacing/hotkey logic.
+
+SAFEPOINT2 is field-invalidated for recording because it can start QSV but feed zero frames.
+SAFEPOINT3 is statically/lab validated; real Windows 8.1 hardware validation remains the final proof gate.

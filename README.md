@@ -2,264 +2,178 @@
 
 **PTAR** is an experimental Windows 8.1 / Direct3D 11 spatial reconstruction and frame-generation research project.
 
-The project combines a PTAR-NG MoE spatial reconstruction path with an asynchronous frame-generation pipeline using NVIDIA NVENC motion-estimation capabilities and a custom Direct3D 11 presentation path. Its purpose is to extend useful rendering capabilities on older Windows and GPU configurations while keeping the runtime measurable, reproducible and non-destructive.
+PTAR combines the PTAR-NG MoE spatial reconstruction path with an asynchronous frame-generation pipeline using NVIDIA NVENC motion-estimation capabilities and a custom Direct3D 11 presentation path. The project targets measurable, reproducible graphics improvements on legacy Windows/GPU configurations, with external visible-frame validation and non-destructive install/rollback tooling.
 
-The project is developed as a research/runtime engineering effort rather than as a simple graphics preset or post-processing filter. PTAR includes spatial reconstruction, frame synthesis, presentation/cadence control, external visible-frame verification, installation/rollback tooling and hardware evidence.
+> **Current validated runtime target:** **GW16H UNIFIEDREC3 — SAFEPOINT11 / FUSEDDETAIL1** on Windows 8.1 x64 / GTX 960M. The validated runtime SHA-256 is `864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c`.
 
-> **Current status:** `main` is the hardware-validated **GW15 LOCK30** baseline. The next development target is **GW16 AUTO**, an adaptive 60/30 FPS mode. GW16 is not promoted to `main` until its hardware gate passes.
+## Current baseline — SAFEPOINT11 / FUSEDDETAIL1
 
-## Project goals
+SAFEPOINT11 keeps the validated GW16H presenter, recorder, QSV scheduling, hotkey and native-state fixes, and branches the FG quality work from SAFEPOINT8/TDETAIL4. SAFEPOINT9/10 parameter experiments are deliberately excluded from this lineage.
 
-PTAR is built around several constraints:
+The main visual change is **FUSEDDETAIL1**, fused directly into the existing generated-frame compute shader for profile 3 **CONSERVATIVE**.
 
-- keep Windows 8.1 x64 and Direct3D 11 as first-class targets;
-- preserve compatibility with older NVIDIA mobile hardware such as the GTX 960M test platform;
-- separate spatial reconstruction from frame generation and presentation logic;
-- use external visible-frame measurement rather than trusting an internal FPS counter;
-- preserve known-good subsystems while isolating changes to the active defect or experiment;
-- provide deterministic hashes, validation records and rollback paths;
-- distinguish laboratory/static validation from real hardware validation;
-- keep historical evidence instead of rewriting it to fit a newer implementation.
+Its design constraints are cost-first:
+
+- no new texture resource;
+- no new UAV;
+- no new resource binding;
+- no new Dispatch;
+- source-level `.Load()` count remains **7**, identical to TDETAIL4;
+- REAL frames are untouched;
+- only a small ALU/min/max/lerp tail is added to the GENERATED path.
+
+FUSEDDETAIL1 reuses the four bilinear texels already loaded from each REAL endpoint, estimates a local 2x2 green-channel range and limits only excessive GENERATED deviation from the unwarped REAL blend.
+
+It is a temporal-detail stabilizer, **not a sharpening filter**.
+
+## Hardware validation status
+
+The SAFEPOINT11/FUSEDDETAIL1 hardware gate was run on the Windows 8.1 / GTX 960M reference machine with PTAR x1.5 and FG active, using profile 3 **CONSERVATIVE**.
+
+The field run confirmed the intended improvement on the two localized high-frequency problem areas used during development:
+
+- the selection circle / halo at the character feet;
+- repetitive floor grilles / vents.
+
+Compared with the TDETAIL4 reference capture, the strong high-frequency frame-to-frame excursion on aligned problem windows fell substantially. The field video also showed no corresponding presenter, FG-runtime or QSV failure signature attributable to FUSEDDETAIL1.
+
+The validated runtime identity is:
+
+`864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c`
+
+The validated package supplied for promotion has SHA-256:
+
+`dd2287c2e9d5e3ba7cc0c588821c47419ce1aaaee37a7f5a4b3b25d792786114`
+
+Static package checks in the promoted package include:
+
+- FUSEDDETAIL1 validation: **70/70 PASS**;
+- package validation: **83/83 PASS**;
+- internal SHA ledger: **103/103** entries verified before promotion.
+
+## QUALITY versus CONSERVATIVE
+
+The current profile semantics are intentionally different.
+
+### QUALITY
+
+QUALITY remains the highest-fidelity FG profile. FUSEDDETAIL1 is mathematically bypassed at the QUALITY gate (`G=.35`), so SAFEPOINT11 does not intentionally alter QUALITY image synthesis.
+
+A remaining field defect has been identified in QUALITY: a visible **motion trail / ghost-like persistence around the moving character with FG active**. This is tracked separately from the FUSEDDETAIL1 work.
+
+### CONSERVATIVE
+
+CONSERVATIVE prioritizes temporal stability on difficult thin/repetitive structures. FUSEDDETAIL1 is active here and materially reduces the localized shimmer/detail oscillation observed in earlier profile-3 experiments.
+
+The intention is not to make CONSERVATIVE globally softer. Stable and low-motion content should remain nearly unchanged while unstable generated high-frequency detail is selectively bounded.
 
 ## Spatial reconstruction — PTAR-NG MoE
 
-The production spatial path is based on **PTAR-NG MoE v01**.
-
-Its common validated geometry is:
+The current spatial path remains **PTAR-NG MoE v01**, commonly used at:
 
 `1280x720 -> 1920x1080`
 
-which is an exact x1.5 reconstruction in both dimensions.
+for an exact x1.5 reconstruction in both dimensions.
 
-The production module is maintained in the `SOURCE` branch under:
+Spatial reconstruction and frame generation remain distinct subsystems. The next major quality work therefore targets the PTAR reconstruction engine itself rather than trying to compensate for spatial limitations inside FG.
 
-`runtime_production/ptar_moe_v01_core/`
+## What next — PTAR-NG MoE v02 / Native Detail Recovery
 
-It contains the embedded validated DXBC, the D3D11 runtime wrapper and the integration contract used to insert PTAR into the rendering pipeline without redesigning frame generation or the recorder path.
+The next planned development phase is an improvement of the **PTAR engine itself**.
 
-The integration contract preserves the selected REAL/GENERATED source ordering and applies PTAR at the spatial reconstruction stage. A bilinear fail-open path is available when PTAR geometry is unsupported. NIS is not used as the PTAR runtime fallback.
+The objective is to move PTAR's reconstructed 1080p image materially closer to a native 1920x1080 reference while retaining the performance characteristics that make PTAR useful on hardware such as the GTX 960M.
+
+The first v02 laboratory branch will keep the current single-pass architecture and will initially try to preserve the current texture-sampling budget. The main research directions are:
+
+1. **x1.5 subpixel-phase reconstruction** — exploit the repeating phase structure of the fixed 720p -> 1080p mapping instead of treating every output position identically;
+2. **stronger directional experts** — improve reconstruction of horizontal, vertical and diagonal structures rather than merely increasing local contrast;
+3. **bounded micro-detail residual** — recover useful luminance detail while preventing halos, ringing and artificial oversharpening;
+4. **flat/edge/texture discrimination** — avoid turning 720p aliasing or noise into false detail;
+5. **anti-ringing / anti-shimmer constraints** — spatial quality gains must not recreate the temporal instability already observed on grilles, circles and other repetitive structures.
+
+The native 1080p field capture will be used as ground truth in the laboratory:
+
+`native 1080p -> controlled downsample to 720p -> PTAR candidate -> comparison with original native 1080p`
+
+Candidates will be evaluated before any new hardware request. The initial goal is to gain fidelity mainly through better computation/weights rather than additional bandwidth. A higher-cost variant with one extra texture access will only be considered if the sampling-constant v02 path does not close enough of the native-quality gap.
+
+Only after the spatial engine has improved sufficiently will the remaining QUALITY FG motion-trail defect be revisited on top of the stronger spatial baseline.
 
 ## Frame-generation architecture
 
-PTAR's frame-generation work is built around an asynchronous presentation pipeline rather than a simple duplicate-frame mechanism.
-
-The wider runtime architecture includes:
+PTAR's frame-generation pipeline includes:
 
 - Direct3D 11 proxy/presenter interception;
-- asynchronous frame-generation work;
+- asynchronous generated-frame work;
 - NVIDIA NVENC-based motion-estimation support;
-- explicit REAL / GENERATED frame ordering;
+- explicit REAL / GENERATED ordering;
 - isolated display/presentation handling;
 - visible cadence diagnostics;
-- externally measured frame identity and dwell timing;
-- quality/profile infrastructure inherited from the integrated runtime lineage.
+- external visible-frame verification;
+- live FG quality-profile infrastructure;
+- original B18K18/QSV recorder integration with the SAFEPOINT recorder/state fixes.
 
-A central design rule is that a generated frame only counts as successful when it is actually visible through the DXGI/DWM presentation chain. Internal generation counters are therefore diagnostic information, not proof of delivered frame rate.
+A generated frame counts as successful only when it is actually delivered through the visible DXGI/DWM presentation chain. Internal counters are diagnostic data, not proof of visible frame rate.
 
-## Current `main` — GW15 LOCK30
+## Recorder and state-safety lineage
 
-`main` currently contains the **hardware-validated GW15 LOCK30 baseline**.
+SAFEPOINT11 retains the validated recorder work developed before FUSEDDETAIL1, including:
 
-GW15 was selected as the canonical baseline because it delivers a stable and externally verified 30 FPS visible cadence on a fixed 60 Hz display. It uses the validated Flip Sequential 3-buffer presenter with `Present(2, 0)` and a 30 FPS FG target corresponding to a 15 REAL + 15 GENERATED target split.
+- one original internal B18K18 recorder path;
+- `CTRL+F9` recording with FG ON or OFF;
+- native swapchain BackBuffer0 capture for FG-OFF USR paths;
+- recorder-local fullscreen VS / rasterizer state tied to the active recorder device;
+- native immediate-context state save/restore around the recorder conversion path;
+- QSV encode/pipe scheduling at NORMAL while the GPU readback worker remains BELOW_NORMAL;
+- safe finalization and evidence collection.
 
-External visible-frame validation on the Windows 8.1 / GTX 960M test platform measured:
+These subsystems were intentionally not redesigned for FUSEDDETAIL1.
 
-- visible unique FPS: **29.994**
-- generated FPS: **14.997**
-- real FPS: **14.997**
-- generated dwell median: **33.303 ms**
-- real dwell median: **33.345 ms**
-- pair imbalance median: **0.221%**
-- pair imbalance p95: **0.771%**
-- midpoint balance: **99.875%**
+## Installation / controlled validation
 
-These measurements are external visible-delivery results, not only internal PTAR counters.
-
-### GW15 identity
-
-Runtime SHA-256:
-
-`2fbd2343803af619621282fface48c469092c16d5139ec0ce52b35affb83d29d`
-
-Validated package SHA-256:
-
-`b78fd4bf42f2e7d2eb9f72b0eb59c454e1fe53380d151dd430b29874f287aa40`
-
-The product files promoted to `main` were kept byte-identical to the hardware-validated GW15 package. Repository metadata such as this README and `LICENSE` are maintained separately from the validated package payload.
-
-## Why GW15 matters
-
-Earlier PTAR frame-generation work showed that internal synthesis and internal presentation statistics could look correct while the Windows 8.1 desktop-visible output still dropped or failed to expose generated frames at the expected cadence.
-
-This made the presentation chain itself a research target.
-
-The project therefore moved from internal FPS validation toward external visible-frame verification, including frame identity, REAL/GENERATED ordering, dwell time and cadence balance. GW15 is the first baseline in this progression that is currently promoted as the hardware-validated `main` state.
-
-The practical consequence is important: **PTAR does not claim a frame-generation result merely because the engine reports one. The visible output has to be measured.**
-
-## Historical presentation investigation
-
-The RC17/RC18 investigation is retained because it explains why current PTAR validation is strict.
-
-On the Windows 8.1 x64 / GTX 960M / Inquisitor - Martyr test machine, one RC17 field baseline showed approximately:
-
-- 15.578 visible REAL frames/s
-- 0.793 visible GENERATED frames/s
-- 16.372 visible UNIQUE frames/s
-
-while the internal PTAR path was reporting/presenting close to 30 frames/s.
-
-RC18 `PRESENTDELIVERY1` then changed the presentation contract by bypassing two explicit pre-Present VBlank waits and moving the isolated display path to `Present(1, 0)`. Later work added passive DWM timing evidence, pacing verification and progressively stricter visible-delivery analysis.
-
-Those RC17/RC18 values are **historical investigation data**, not the current GW15 performance figures.
-
-## Next target — GW16 AUTO
-
-The next development target is **GW16 AUTO**.
-
-The objective is not simply to force 60 FPS at all times. The intended behaviour is adaptive:
-
-1. target 60 FPS when the measured rendering/presentation conditions can sustain it;
-2. detect when 60 FPS is no longer sustainable;
-3. fall back cleanly to the validated 30 FPS cadence instead of oscillating or producing uneven delivery;
-4. remain stable at 30 FPS while the higher target is unsafe;
-5. return to 60 FPS only when the recovery condition is sufficiently stable.
-
-This requires hysteresis and a real hardware gate so that the controller does not repeatedly bounce between 60 and 30 FPS.
-
-GW16 remains experimental and is intentionally **not** on `main` until both directions of the transition have been validated on hardware: 60 -> 30 under load and 30 -> 60 when headroom returns.
-
-## Installation / GW15 validation
-
-The current `main` package is intended for controlled testing.
-
-1. Close the game and run `01-INSTALL_GW15.bat`.
-2. Run `02-VERIFY_INSTALL.bat` and require `VERIFY=PASS`.
-3. Launch the test scene and enable frame generation with `CTRL+F6`.
-4. Wait approximately 2–3 seconds for the runtime state to settle.
-5. Run `03-ARM_VISIBLE_FRAME_VERIFIER.bat` and press `F5` once.
-6. The verifier emits a **900 Hz start beep** and a **1400 Hz end beep**.
-7. Run `04-COLLECT_RESULTS.bat` to collect the evidence package.
+1. Close the game.
+2. Run `01-INSTALL_GW16.bat`.
+3. Run `02-VERIFY_INSTALL.bat` and require `VERIFY=PASS`.
+4. Launch the test scene.
+5. Enable FG with the supported hotkey path.
+6. Use `CTRL+F8` for the supported live FG profile selection policy.
+7. Use `CTRL+F9` to start/stop the integrated recorder when evidence is needed.
+8. Run `04-COLLECT_RESULTS.bat` to collect the diagnostic package.
 
 Frame generation starts **OFF** by default.
 
-`05-ROLLBACK_TEST.bat` is provided for the controlled test rollback path.
-
-`06-DESINSTALLER_PTAR_COMPLET.bat` uses the ownership/SHA-aware safe uninstall path.
-
-The installer/uninstaller design follows a non-destructive rule: PTAR should not silently overwrite or delete unknown third-party files.
+`05-ROLLBACK_TEST.bat` provides the controlled rollback path. `06-DESINSTALLER_PTAR_COMPLET.bat` uses the ownership/SHA-aware safe uninstall mechanism.
 
 ## Validation model
 
-PTAR uses several validation layers because they answer different questions.
+PTAR separates three validation levels:
 
-### Static / laboratory validation
+- **laboratory/static validation** — package structure, deterministic patches, binary identities, shader/source invariants and regression contracts;
+- **runtime validation** — confirmation that the intended runtime/configuration path is active;
+- **hardware field validation** — real GPU/driver timing, visible frame delivery and perceptual behaviour that cannot be proven offline.
 
-Used to verify package structure, deterministic patches, expected binary identities, configuration consistency and regression contracts that can be reproduced without the target GPU/game environment.
-
-### Runtime validation
-
-Used to verify that the intended runtime configuration is active and that the expected code/configuration path is being exercised.
-
-### Hardware field validation
-
-Used for behaviour that cannot be proven in the laboratory, including real GPU/driver timing, DXGI/DWM presentation behaviour and externally visible frame cadence.
-
-The hardware result takes precedence for claims about actual visible FPS.
-
-## Visible-frame diagnostics
-
-PTAR's external verifier exists specifically to avoid false confidence from internal counters.
-
-The current GW15 package exposes the supported entry point as:
-
-`03-ARM_VISIBLE_FRAME_VERIFIER.bat`
-
-The validation flow records externally visible frame transitions and allows REAL/GENERATED delivery and dwell timing to be analysed independently from PTAR's own HUD/statistics.
-
-Historical diagnostic tooling and validation records are retained under `diag/` where relevant.
+Hardware claims are made only from actual hardware evidence.
 
 ## Repository layout
 
-The repository deliberately separates the promoted runtime from the durable source/reproducibility project.
+- **`main`** — promoted hardware-validated runtime baseline, installer/rollback/recorder tooling, diagnostic evidence and current documentation.
+- **`SOURCE`** — durable PTAR Project Master with source, integration material, corpora, benchmarks, build tooling, validation and historical evidence.
 
-- **`main`** — current hardware-validated GW15 LOCK30 runtime package, installer, verifier, validation tooling and current project documentation.
-- **`SOURCE`** — PTAR Project Master containing source code, integration contracts, permanent corpora, benchmarks, build tooling, hardware evidence and historical material.
-
-Only these two long-lived branches are kept after the GW15 cleanup. Temporary laboratory and staging branches are removed once their useful state has been promoted or preserved elsewhere.
-
-## `main` package structure
-
-The current promoted runtime contains, among other files:
-
-- `01-INSTALL_GW15.bat`
-- `02-VERIFY_INSTALL.bat`
-- `03-ARM_VISIBLE_FRAME_VERIFIER.bat`
-- `04-COLLECT_RESULTS.bat`
-- `05-ROLLBACK_TEST.bat`
-- `06-DESINSTALLER_PTAR_COMPLET.bat`
-- `payload/d3d11.dll`
-- `payload/win81_nis_dx11_x64.dll`
-- `payload/win81_nis.ini`
-- `diag/` validation and evidence tooling
-- `_PTAR_UNINSTALL/` ownership-aware uninstall data
-
-`payload/d3d11.dll` and `payload/win81_nis_dx11_x64.dll` are the promoted GW15 runtime binaries.
-
-## `SOURCE` branch — PTAR Project Master
-
-The `SOURCE` branch is the durable development/reproducibility branch and contains substantially more than the integrated package on `main`.
-
-Its scope includes:
-
-- `src/` — PTAR engine/reference source;
-- `runtime_production/` — production D3D11 PTAR-NG MoE integration module;
-- `runtime_integration/` — D3D11 host contracts and integration material;
-- `build/windows/` — Windows build and hardware-validation tooling;
-- `benchmarks/` — benchmark infrastructure and results;
-- `corpus/` — permanent regression/perceptual corpora;
-- `hardware_evidence/` and `hardware_validation/` — real-machine evidence and validation tooling;
-- `tests/` and `validation/` — automated regression and integrity checks;
-- `history/` — recovered historical project information, including explicitly tracked missing artifacts.
-
-The Project Master follows an explicit provenance rule: if a historical artifact is missing, it is recorded as missing rather than silently replaced with a synthetic reconstruction and then presented as original evidence.
-
-## Source availability and reproducibility
-
-The repository contains PTAR spatial-engine source, production PTAR-NG MoE source and the binary-patch/hotfix material used by the integrated runtime lineage.
-
-Some historical presenter work was preserved as validated binary integration/hotfix material rather than as one canonical monolithic C/C++ source tree. The repository therefore distinguishes between:
-
-- source-backed PTAR spatial modules;
-- deterministic binary integration patches;
-- immutable validation/evidence records;
-- historical artifacts that are explicitly missing.
-
-This distinction is intentional and is part of the reproducibility model.
+Historical evidence is retained as evidence. Missing historical source is identified as missing rather than silently reconstructed and presented as original source.
 
 ## Development policy
 
-PTAR development follows project-level engineering constraints:
+PTAR development follows a few strict rules:
 
-- preserve known-good subsystems unless a change is required by the active defect;
-- avoid monolithic rewrites when a smaller isolated change can be validated;
+- preserve validated subsystems unless the active defect requires a change;
+- isolate experiments and promote only after the appropriate gate;
 - prefer non-destructive installation, rollback and uninstall behaviour;
-- keep build, validation and field evidence with the corresponding implementation;
-- use deterministic hashes whenever possible;
-- distinguish laboratory/static validation from hardware validation;
-- debug and validate packages before requesting a new hardware test;
+- keep deterministic hashes and evidence with each validated implementation;
+- perform all reproducible laboratory tests before requesting a hardware test;
 - request hardware testing only for behaviour that cannot be reproduced locally;
-- never treat an internal FPS counter as proof of actual visible frame delivery;
-- never rewrite historical evidence to make a newer implementation appear equivalent.
-
-## Experimental software notice
-
-PTAR targets unusual and legacy rendering configurations and includes low-level Direct3D interception, presentation and hardware-acceleration experiments.
-
-Behaviour can differ across GPU generations, drivers, Optimus configurations, games and presentation modes. Laboratory success is therefore not automatically equivalent to field success.
-
-Use experimental builds only on systems where rollback and game-file backups are available.
+- never treat an internal FPS counter as proof of visible output;
+- prioritize quality improvements that preserve the performance envelope of the target legacy hardware.
 
 ## License
 
-PTAR is distributed under the **GNU General Public License v3.0**. See `LICENSE` for the full license text.
+PTAR is distributed under the **GNU General Public License v3.0**. See `LICENSE`.

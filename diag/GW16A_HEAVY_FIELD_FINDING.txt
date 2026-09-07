@@ -1,0 +1,71 @@
+PTAR GW16A RETURNFIX1 — HEAVY-SCENE FIELD FINDING
+Date: 2026-09-04
+Evidence package: PTAR_GW16A_RESULTS_20260904_202906.zip
+Scene classification supplied by operator: HEAVY
+
+RESULT SUMMARY
+==============
+1. BLACK-SCREEN REGRESSION: FIX CONFIRMED ON HARDWARE
+   - first USR native presenter Present completed normally;
+   - CAPTRACE heartbeats continued;
+   - after CTRL+F6, first generated frame was accepted by isolated display Present;
+   - no return of the prior black-screen + movable-cursor failure.
+
+2. LOW 30-Hz CADENCE: HARDWARE PASS
+   External VBLANK3/PACINGVERIFIER3 measurement:
+   - visible FPS: 30.026
+   - generated FPS: 15.038
+   - real FPS: 14.988
+   - generated dwell median: 33.275 ms
+   - real dwell median: 33.365 ms
+   - pair imbalance median: 0.230%
+   - pair imbalance p95: 1.294%
+   - midpoint balance: 99.731%
+   - clean pacing coverage: 100.000%
+   - observer stall events: 0
+   - cadence verdict: VERY EVEN
+
+   This is effectively the validated GW15 LOCK30 cadence reproduced by GW16A LOW mode.
+
+3. AUTO HEAVY-SCENE DECISION: TARGET CHOICE CORRECT, ACTIVATION TIMING WRONG
+   AUTO_SWITCHES.txt contains exactly:
+   GW16 AUTO60/30: HIGH->LOW, stable 30 mode armed (workload >32ms)
+
+   However the runtime log proves this switch happened BEFORE CTRL+F6 while frame
+   generation was still logically OFF:
+   - CAPTRACE heartbeat #1..#13 report fgEnabled=0;
+   - HIGH->LOW is logged before the HOTKEY FRAME GENERATION ... ON line.
+
+   Therefore GW16A can arm AUTO LOW during initial startup FG=OFF. Because AUTO_MODE
+   also selects Present SyncInterval and the wrapper changes FrameGenerationTargetFPS,
+   this can hidden-cap the OFF path on a heavy scene. That violates the intended rule:
+   FG OFF must remain native/REAL-only and must not inherit AUTO 30/60 policy.
+
+ROOT CAUSE
+==========
+GW16A only used the GW12 SOFT_FLAG to detect logical OFF. That flag is useful after a
+CTRL+F6 ON->OFF transition, because GW12 LOADSHEDSOFT1 keeps the FG machinery internally
+armed. But at process startup FrameGeneration=0, SOFT_FLAG has not yet been asserted.
+The AUTO wrapper therefore sees startup OFF as an active AUTO session.
+
+NEXT FIX — GW16B FGGATE1
+========================
+Gate AUTO on BOTH conditions:
+- SOFT_FLAG == 0; and
+- actual runtime FG-enabled state != 0.
+
+When either indicates OFF, force the existing safe reset:
+- AUTO_MODE=HIGH/0 only as neutral presenter state;
+- AUTO counters cleared;
+- target 120 => existing REAL governor gives up to 60 REAL/s;
+- SyncInterval 1 on the normal presenter.
+
+When CTRL+F6 actually enables FG, AUTO initializes HIGH=60-visible target, then a heavy
+scene may downshift after the required six >32 ms work samples.
+
+FIELD GATE STATUS
+=================
+RETURNFIX1 black-screen correction: PASS
+GW16 LOW-mode visible cadence on heavy scene: PASS
+AUTO HIGH->LOW while FG active: NOT YET PROVEN (switch occurred before activation)
+Startup/OFF isolation from AUTO: FAIL in GW16A; fixed in GW16B FGGATE1 for next gate

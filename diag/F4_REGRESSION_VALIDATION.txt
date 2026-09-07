@@ -1,4 +1,4 @@
-[PASS] diagnostic engine bundled with GW15 :: 2fbd2343803af619621282fface48c469092c16d5139ec0ce52b35affb83d29d
+[PASS] diagnostic engine bundled with GW16 :: 864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c
 [PASS] F3 field evidence capture rate: 59.849 Hz
 [PASS] F3 field evidence marker valid samples: 0
 [PASS] F3 field evidence low-contrast samples: 1197
