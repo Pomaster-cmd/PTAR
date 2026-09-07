@@ -4,7 +4,7 @@ import base64, hashlib, json, lzma, os, shutil, subprocess, tarfile, tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 STAGE = ROOT / ".ptar_final"
-CHUNKS = ["c00","c01","c02","c03","c04_05","c06_07","c08_09","c10","c11_12","c13_14","c15_16","c17_18","c19_20"]
+CHUNKS = ["c00","c01","c02","c03","c04_05","c06x0","c06x1","c06x2","c06x3","c08_09","c10","c11_12","c13_14","c15_16","c17_18","c19_20"]
 EXPECTED_B64_SHA256 = "529d3c31e9b9f053871038d9509d434cd97c134dc1946bf538bff0efb897c9ad"
 EXPECTED_XZ_SHA256 = "dcab3e1f058d3520cc0dae8b29a33cf968ba6b7ff7fd81e077d7e3cbebefac57"
 EXPECTED_TAR_SHA256 = "683fa992a6b671a3548f9939b690645e3a417c52bdcdd75081c3849c0b457041"
@@ -30,7 +30,8 @@ def run(*args):
     subprocess.run(args, cwd=ROOT, check=True)
 
 license_bytes = (ROOT/"LICENSE").read_bytes()
-if gitblob(license_bytes) != LICENSE_GIT_BLOB: die("LICENSE blob mismatch")
+if gitblob(license_bytes) != LICENSE_GIT_BLOB:
+    die("LICENSE blob mismatch")
 gw12_path = ROOT/"diag/base/GW12_BASE.dll"
 if not gw12_path.is_file(): die("GW12_BASE.dll missing")
 gw12 = gw12_path.read_bytes()
