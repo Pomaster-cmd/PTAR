@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  cpu-monotone-sweep:
+  cpu-hermite-sweep:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,16 +19,16 @@ jobs:
           python-version: '3.11'
       - name: Install benchmark dependencies
         run: python -m pip install --disable-pip-version-check numpy pillow
-      - name: Sweep monotone v01 projection with A+B training / C holdout
+      - name: Sweep LAB05 shape-preserving Hermite experts with A+B training / C holdout
         run: >-
-          python tools/lab_moe_ng_v02_monotone_sweep.py
+          python tools/lab_moe_ng_v02_hermite_sweep.py
           --bgrid corpus/current/PTAR_PERCEPTUAL_V1_B_GRID
           --v1a corpus/current/PTAR_PERCEPTUAL_V1_A
-          --out lab_results/moe_ng_v02_monotone
+          --out lab_results/moe_ng_v02_hermite
       - uses: actions/upload-artifact@v4
         with:
-          name: moe-ng-v02-monotone-sweep
-          path: lab_results/moe_ng_v02_monotone
+          name: moe-ng-v02-hermite-sweep
+          path: lab_results/moe_ng_v02_hermite
 
   fxc-sm5-current:
     runs-on: windows-latest
