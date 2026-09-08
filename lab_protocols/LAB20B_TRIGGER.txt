@@ -1,0 +1,1 @@
+Trigger LAB20B hard-gate A+B-only cost sweep.
