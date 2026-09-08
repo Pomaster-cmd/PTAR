@@ -125,8 +125,13 @@ def main():
     ranked.sort(key=lambda x:x['score'],reverse=True)
 
     def write_csv(name,rows):
+        fieldnames=[]; seen=set()
+        for row in rows:
+            for key in row:
+                if key not in seen:
+                    seen.add(key); fieldnames.append(key)
         with (out/name).open('w',newline='',encoding='utf-8') as f:
-            w=csv.DictWriter(f,fieldnames=list(rows[0])); w.writeheader(); w.writerows(rows)
+            w=csv.DictWriter(f,fieldnames=fieldnames); w.writeheader(); w.writerows(rows)
     write_csv('TRAIN_SELECTED_PER_CASE.csv',train_rows); write_csv('HOLDOUT_C_PER_CASE.csv',hold_rows)
     flat=[]
     for x in ranked:
