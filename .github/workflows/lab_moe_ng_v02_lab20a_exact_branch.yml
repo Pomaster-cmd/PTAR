@@ -1,0 +1,108 @@
+name: LAB PTAR-NG MoE v02 LAB20A Exact Branch
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-native-detail
+
+permissions:
+  contents: read
+
+jobs:
+  fxc-warp-compare:
+    if: contains(github.event.head_commit.message, '[run-lab20a]')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install validator dependency
+        run: python -m pip install --disable-pip-version-check numpy
+      - name: Locate FXC
+        id: fxc
+        shell: pwsh
+        run: |
+          $fxc = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue |
+                 Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } |
+                 Sort-Object FullName -Descending |
+                 Select-Object -First 1
+          if (-not $fxc) { throw 'fxc.exe not found' }
+          "path=$($fxc.FullName)" >> $env:GITHUB_OUTPUT
+      - name: Compile frozen LAB18 and LAB20A
+        shell: pwsh
+        run: |
+          $out='lab_results\moe_ng_v02_lab20a'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          $fxc='${{ steps.fxc.outputs.path }}'
+          & $fxc /nologo /T ps_5_0 /E main /O3 /WX /Fo "$out\lab18.cso" /Fc "$out\lab18.asm" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab18_admission_ps.hlsl
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $fxc /nologo /T ps_5_0 /E main /O3 /WX /Fo "$out\lab20a.cso" /Fc "$out\lab20a.asm" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab20_exact_branch_ps.hlsl
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $fxc /nologo /T vs_5_0 /E main /O3 /WX /Fo "$out\fullscreen_vs.cso" src\hlsl\moe_ng_v02\lab_fullscreen_vs.hlsl
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Audit compiled shaders
+        shell: pwsh
+        run: |
+          $out='lab_results\moe_ng_v02_lab20a'
+          function Audit([string]$name) {
+            $txt=Get-Content "$out\$name.asm" -Raw
+            $g=([regex]::Matches($txt,'(?mi)^\s*gather4\w*\b')).Count
+            $s=([regex]::Matches($txt,'(?mi)^\s*sample\w*\b')).Count
+            $u=([regex]::Matches($txt,'(?mi)^\s*dcl_uav\w*\b')).Count
+            $inst=([regex]::Matches($txt,'(?mi)^\s*(?!dcl_|def\b|ret\b|if\b|else\b|endif\b|loop\b|endloop\b|break\b)([a-z][a-z0-9_]*)\s')).Count
+            $ifs=([regex]::Matches($txt,'(?mi)^\s*if\w*\b')).Count
+            [pscustomobject]@{shader=$name;gather4=$g;sample_ops=$s;uav_decl=$u;instruction_proxy=$inst;branch_ops=$ifs;cso_bytes=(Get-Item "$out\$name.cso").Length;sha256=(Get-FileHash "$out\$name.cso" -Algorithm SHA256).Hash.ToLowerInvariant()}
+          }
+          $rows=@(Audit 'lab18'; Audit 'lab20a')
+          $rows | Export-Csv -NoTypeInformation "$out\AUDIT.csv"
+          $rows | Format-Table -AutoSize | Out-String | Tee-Object -FilePath "$out\AUDIT.txt"
+          foreach($r in $rows) {
+            if($r.gather4 -ne 1 -or $r.sample_ops -ne 4 -or $r.uav_decl -ne 0) { throw "Texture contract failed for $($r.shader)" }
+          }
+      - name: Build WARP harness
+        shell: pwsh
+        run: |
+          $out='lab_results\moe_ng_v02_lab20a'
+          $vswhere="${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vcvars = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Auxiliary\Build\vcvars64.bat' | Select-Object -First 1
+          if (-not $vcvars) { throw 'vcvars64.bat not found' }
+          $cmd = "call `"$vcvars`" && cl /nologo /EHsc /O2 /std:c++17 tools\lab_moe_ng_v02_warp_harness.cpp /Fe:$out\warp_harness.exe d3d11.lib dxgi.lib"
+          cmd.exe /d /s /c $cmd
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Prepare independent frozen LAB18 reference
+        run: >-
+          python tools/lab_moe_ng_v02_lab18_warp_validate.py
+          --outdir lab_results/moe_ng_v02_lab20a
+          --prepare
+      - name: Execute both DXBC shaders on WARP
+        shell: pwsh
+        run: |
+          $out='lab_results\moe_ng_v02_lab20a'
+          & "$out\warp_harness.exe" "$out\input.f32" 24 24 36 36 "$out\lab18.cso" "$out\fullscreen_vs.cso" "$out\lab18_output.f32" *> "$out\WARP_LAB18.txt"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & "$out\warp_harness.exe" "$out\input.f32" 24 24 36 36 "$out\lab20a.cso" "$out\fullscreen_vs.cso" "$out\lab20a_output.f32" *> "$out\WARP_LAB20A.txt"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Validate LAB20A and compare frozen LAB18 output
+        shell: pwsh
+        run: |
+          python tools/lab_moe_ng_v02_lab18_warp_validate.py --outdir lab_results/moe_ng_v02_lab20a --gpu lab_results/moe_ng_v02_lab20a/lab20a_output.f32 --tol 0.00005
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          @'
+          import json, numpy as np
+          from pathlib import Path
+          p=Path('lab_results/moe_ng_v02_lab20a')
+          a=np.fromfile(p/'lab18_output.f32',dtype=np.float32)
+          b=np.fromfile(p/'lab20a_output.f32',dtype=np.float32)
+          if a.size != b.size: raise SystemExit('size mismatch')
+          d=np.abs(a-b)
+          s={'protocol':'LAB20A_EXACT_BRANCH_VS_FROZEN_LAB18_WARP','values':int(a.size),'max_abs':float(d.max()),'mean_abs':float(d.mean()),'different_values':int(np.count_nonzero(d)),'pass':bool(float(d.max()) <= 0.000002)}
+          (p/'LAB18_VS_LAB20A.json').write_text(json.dumps(s,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps(s,indent=2))
+          if not s['pass']: raise SystemExit('LAB20A output drift too large')
+          '@ | python -
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: moe-ng-v02-lab20a-exact-branch
+          path: lab_results/moe_ng_v02_lab20a
