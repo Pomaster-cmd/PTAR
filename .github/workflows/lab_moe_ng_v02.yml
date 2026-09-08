@@ -24,10 +24,17 @@ jobs:
           python tools/lab_moe_ng_v02.py
           --corpus corpus/current/PTAR_PERCEPTUAL_V1_B_GRID
           --out lab_results/moe_ng_v02
+      - name: Sweep Native Detail gate parameters
+        run: >-
+          python tools/lab_moe_ng_v02_sweep.py
+          --corpus corpus/current/PTAR_PERCEPTUAL_V1_B_GRID
+          --out lab_results/moe_ng_v02_sweep
       - uses: actions/upload-artifact@v4
         with:
           name: moe-ng-v02-cpu-benchmark
-          path: lab_results/moe_ng_v02
+          path: |
+            lab_results/moe_ng_v02
+            lab_results/moe_ng_v02_sweep
 
   fxc-sm5-audit:
     runs-on: windows-latest
