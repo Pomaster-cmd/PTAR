@@ -1,0 +1,8 @@
+LAB16 first observed validation run.
+
+Candidate freeze commit: a5002e47b15c61ea26e94d01df4f5b9481560bea
+Protocol precommit: dd220630106c071df60f0c95e461d1ce04029897
+Workflow precommit: 23dce5f87c29c4f6e35cdcbb30280302ade0c78f
+
+This commit only requests the first run. It does not change the frozen candidate,
+validation generator, thresholds, or protocol.
