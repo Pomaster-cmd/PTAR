@@ -31,17 +31,16 @@ float Luma709(float4 c)
     return dot(c.rgb,float3(0.2126f,0.7152f,0.0722f));
 }
 
-float4 MinMod2(float4 a,float4 b)
-{
-    // Exact branchless component-wise minmod used by the CPU LAB05 mirror.
-    return 0.5f*(sign(a)+sign(b))*min(abs(a),abs(b));
-}
-
 float4 MCSlope(float4 a,float4 b)
 {
-    // Monotonized-central limiter: minmod((a+b)/2,2a,2b).
-    float4 r=MinMod2(0.5f*(a+b),2.0f*a);
-    return MinMod2(r,2.0f*b);
+    // Exact MC limiter in a cheaper algebraic form:
+    // minmod((a+b)/2,2a,2b).
+    // Opposite signs are masked to zero; when signs agree, clamping the
+    // centered slope to +/-2*min(|a|,|b|) is algebraically identical.
+    float4 avg=0.5f*(a+b);
+    float4 lim=2.0f*min(abs(a),abs(b));
+    float4 limited=clamp(avg,-lim,lim);
+    return limited*step(0.0f,a*b);
 }
 
 float4 Hermite13(float4 f0,float4 f1,float4 m0,float4 m1)

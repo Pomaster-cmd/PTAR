@@ -14,13 +14,12 @@ F=np.float32
 TOL=3.0e-6
 
 
-def mm_hlsl(a,b):
-    return (F(.5)*(np.sign(a)+np.sign(b))*np.minimum(np.abs(a),np.abs(b))).astype(np.float32)
-
-
 def mc_hlsl(a,b):
-    r=mm_hlsl(F(.5)*(a+b),F(2)*a)
-    return mm_hlsl(r,F(2)*b)
+    avg=F(.5)*(a+b)
+    lim=F(2)*np.minimum(np.abs(a),np.abs(b))
+    limited=np.minimum(np.maximum(avg,-lim),lim).astype(np.float32)
+    same=(a*b>=F(0)).astype(np.float32)
+    return (limited*same).astype(np.float32)
 
 
 def h13(f0,f1,m0,m1):
@@ -70,13 +69,13 @@ def random_algebra():
     rng=np.random.default_rng(0x50544152)
     a=rng.uniform(-1,1,(200000,4)).astype(np.float32)
     b=rng.uniform(-1,1,(200000,4)).astype(np.float32)
-    mm=float(np.max(np.abs(ref.minmod2(a,b)-mm_hlsl(a,b))))
+    mc=float(np.max(np.abs(ref.mc(a,b)-mc_hlsl(a,b))))
     fm1=rng.random((100000,4),dtype=np.float32); f0=rng.random((100000,4),dtype=np.float32)
     f1=rng.random((100000,4),dtype=np.float32); f2=rng.random((100000,4),dtype=np.float32)
     m0=ref.mc(f0-fm1,f1-f0); m1=ref.mc(f1-f0,f2-f1)
     e13=float(np.max(np.abs(ref.hermite(f0,f1,m0,m1,np.full(100000,F(1/3),np.float32))-h13(f0,f1,m0,m1))))
     e23=float(np.max(np.abs(ref.hermite(f0,f1,m0,m1,np.full(100000,F(2/3),np.float32))-h23(f0,f1,m0,m1))))
-    return {'minmod_max_abs':mm,'hermite13_max_abs':e13,'hermite23_max_abs':e23}
+    return {'mc_limiter_max_abs':mc,'hermite13_max_abs':e13,'hermite23_max_abs':e23}
 
 
 def main():
