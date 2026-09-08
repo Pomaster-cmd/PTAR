@@ -1,0 +1,38 @@
+{
+  "protocol": "LAB20_COST_OPT_PLAN",
+  "status": "PRECOMMITTED_BEFORE_LAB20_OBSERVATIONS",
+  "parent_research_head": "4f90964081f96ade850ffce05ffe64caa29ed1d3",
+  "motivation": {
+    "LAB18_quality": "Independent LAB19 PASS, 36/36 wins, +0.5862257302 dB mean vs v01.",
+    "LAB18_physical_cost": "Physical timing capture shows +71.48% vs v01 by whole-run reported medians; two clock regimes were observed but both show a large LAB18 penalty.",
+    "decision": "Do not promote LAB18 unchanged. Optimize cost first."
+  },
+  "constraints": {
+    "windows": "8.1 x64",
+    "api": "Direct3D 11",
+    "shader_model": "ps_5_0 / FXC",
+    "scale": 1.5,
+    "texture_contract": "exactly 1 GatherGreen + 4 SampleLevel, 0 UAV, no intermediate texture",
+    "base": "MoE v01 SF5",
+    "main_untouched": true,
+    "source_untouched": true
+  },
+  "stage_A_exact_branch": {
+    "goal": "Move MC evaluation behind an exact admission==0 early return without changing LAB18's gate or admitted-pixel algebra.",
+    "quality_tuning": false,
+    "required_gates": [
+      "FXC /O3 /WX ps_5_0",
+      "texture footprint unchanged",
+      "D3D11 WARP parity against LAB18 reference",
+      "output difference against frozen LAB18 no greater than existing numerical parity tolerance"
+    ]
+  },
+  "stage_B_hard_gate_research": {
+    "goal": "If exact branching is insufficient, replace soft normalized admission terms with cheaper threshold predicates selected on A+B only.",
+    "selection_data": "A+B only",
+    "consumed_diagnostics": ["old C", "LAB16", "LAB19"],
+    "fresh_validation_required_after_freeze": true,
+    "note": "Consumed diagnostics may reject architecture but must not be used as a fresh final acceptance set."
+  },
+  "hardware_policy": "No new GTX 960M request until a software candidate has materially lower compiled cost and passes fresh post-freeze quality validation."
+}
