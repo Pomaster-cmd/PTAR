@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  cpu-feature-probe:
+  cpu-conflict-sweep:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,16 +19,16 @@ jobs:
           python-version: '3.11'
       - name: Install benchmark dependencies
         run: python -m pip install --disable-pip-version-check numpy pillow
-      - name: Probe routing features on both degradation protocols
+      - name: Sweep cross-axis conflict routing with A+B training / C holdout
         run: >-
-          python tools/lab_moe_ng_v02_feature_probe.py
-          --corpus corpus/current/PTAR_PERCEPTUAL_V1_B_GRID
-          --corpus corpus/current/PTAR_PERCEPTUAL_V1_A
-          --out lab_results/moe_ng_v02_features
+          python tools/lab_moe_ng_v02_conflict_sweep.py
+          --bgrid corpus/current/PTAR_PERCEPTUAL_V1_B_GRID
+          --v1a corpus/current/PTAR_PERCEPTUAL_V1_A
+          --out lab_results/moe_ng_v02_conflict
       - uses: actions/upload-artifact@v4
         with:
-          name: moe-ng-v02-feature-probe
-          path: lab_results/moe_ng_v02_features
+          name: moe-ng-v02-conflict-sweep
+          path: lab_results/moe_ng_v02_conflict
 
   fxc-sm5-compare:
     runs-on: windows-latest
@@ -44,25 +44,21 @@ jobs:
                  Select-Object -First 1
           if (-not $fxc) { throw 'fxc.exe not found on windows-latest' }
           "path=$($fxc.FullName)" >> $env:GITHUB_OUTPUT
-      - name: Compile v01 and current v02 PS 5.0
+      - name: Compile current v02 PS 5.0
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force lab_results\moe_ng_v02_compare | Out-Null
-          & '${{ steps.fxc.outputs.path }}' /nologo /T ps_5_0 /E main /O3 /WX /Fo lab_results\moe_ng_v02_compare\v01.cso /Fc lab_results\moe_ng_v02_compare\v01.asm src\hlsl\moe_ng_v01\ptar_moe_ng_v01_sf5_ps.hlsl
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & '${{ steps.fxc.outputs.path }}' /nologo /T ps_5_0 /E main /O3 /WX /Fo lab_results\moe_ng_v02_compare\v02.cso /Fc lab_results\moe_ng_v02_compare\v02.asm src\hlsl\moe_ng_v02\ptar_moe_ng_v02_native_detail_ps.hlsl
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Audit texture footprint
         shell: pwsh
         run: |
-          foreach($n in @('v01','v02')) {
-            $asm=Get-Content "lab_results\moe_ng_v02_compare\$n.asm" -Raw
-            $g=([regex]::Matches($asm,'(?m)^\s*gather4')).Count
-            $s=([regex]::Matches($asm,'(?m)^\s*sample_l')).Count
-            $u=([regex]::Matches($asm,'(?m)^\s*(store_uav|ld_uav|dcl_uav)')).Count
-            if($g-ne 1 -or $s-ne 4 -or $u-ne 0){throw "$n footprint mismatch"}
-          }
+          $asm=Get-Content 'lab_results\moe_ng_v02_compare\v02.asm' -Raw
+          $g=([regex]::Matches($asm,'(?m)^\s*gather4')).Count
+          $s=([regex]::Matches($asm,'(?m)^\s*sample_l')).Count
+          $u=([regex]::Matches($asm,'(?m)^\s*(store_uav|ld_uav|dcl_uav)')).Count
+          if($g-ne 1 -or $s-ne 4 -or $u-ne 0){throw 'v02 footprint mismatch'}
       - uses: actions/upload-artifact@v4
         with:
-          name: moe-ng-v02-fxc-compare
+          name: moe-ng-v02-fxc-current
           path: lab_results/moe_ng_v02_compare
