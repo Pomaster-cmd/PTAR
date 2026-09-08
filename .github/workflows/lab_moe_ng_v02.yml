@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   cpu-hermite-sweep:
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[run-hermite]')
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,6 +30,27 @@ jobs:
         with:
           name: moe-ng-v02-hermite-sweep
           path: lab_results/moe_ng_v02_hermite
+
+  cpu-native-band-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install diagnostic dependencies
+        run: python -m pip install --disable-pip-version-check numpy pillow
+      - name: Audit LAB05 native-band, luma and bounded-output behavior
+        run: >-
+          python tools/lab_moe_ng_v02_perceptual_gate.py
+          --bgrid corpus/current/PTAR_PERCEPTUAL_V1_B_GRID
+          --v1a corpus/current/PTAR_PERCEPTUAL_V1_A
+          --out lab_results/moe_ng_v02_native_band
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: moe-ng-v02-lab05-native-band
+          path: lab_results/moe_ng_v02_native_band
 
   cpu-mc-parity:
     runs-on: ubuntu-latest
