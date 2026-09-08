@@ -1,0 +1,45 @@
+name: LAB PTAR-NG MoE v02 Autonomous Runtime v2
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-runtime-autonomous
+
+permissions:
+  contents: read
+
+jobs:
+  source-freeze-audit:
+    if: contains(github.event.head_commit.message, '[run-v02-runtime2]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify SOURCE lineage, isolation and frozen shader blob
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor bdb26584d4bcc7aa9655ae27d48359e60f707c50 HEAD
+          git diff --exit-code bdb26584d4bcc7aa9655ae27d48359e60f707c50 HEAD -- runtime_autonomous/PTAR_NG_MOE_V01_WIN81_X64
+          test "$(git hash-object src/hlsl/moe_ng_v02/ptar_moe_ng_v02_lab18_admission_ps.hlsl)" = "27ab6720ffedfc8d12046c647b5ada680323d703"
+          grep -q "exactly 1 GatherGreen + 4 SampleLevel" src/hlsl/moe_ng_v02/ptar_moe_ng_v02_lab18_admission_ps.hlsl
+          ! grep -Eqi 'RWTexture|RWBuffer|AppendStructuredBuffer|ConsumeStructuredBuffer|Interlocked' src/hlsl/moe_ng_v02/ptar_moe_ng_v02_lab18_admission_ps.hlsl
+
+  build-warp-package:
+    if: contains(github.event.head_commit.message, '[run-v02-runtime2]')
+    needs: source-freeze-audit
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build, audit, WARP-smoke and package autonomous runtime
+        shell: pwsh
+        run: ./tools/build_ptar_v02_runtime_autonomous.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-NG-MoE-v02-LAB18-autonomous-runtime
+          path: |
+            lab_results/runtime_v02/PTAR_NG_MOE_V02_LAB18_WIN81_X64.zip
+            lab_results/runtime_v02/PACKAGE_SHA256.txt
