@@ -30,7 +30,27 @@ jobs:
           name: moe-ng-v02-hermite-sweep
           path: lab_results/moe_ng_v02_hermite
 
-  fxc-sm5-current:
+  cpu-mc-parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install parity dependencies
+        run: python -m pip install --disable-pip-version-check numpy pillow
+      - name: Verify LAB05 MC CPU/HLSL float32 algebra and corpus parity
+        run: >-
+          python tools/lab_moe_ng_v02_mc_parity.py
+          --bgrid corpus/current/PTAR_PERCEPTUAL_V1_B_GRID
+          --v1a corpus/current/PTAR_PERCEPTUAL_V1_A
+          --out lab_results/moe_ng_v02_mc_parity
+      - uses: actions/upload-artifact@v4
+        with:
+          name: moe-ng-v02-mc-parity
+          path: lab_results/moe_ng_v02_mc_parity
+
+  fxc-sm5-compare:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -44,13 +64,37 @@ jobs:
                  Select-Object -First 1
           if (-not $fxc) { throw 'fxc.exe not found on windows-latest' }
           "path=$($fxc.FullName)" >> $env:GITHUB_OUTPUT
-      - name: Compile current v02 PS 5.0
+      - name: Compile MoE v01 and LAB05-MC PS 5.0
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force lab_results\moe_ng_v02_compare | Out-Null
-          & '${{ steps.fxc.outputs.path }}' /nologo /T ps_5_0 /E main /O3 /WX /Fo lab_results\moe_ng_v02_compare\v02.cso /Fc lab_results\moe_ng_v02_compare\v02.asm src\hlsl\moe_ng_v02\ptar_moe_ng_v02_native_detail_ps.hlsl
+          $out='lab_results\moe_ng_v02_compare'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          & '${{ steps.fxc.outputs.path }}' /nologo /T ps_5_0 /E main /O3 /WX /Fo "$out\v01.cso" /Fc "$out\v01.asm" src\hlsl\moe_ng_v01\ptar_moe_ng_v01_sf5_ps.hlsl
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & '${{ steps.fxc.outputs.path }}' /nologo /T ps_5_0 /E main /O3 /WX /Fo "$out\lab05_mc.cso" /Fc "$out\lab05_mc.asm" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_mc_native_detail_ps.hlsl
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Audit compiled texture footprint and instruction proxy
+        shell: pwsh
+        run: |
+          $out='lab_results\moe_ng_v02_compare'
+          function Audit([string]$name) {
+            $p="$out\$name.asm"
+            $txt=Get-Content $p -Raw
+            $g=([regex]::Matches($txt,'(?mi)^\s*gather4\w*\b')).Count
+            $s=([regex]::Matches($txt,'(?mi)^\s*sample_l\b')).Count
+            $u=([regex]::Matches($txt,'(?mi)^\s*dcl_uav\w*\b')).Count
+            $inst=([regex]::Matches($txt,'(?mi)^\s*(?!dcl_|def\b|ret\b|if\b|else\b|endif\b|loop\b|endloop\b|break\b)([a-z][a-z0-9_]*)\s')).Count
+            $bytes=(Get-Item "$out\$name.cso").Length
+            [pscustomobject]@{shader=$name;gather4=$g;sample_l=$s;uav_decl=$u;instruction_proxy=$inst;cso_bytes=$bytes}
+          }
+          $rows=@(Audit 'v01'; Audit 'lab05_mc')
+          $rows | Format-Table -AutoSize | Out-String | Tee-Object -FilePath "$out\AUDIT.txt"
+          $rows | Export-Csv -NoTypeInformation "$out\AUDIT.csv"
+          $lab=$rows | Where-Object shader -eq 'lab05_mc'
+          if ($lab.gather4 -ne 1) { throw "LAB05 gather4 footprint changed: $($lab.gather4)" }
+          if ($lab.sample_l -ne 4) { throw "LAB05 sample_l footprint changed: $($lab.sample_l)" }
+          if ($lab.uav_decl -ne 0) { throw "LAB05 unexpectedly declares UAVs: $($lab.uav_decl)" }
       - uses: actions/upload-artifact@v4
         with:
-          name: moe-ng-v02-fxc-current
+          name: moe-ng-v02-lab05-fxc-compare
           path: lab_results/moe_ng_v02_compare
