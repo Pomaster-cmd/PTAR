@@ -68,14 +68,14 @@ jobs:
           $new=Join-Path $env:LAB22_BUNDLE 'shaders\ptar_moe_ng_v02_lab22_phase_fused_mc_ps.cso'
           if(-not (Test-Path $old)){ throw 'prepared shader missing' }
           Move-Item $old $new
-          $host=Join-Path $env:LAB22_BUNDLE 'source\ptar_moe_ng_v02_autonomous_validation.cpp'
-          $t=Get-Content $host -Raw
+          $hostPath=Join-Path $env:LAB22_BUNDLE 'source\ptar_moe_ng_v02_autonomous_validation.cpp'
+          $t=Get-Content $hostPath -Raw
           $t=$t.Replace('ptar_moe_ng_v02_mc_native_detail_ps.cso','ptar_moe_ng_v02_lab22_phase_fused_mc_ps.cso')
           $t=$t.Replace('PTAR-NG MoE v02 LAB07','PTAR-NG MoE v02 LAB22')
           $t=$t.Replace('PTAR_NG_MOE_V02_LAB07_MC','PTAR_NG_MOE_V02_LAB22_PHASE_FUSED_MC')
           $t=$t.Replace('MoE v02 LAB07','MoE v02 LAB22')
-          Set-Content -Path $host -Value $t -Encoding utf8
-          if((Get-Content $host -Raw) -match 'ptar_moe_ng_v02_mc_native_detail_ps\.cso|PTAR_NG_MOE_V02_LAB07_MC'){ throw 'LAB07 runtime label remains' }
+          Set-Content -Path $hostPath -Value $t -Encoding utf8
+          if((Get-Content $hostPath -Raw) -match 'ptar_moe_ng_v02_mc_native_detail_ps\.cso|PTAR_NG_MOE_V02_LAB07_MC'){ throw 'LAB07 runtime label remains' }
           @"
           {
             "variant": "PTAR_NG_MOE_V02_LAB22_PHASE_FUSED_MC",
