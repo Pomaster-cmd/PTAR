@@ -1,0 +1,97 @@
+name: LAB PTAR-NG MoE v02 Runtime Stage 2
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-runtime-integration
+
+permissions:
+  contents: read
+
+jobs:
+  build-autonomous-bundle:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install reference dependencies
+        shell: pwsh
+        run: python -m pip install --disable-pip-version-check numpy pillow
+
+      - name: Compile selected LAB07 shader to SM5 DXBC
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:RUNNER_TEMP 'ptar_v02_stage2'
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          $src = Join-Path $env:GITHUB_WORKSPACE 'src\hlsl\moe_ng_v02\ptar_moe_ng_v02_mc_native_detail_ps.hlsl'
+          $cso = Join-Path $stage 'ptar_moe_ng_v02_mc_native_detail_ps.cso'
+          $fxc = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Filter fxc.exe -Recurse -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $fxc) { throw 'fxc.exe not found' }
+          & $fxc.FullName /nologo /T ps_5_0 /E main /O3 /Ges /Fo $cso $src
+          if ($LASTEXITCODE -ne 0) { throw "FXC compile failed: $LASTEXITCODE" }
+          $hash = (Get-FileHash -Algorithm SHA256 $cso).Hash.ToLowerInvariant()
+          if ($hash -ne 'caa7352d84c1a9ea840ff0f783323478a4f1532a949a1d3640ba4c04b441ebd1') {
+            throw "DXBC reproducibility mismatch: $hash"
+          }
+          "V02_CSO=$cso" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "[PASS] reproducible v02 DXBC SHA256=$hash"
+
+      - name: Prepare isolated autonomous bundle and CPU references
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bundle = Join-Path $env:RUNNER_TEMP 'PTAR_NG_MOE_V02_LAB07_WIN81_X64'
+          python tools/prepare_moe_ng_v02_runtime_bundle.py --root $env:GITHUB_WORKSPACE --v02-cso $env:V02_CSO --out $bundle
+          if ($LASTEXITCODE -ne 0) { throw 'bundle preparation failed' }
+          "V02_BUNDLE=$bundle" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Build autonomous host /MT for Windows 8.1
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (-not (Test-Path $vswhere)) { throw 'vswhere.exe not found' }
+          $vs = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1)
+          if (-not $vs) { throw 'Visual Studio C++ toolchain not found' }
+          $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
+          $build = Join-Path $env:V02_BUNDLE 'BUILD_HOST_ONCE_IN_DEV_ENV.bat'
+          $command = '"' + $vcvars + '" && call "' + $build + '"'
+          cmd.exe /d /s /c $command
+          if ($LASTEXITCODE -ne 0) { throw "autonomous host build failed: $LASTEXITCODE" }
+
+      - name: Static audit of finished bundle
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Join-Path $env:V02_BUNDLE 'bin\ptar_moe_ng_v02_autonomous_validation.exe'
+          $cso = Join-Path $env:V02_BUNDLE 'shaders\ptar_moe_ng_v02_mc_native_detail_ps.cso'
+          $expected = Join-Path $env:V02_BUNDLE 'corpus\expected_moe_v02_float32'
+          if (-not (Test-Path $exe)) { throw 'autonomous EXE missing' }
+          if (-not (Test-Path $cso)) { throw 'v02 CSO missing' }
+          $count = (Get-ChildItem $expected -Filter '*.png' -File).Count
+          if ($count -ne 42) { throw "expected reference PNG count=$count" }
+          $imports = Get-Content (Join-Path $env:V02_BUNDLE 'build_evidence\IMPORTS_VALIDATED.txt') -Raw
+          if ($imports -match 'D3DCOMPILER|VCRUNTIME|MSVCP|UCRTBASE|API-MS-WIN-CRT') { throw 'forbidden runtime import detected' }
+          $exeHash = (Get-FileHash -Algorithm SHA256 $exe).Hash.ToLowerInvariant()
+          $csoHash = (Get-FileHash -Algorithm SHA256 $cso).Hash.ToLowerInvariant()
+          "exe_sha256=$exeHash`ncso_sha256=$csoHash`nexpected_png_count=$count`nhardware_executed=false" |
+            Set-Content -Encoding ascii (Join-Path $env:V02_BUNDLE 'build_evidence\STAGE2_SUMMARY.txt')
+          Write-Host "[PASS] finished autonomous bundle; hardware execution intentionally deferred"
+
+      - name: Package bundle
+        shell: pwsh
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP 'PTAR_NG_MOE_V02_LAB07_WIN81_X64.zip'
+          Compress-Archive -Path (Join-Path $env:V02_BUNDLE '*') -DestinationPath $zip -CompressionLevel Optimal
+          $zipHash = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant()
+          Write-Host "ZIP_SHA256=$zipHash"
+          "V02_ZIP=$zip" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-NG-MOE-V02-LAB07-WIN81-X64
+          path: ${{ env.V02_ZIP }}
