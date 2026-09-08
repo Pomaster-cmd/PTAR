@@ -1,0 +1,143 @@
+name: LAB PTAR-NG MoE v02 LAB18 Software Gate
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-native-detail
+
+permissions:
+  contents: read
+
+jobs:
+  algebra-parity:
+    if: contains(github.event.head_commit.message, '[run-lab18-software]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify frozen research chronology and v01 source pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor bda10f16ad287eaac5fabba58e88aedc2651dd34 HEAD
+          git merge-base --is-ancestor 1f837599717e6504a2ddabf38cb707d5bcff0b37 HEAD
+          git diff --exit-code bda10f16ad287eaac5fabba58e88aedc2651dd34 HEAD -- lab_protocols/LAB18_FROZEN_CANDIDATE.json
+          test "$(git hash-object src/hlsl/moe_ng_v01/ptar_moe_ng_v01_sf5_ps.hlsl)" = "8ebae7cd444310ea7ab43641253ec2f9eea19a07"
+          test -f lab_protocols/LAB19_INDEPENDENT_VALIDATION_PASS.json
+      - name: Install exact parity dependencies
+        run: python -m pip install --disable-pip-version-check numpy pillow scikit-image==0.26.0
+      - name: Verify LAB18 frozen HLSL algebra against frozen research candidate
+        run: >-
+          python tools/lab_moe_ng_v02_lab18_shader_parity.py
+          --out lab_results/moe_ng_v02_lab18_shader_parity
+          --tol 0.000002
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: moe-ng-v02-lab18-shader-algebra-parity
+          path: lab_results/moe_ng_v02_lab18_shader_parity
+
+  fxc-warp-runtime:
+    if: contains(github.event.head_commit.message, '[run-lab18-software]')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install WARP validator dependency
+        run: python -m pip install --disable-pip-version-check numpy
+      - name: Locate FXC
+        id: fxc
+        shell: pwsh
+        run: |
+          $fxc = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue |
+                 Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } |
+                 Sort-Object FullName -Descending |
+                 Select-Object -First 1
+          if (-not $fxc) { throw 'fxc.exe not found on windows-latest' }
+          "path=$($fxc.FullName)" >> $env:GITHUB_OUTPUT
+          $fxc.FullName | Set-Content -Encoding ascii FXC_PATH.txt
+      - name: Compile v01 control, LAB07 control, LAB18 PS and full-screen VS
+        shell: pwsh
+        run: |
+          $out='lab_results\moe_ng_v02_lab18_software_gate'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          Copy-Item FXC_PATH.txt "$out\FXC_PATH.txt"
+          $fxc='${{ steps.fxc.outputs.path }}'
+          & $fxc /nologo /T ps_5_0 /E main /O3 /WX /Fo "$out\v01.cso" /Fc "$out\v01.asm" src\hlsl\moe_ng_v01\ptar_moe_ng_v01_sf5_ps.hlsl
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $fxc /nologo /T ps_5_0 /E main /O3 /WX /Fo "$out\lab07_mc.cso" /Fc "$out\lab07_mc.asm" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_mc_native_detail_ps.hlsl
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $fxc /nologo /T ps_5_0 /E main /O3 /WX /Fo "$out\lab18_admission.cso" /Fc "$out\lab18_admission.asm" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab18_admission_ps.hlsl
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $fxc /nologo /T vs_5_0 /E main /O3 /WX /Fo "$out\fullscreen_vs.cso" /Fc "$out\fullscreen_vs.asm" src\hlsl\moe_ng_v02\lab_fullscreen_vs.hlsl
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Audit compiled texture contract and source invariants
+        shell: pwsh
+        run: |
+          $out='lab_results\moe_ng_v02_lab18_software_gate'
+          function Audit([string]$name) {
+            $p="$out\$name.asm"
+            $txt=Get-Content $p -Raw
+            $g=([regex]::Matches($txt,'(?mi)^\s*gather4\w*\b')).Count
+            $s=([regex]::Matches($txt,'(?mi)^\s*sample\w*\b')).Count
+            $u=([regex]::Matches($txt,'(?mi)^\s*dcl_uav\w*\b')).Count
+            $inst=([regex]::Matches($txt,'(?mi)^\s*(?!dcl_|def\b|ret\b|if\b|else\b|endif\b|loop\b|endloop\b|break\b)([a-z][a-z0-9_]*)\s')).Count
+            $bytes=(Get-Item "$out\$name.cso").Length
+            $sha=(Get-FileHash "$out\$name.cso" -Algorithm SHA256).Hash.ToLowerInvariant()
+            [pscustomobject]@{shader=$name;gather4=$g;sample_ops=$s;uav_decl=$u;instruction_proxy=$inst;cso_bytes=$bytes;sha256=$sha}
+          }
+          $rows=@(Audit 'v01'; Audit 'lab07_mc'; Audit 'lab18_admission')
+          $rows | Format-Table -AutoSize | Out-String | Tee-Object -FilePath "$out\AUDIT.txt"
+          $rows | Export-Csv -NoTypeInformation "$out\AUDIT.csv"
+          $lab=$rows | Where-Object shader -eq 'lab18_admission'
+          if ($lab.gather4 -ne 1) { throw "LAB18 gather4 footprint changed: $($lab.gather4)" }
+          if ($lab.sample_ops -ne 4) { throw "LAB18 sample footprint changed: $($lab.sample_ops)" }
+          if ($lab.uav_decl -ne 0) { throw "LAB18 unexpectedly declares UAVs: $($lab.uav_decl)" }
+          $src=Get-Content 'src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab18_admission_ps.hlsl' -Raw
+          if ($src -match '(?i)RWTexture|RWBuffer|AppendStructuredBuffer|ConsumeStructuredBuffer|Interlocked') { throw 'LAB18 source contains a forbidden UAV/write primitive' }
+          if (([regex]::Matches($src,'(?m)^\s*float4\s+fm1\s*=\s*gSource\.SampleLevel')).Count -ne 1) { throw 'LAB18 fm1 SampleLevel contract missing' }
+          if (([regex]::Matches($src,'(?m)^\s*float4\s+f[012]\s*=\s*gSource\.SampleLevel')).Count -ne 3) { throw 'LAB18 f0/f1/f2 SampleLevel contract missing' }
+          if (([regex]::Matches($src,'gSource\.GatherGreen')).Count -ne 1) { throw 'LAB18 GatherGreen source contract changed' }
+      - name: Build D3D11 WARP harness
+        shell: pwsh
+        run: |
+          $out='lab_results\moe_ng_v02_lab18_software_gate'
+          $vswhere="${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) { throw 'vswhere.exe not found' }
+          $vcvars = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Auxiliary\Build\vcvars64.bat' | Select-Object -First 1
+          if (-not $vcvars) { throw 'vcvars64.bat not found' }
+          $cmd = "call `"$vcvars`" && cl /nologo /EHsc /O2 /std:c++17 tools\lab_moe_ng_v02_warp_harness.cpp /Fe:$out\warp_harness.exe d3d11.lib dxgi.lib"
+          cmd.exe /d /s /c $cmd
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Generate independent LAB18 CPU references
+        run: >-
+          python tools/lab_moe_ng_v02_lab18_warp_validate.py
+          --outdir lab_results/moe_ng_v02_lab18_software_gate
+          --prepare
+      - name: Execute LAB18 DXBC on D3D11 WARP
+        shell: pwsh
+        run: |
+          $out='lab_results\moe_ng_v02_lab18_software_gate'
+          & "$out\warp_harness.exe" "$out\input.f32" 24 24 36 36 "$out\lab18_admission.cso" "$out\fullscreen_vs.cso" "$out\gpu_output.f32" *> "$out\WARP_RUNTIME.txt"
+          $rc=$LASTEXITCODE
+          Get-Content "$out\WARP_RUNTIME.txt"
+          if ($rc -ne 0) { exit $rc }
+      - name: Compare WARP readback against independent LAB18 CPU reference
+        run: >-
+          python tools/lab_moe_ng_v02_lab18_warp_validate.py
+          --outdir lab_results/moe_ng_v02_lab18_software_gate
+          --gpu lab_results/moe_ng_v02_lab18_software_gate/gpu_output.f32
+          --tol 0.00005
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: moe-ng-v02-lab18-fxc-warp-software-gate
+          path: lab_results/moe_ng_v02_lab18_software_gate
