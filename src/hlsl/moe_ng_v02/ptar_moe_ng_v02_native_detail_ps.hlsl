@@ -1,4 +1,4 @@
-// PTAR-NG MoE v02 Native Detail Recovery - LAB02-PARETO
+// PTAR-NG MoE v02 Native Detail Recovery - LAB02-CHEAP-PRODUCT
 // Direct3D 11 / Shader Model 5.0 / Windows 8.1 target.
 //
 // Architectural constraint preserved from PTAR-NG MoE v01:
@@ -8,6 +8,12 @@
 // v02 keeps the complete v01 MoE and adds a bounded detail gate that suppresses
 // v01 on smooth low-curvature signal while retaining it on genuine local structure.
 // Gate inputs are derived only from the four color samples already fetched by v01.
+//
+// LAB02-CHEAP-PRODUCT selection from the 42-case B-GRID sweep:
+//   relative curvature  : 0 -> 0.90
+//   absolute curvature  : 0 -> 0.24
+//   fusion              : gRel * gAbs
+// This removes the earlier sqrt/fractional-power path.
 
 Texture2D<float4> gSource : register(t0);
 SamplerState gLinearClamp : register(s0);
@@ -50,11 +56,6 @@ float Luma709(float4 c)
 
 float NativeDetailGate(float4 fm1,float4 f0,float4 f1,float4 f2)
 {
-    const float REL_LO=0.275f;
-    const float REL_HI=0.500f;
-    const float ABS_LO=0.035f;
-    const float ABS_HI=0.120f;
-
     float ym1=Luma709(fm1);
     float y0 =Luma709(f0);
     float y1 =Luma709(f1);
@@ -67,10 +68,10 @@ float NativeDetailGate(float4 fm1,float4 f0,float4 f1,float4 f2)
     float localSlope=max(abs(y0-ym1),max(abs(y1-y0),abs(y2-y1)));
     float relCurv=absCurv/(localSlope+1.0e-6f);
 
-    float gRel=saturate((relCurv-REL_LO)/(REL_HI-REL_LO));
-    float gAbs=saturate((absCurv-ABS_LO)/(ABS_HI-ABS_LO));
-
-    return sqrt(gRel*gAbs);
+    // Cheap product gate selected by the product-only Pareto sweep.
+    float gRel=saturate(relCurv*(1.0f/0.90f));
+    float gAbs=saturate(absCurv*(1.0f/0.24f));
+    return gRel*gAbs;
 }
 
 float4 main(PSIn input) : SV_Target
