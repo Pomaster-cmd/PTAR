@@ -1,0 +1,85 @@
+{
+  "protocol": "PTAR_NG_MOE_V02_LAB18_PHYSICAL_TIMING",
+  "status": "PASS_TIMING_CAPTURED_CANDIDATE_TOO_EXPENSIVE_FOR_CURRENT_FORM",
+  "date": "2026-09-08",
+  "input_archive_sha256": "9fea535d94531c06d5aafe7608a176c6a3b5b543c35c59c2b920f5ddcdefb154",
+  "runtime_bundle_software_pass_commit": "95837e027b3bc4c547ab6ab23e847650d7cf63ba",
+  "runtime_bundle_build_commit": "e6fd61d9649b41453844d42b41e65246894e817c",
+  "mode_reported": "PHYSICAL_GPU",
+  "gpu_identity_in_result_files": null,
+  "gpu_identity_note": "The supplied result files do not persist the adapter name. The targeted machine for this run is the project's GTX 960M test system, but that identity is external context rather than self-contained evidence in this archive.",
+  "resolution": {
+    "input": "1280x720",
+    "output": "1920x1080",
+    "scale": 1.5
+  },
+  "samples_per_shader": 512,
+  "runtime_shader_mode": "PRECOMPILED_DXBC_ONLY",
+  "runtime_d3dcompiler_required": false,
+  "reported_medians_ms": {
+    "PTAR_NG_MOE_V02_LAB18": 1.484352,
+    "PTAR_NG_MOE_V01_SF5": 0.865600,
+    "EDGE_NG_V03_K185_CONTROL": 0.697056
+  },
+  "reported_percentiles_ms": {
+    "PTAR_NG_MOE_V02_LAB18": {"p90": 1.4872256, "p95": 1.4882672, "p99": 1.48956448, "max": 1.49024},
+    "PTAR_NG_MOE_V01_SF5": {"p90": 0.871488, "p95": 0.8728784, "p99": 0.87518944, "max": 0.880128},
+    "EDGE_NG_V03_K185_CONTROL": {"p90": 0.70464, "p95": 0.7067312, "p99": 0.70952544, "max": 0.714432}
+  },
+  "paired_full_run": {
+    "median_v02_minus_v01_ms": 0.614288,
+    "median_v02_minus_k185_ms": 0.781184,
+    "median_v01_minus_k185_ms": 0.163536,
+    "v02_over_v01_from_reported_medians": 1.7148243993,
+    "v02_extra_vs_v01_percent": 71.48243993
+  },
+  "clock_state_change": {
+    "detected": true,
+    "first_high_state_sample_index": 191,
+    "interpretation": "All three shaders jump together, consistent with a GPU clock/power-state transition. Therefore absolute whole-run medians are not a single-state estimate; paired comparisons remain useful.",
+    "low_state_samples": 191,
+    "low_state_medians_ms": {
+      "v02": 1.18272,
+      "v01": 0.65776,
+      "k185": 0.499936,
+      "v02_minus_v01": 0.524928,
+      "v02_minus_k185": 0.682848,
+      "v01_minus_k185": 0.157856
+    },
+    "high_state_samples": 321,
+    "high_state_medians_ms": {
+      "v02": 1.484832,
+      "v01": 0.86832,
+      "k185": 0.700512,
+      "v02_minus_v01": 0.616992,
+      "v02_minus_k185": 0.784608,
+      "v01_minus_k185": 0.167456
+    }
+  },
+  "order_balance": {
+    "permutation_count": 6,
+    "samples_per_permutation": "85 or 86",
+    "paired_v02_minus_v01_median_range_ms": [0.613056, 0.61504],
+    "paired_v02_minus_k185_median_range_ms": [0.78096, 0.7816],
+    "conclusion": "No material order bias is visible in the rotating three-shader schedule."
+  },
+  "render_hashes_reported": {
+    "PTAR_NG_MOE_V02_LAB18": "37280312b26250ff",
+    "PTAR_NG_MOE_V01_SF5": "723635dc3e987195",
+    "EDGE_NG_V03_K185_CONTROL": "063653b4b33f2d1b"
+  },
+  "research_quality_context": {
+    "LAB19_independent_validation_status": "PASS_FROZEN_RESULT",
+    "LAB19_overall_mean_gap_v01_db": 0.5862257302468011,
+    "LAB19_overall_worst_gap_v01_db": 0.02380879250235779,
+    "LAB19_wins_v01": "36/36",
+    "LAB19_structural_mean_gap_v01_db": 0.15427296721938433,
+    "LAB19_texture_mean_gap_v01_db": 1.018178493274218
+  },
+  "decision": {
+    "quality_candidate_valid": true,
+    "runtime_cost_acceptable_as_final": false,
+    "promote_to_main": false,
+    "next_step": "Cost-oriented LAB20: preserve LAB18 quality behavior while reducing ALU/runtime cost before requesting another physical timing run. Also persist adapter identity in the next hardware summary."
+  }
+}
