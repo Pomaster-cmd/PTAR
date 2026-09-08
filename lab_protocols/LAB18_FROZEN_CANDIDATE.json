@@ -1,0 +1,104 @@
+{
+  "protocol": "LAB18_FROZEN_TEXTURE_ADMISSION_CANDIDATE",
+  "status": "FROZEN_FOR_NEXT_INDEPENDENT_VALIDATION",
+  "selection_run_id": 34233350346,
+  "selection_head_sha": "6dac174967c1a44b1e90cdb7c82235c2daaca8a0",
+  "selection_artifact": "moe-ng-v02-lab18-texture-admission",
+  "selection_artifact_id": 10058786563,
+  "selection_artifact_sha256": "8e37454134341464a99c524667155a81fd230fd6e461eee4a6c3b5bda29452ea",
+  "artifact_file_sha256": {
+    "SUMMARY.json": "f63fa551405c48502da5cf028a7c52bc572dfdb23626ec6cae99d333911f3692",
+    "SWEEP.csv": "ffbb49603b8fc43a6ae82e4fc5fc05e4f592823425d1b5016200d553287ab972",
+    "TRAIN_SELECTED_PER_CASE.csv": "a72a1a5770e7a1ed27dd544404cdce13817be71615554ac5d080252f40408458",
+    "REUSED_C_DIAGNOSTIC_PER_CASE.csv": "db57059e5ab5dc5e24994577934bc2fb5deea80ade6d746f055340cb9c50fdd6",
+    "CONSUMED_LAB16_ARCHITECTURE_SCREEN.csv": "3326cd7ff44bb3e6cda2ade07439c3c890ca3f95a85960904fd609e573edfa0e"
+  },
+  "selection_protocol": "LAB18_TEXTURE_ADMISSION_AB_SELECTION",
+  "selection_used_C": false,
+  "selection_used_LAB16": false,
+  "candidate_count": 498,
+  "feasible_count": 27,
+  "candidate": {
+    "kind": "lc_bal_central",
+    "coh_t": 0.75,
+    "coh_w": 0.18,
+    "bal_t": 0.10,
+    "bal_w": 0.15,
+    "central_t": 0.10,
+    "central_w": 0.15,
+    "strength": 0.50
+  },
+  "definition": {
+    "coherence": "abs(abs(gx)-abs(gy))/(abs(gx)+abs(gy)+1e-6), using the existing 2x2 directional gather signal",
+    "d0_d1_d2": "directional luminance slopes from the existing fm1/f0/f1/f2 samples",
+    "outer_balance": "min(abs(d0),abs(d2))/(max(abs(d0),abs(d2))+1e-6)",
+    "central": "abs(d1)/(abs(d0)+abs(d1)+abs(d2)+1e-6)",
+    "low_coherence": "1-saturate((coherence-0.75)/0.18)",
+    "balanced_support": "saturate((outer_balance-0.10)/0.15)",
+    "central_support": "saturate((central-0.10)/0.15)",
+    "gate": "0.50 * low_coherence * balanced_support * central_support",
+    "output": "v01 + (LAB07_MC-v01)*gate"
+  },
+  "runtime_contract": {
+    "scale": 1.5,
+    "texture_fetch_delta_vs_existing_v02": 0,
+    "target_texture_contract": "1 GatherGreen + 4 SampleLevel",
+    "no_uav": true,
+    "no_intermediate_texture": true,
+    "target_api": "Direct3D 11",
+    "target_shader_model": "SM5 / FXC",
+    "target_os": "Windows 8.1 x64"
+  },
+  "training_A_B": {
+    "cases": 56,
+    "mean_gap_v01_db": 0.24055288946757455,
+    "worst_gap_v01_db": -0.11633470086713515,
+    "wins_v01": 46,
+    "structural_mean_gap_v01_db": 0.013320811547167022,
+    "structural_worst_gap_v01_db": -0.11633470086713515,
+    "worst_family_mean_gap_v01_db": -0.028039836575163513,
+    "worst_source_mean_gap_v01_db": -0.028039836575163513,
+    "mean_gate": 0.14482693059345642,
+    "feasible": true,
+    "score": 0.16457795767660227
+  },
+  "reused_C_diagnostic": {
+    "pristine_holdout": false,
+    "cases": 28,
+    "mean_gap_v01_db": 0.24460885686517844,
+    "worst_gap_v01_db": -0.11633470086713515,
+    "wins_v01": 20,
+    "structural_mean_gap_v01_db": -0.004638752236024206,
+    "structural_worst_gap_v01_db": -0.11633470086713515,
+    "mean_gate": 0.1484602610822383
+  },
+  "consumed_LAB16_architecture_screen": {
+    "independent_validation": false,
+    "cases": 36,
+    "mean_gap_v01_db": 0.45338265924640964,
+    "worst_gap_v01_db": -0.017156873212677226,
+    "wins_v01": 35,
+    "structural_mean_gap_v01_db": 0.14440691651502865,
+    "structural_worst_gap_v01_db": -0.017156873212677226,
+    "texture_mean_gap_v01_db": 0.7623584019777907,
+    "texture_worst_gap_v01_db": 0.49139559481051975,
+    "mean_gate": 0.16940532214452222,
+    "all_precommitted_screen_gates_passed": true
+  },
+  "freeze_policy": {
+    "immutable_for_next_validation": true,
+    "no_parameter_or_gate_change_after_this_freeze": true,
+    "new_validation_generator_must_be_authored_after_this_freeze_commit": true,
+    "new_validation_must_not_use_reused_C_or_LAB16_as_holdout": true,
+    "new_validation_is_validation_not_tuning": true,
+    "failure_rejects_this_frozen_candidate": true,
+    "success_does_not_imply_main_or_runtime_promotion_without_remaining_gates": true
+  },
+  "protected_refs": ["main", "SOURCE"],
+  "notes": [
+    "A+B alone selected the candidate. Reused C and consumed LAB16 were evaluated only after selection.",
+    "LAB16 informed LAB17/LAB18 architecture and therefore cannot establish generalization for LAB18.",
+    "This freeze must precede creation of the next fresh validation corpus/generator.",
+    "No main, SOURCE, runtime, stable baseline or product promotion is implied by this freeze."
+  ]
+}
