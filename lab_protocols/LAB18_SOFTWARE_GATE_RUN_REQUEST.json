@@ -1,0 +1,11 @@
+{
+  "protocol": "LAB18_FROZEN_SOFTWARE_INTEGRATION_GATE",
+  "action": "EXECUTE_ONCE",
+  "candidate_freeze_commit": "bda10f16ad287eaac5fabba58e88aedc2651dd34",
+  "independent_quality_pass_commit": "1f837599717e6504a2ddabf38cb707d5bcff0b37",
+  "shader": "src/hlsl/moe_ng_v02/ptar_moe_ng_v02_lab18_admission_ps.hlsl",
+  "algebra_parity": "tools/lab_moe_ng_v02_lab18_shader_parity.py",
+  "warp_parity": "tools/lab_moe_ng_v02_lab18_warp_validate.py",
+  "workflow": ".github/workflows/lab_moe_ng_v02_lab18_software_gate.yml",
+  "policy": "Execute frozen candidate software gates without retuning. PASS may enable a separate SOURCE-derived autonomous runtime experiment only; it does not authorize SOURCE or main promotion."
+}
