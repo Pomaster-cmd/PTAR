@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  cpu-benchmark:
+  cpu-selected-validation:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,25 +18,19 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install benchmark dependencies
-        run: python -m pip install --disable-pip-version-check numpy pillow scikit-image
-      - name: Run 42-case B-GRID + analytic LAB02 benchmark
+        run: python -m pip install --disable-pip-version-check numpy pillow
+      - name: Validate selected LAB02 candidate on B-GRID and V1-A holdout
         run: >-
-          python tools/lab_moe_ng_v02.py
+          python tools/lab_moe_ng_v02_selected.py
           --corpus corpus/current/PTAR_PERCEPTUAL_V1_B_GRID
-          --out lab_results/moe_ng_v02
-      - name: Sweep Native Detail gate parameters
-        run: >-
-          python tools/lab_moe_ng_v02_sweep.py
-          --corpus corpus/current/PTAR_PERCEPTUAL_V1_B_GRID
-          --out lab_results/moe_ng_v02_sweep
+          --corpus corpus/current/PTAR_PERCEPTUAL_V1_A
+          --out lab_results/moe_ng_v02_selected
       - uses: actions/upload-artifact@v4
         with:
-          name: moe-ng-v02-cpu-benchmark
-          path: |
-            lab_results/moe_ng_v02
-            lab_results/moe_ng_v02_sweep
+          name: moe-ng-v02-selected-validation
+          path: lab_results/moe_ng_v02_selected
 
-  fxc-sm5-audit:
+  fxc-sm5-compare:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -51,36 +45,42 @@ jobs:
           if (-not $fxc) { throw 'fxc.exe not found on windows-latest' }
           "path=$($fxc.FullName)" >> $env:GITHUB_OUTPUT
           Write-Host "FXC=$($fxc.FullName)"
-      - name: Compile PS 5.0 and emit assembly
+      - name: Compile v01 and selected v02 PS 5.0
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force lab_results\moe_ng_v02 | Out-Null
+          New-Item -ItemType Directory -Force lab_results\moe_ng_v02_compare | Out-Null
           & '${{ steps.fxc.outputs.path }}' /nologo /T ps_5_0 /E main /O3 /WX `
-             /Fo lab_results\moe_ng_v02\ptar_moe_ng_v02.cso `
-             /Fc lab_results\moe_ng_v02\ptar_moe_ng_v02.asm `
+             /Fo lab_results\moe_ng_v02_compare\v01.cso `
+             /Fc lab_results\moe_ng_v02_compare\v01.asm `
+             src\hlsl\moe_ng_v01\ptar_moe_ng_v01_sf5_ps.hlsl
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & '${{ steps.fxc.outputs.path }}' /nologo /T ps_5_0 /E main /O3 /WX `
+             /Fo lab_results\moe_ng_v02_compare\v02.cso `
+             /Fc lab_results\moe_ng_v02_compare\v02.asm `
              src\hlsl\moe_ng_v02\ptar_moe_ng_v02_native_detail_ps.hlsl
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Audit DXBC texture footprint and instruction report
+      - name: Audit and compare DXBC
         shell: pwsh
         run: |
-          $asm = Get-Content lab_results\moe_ng_v02\ptar_moe_ng_v02.asm -Raw
-          $gather = ([regex]::Matches($asm, '(?m)^\s*gather4')).Count
-          $sample = ([regex]::Matches($asm, '(?m)^\s*sample_l')).Count
-          $uav = ([regex]::Matches($asm, '(?m)^\s*(store_uav|ld_uav|dcl_uav)')).Count
-          $slot = [regex]::Match($asm, 'approximately\s+(\d+)\s+instruction slots used')
-          $slots = if ($slot.Success) { [int]$slot.Groups[1].Value } else { -1 }
-          $report = [ordered]@{
-            gather4 = $gather
-            sample_l = $sample
-            uav_tokens = $uav
-            instruction_slots = $slots
-            cso_bytes = (Get-Item lab_results\moe_ng_v02\ptar_moe_ng_v02.cso).Length
+          function Audit-One([string]$name,[string]$asmPath,[string]$csoPath) {
+            $asm = Get-Content $asmPath -Raw
+            $gather = ([regex]::Matches($asm, '(?m)^\s*gather4')).Count
+            $sample = ([regex]::Matches($asm, '(?m)^\s*sample_l')).Count
+            $uav = ([regex]::Matches($asm, '(?m)^\s*(store_uav|ld_uav|dcl_uav)')).Count
+            $slot = [regex]::Match($asm, 'Approximately\s+(\d+)\s+instruction slots used', 'IgnoreCase')
+            $slots = if ($slot.Success) { [int]$slot.Groups[1].Value } else { -1 }
+            $tempsMatch = [regex]::Match($asm, '(?m)^dcl_temps\s+(\d+)')
+            $temps = if ($tempsMatch.Success) { [int]$tempsMatch.Groups[1].Value } else { -1 }
+            if ($gather -ne 1) { throw "$name expected 1 gather4, got $gather" }
+            if ($sample -ne 4) { throw "$name expected 4 sample_l, got $sample" }
+            if ($uav -ne 0) { throw "$name expected 0 UAV, got $uav" }
+            return [ordered]@{name=$name;gather4=$gather;sample_l=$sample;uav_tokens=$uav;instruction_slots=$slots;temps=$temps;cso_bytes=(Get-Item $csoPath).Length;sha256=(Get-FileHash $csoPath -Algorithm SHA256).Hash.ToLower()}
           }
-          $report | ConvertTo-Json | Tee-Object -FilePath lab_results\moe_ng_v02\DXBC_AUDIT.json
-          if ($gather -ne 1) { throw "Expected 1 gather4, got $gather" }
-          if ($sample -ne 4) { throw "Expected 4 sample_l, got $sample" }
-          if ($uav -ne 0) { throw "Expected 0 UAV tokens, got $uav" }
+          $v01=Audit-One 'v01' 'lab_results\moe_ng_v02_compare\v01.asm' 'lab_results\moe_ng_v02_compare\v01.cso'
+          $v02=Audit-One 'v02-selected' 'lab_results\moe_ng_v02_compare\v02.asm' 'lab_results\moe_ng_v02_compare\v02.cso'
+          $report=[ordered]@{v01=$v01;v02=$v02;delta_instruction_slots=($v02.instruction_slots-$v01.instruction_slots);delta_temps=($v02.temps-$v01.temps);delta_cso_bytes=($v02.cso_bytes-$v01.cso_bytes)}
+          $report | ConvertTo-Json -Depth 4 | Tee-Object -FilePath lab_results\moe_ng_v02_compare\DXBC_COMPARE.json
       - uses: actions/upload-artifact@v4
         with:
-          name: moe-ng-v02-fxc-sm5-audit
-          path: lab_results/moe_ng_v02
+          name: moe-ng-v02-fxc-compare
+          path: lab_results/moe_ng_v02_compare
