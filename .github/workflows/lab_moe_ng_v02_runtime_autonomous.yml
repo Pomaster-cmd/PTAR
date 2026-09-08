@@ -1,0 +1,214 @@
+name: LAB PTAR-NG MoE v02 Autonomous Runtime
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-runtime-autonomous
+
+permissions:
+  contents: read
+
+jobs:
+  source-freeze-audit:
+    if: contains(github.event.head_commit.message, '[run-v02-runtime]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify SOURCE lineage and isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor bdb26584d4bcc7aa9655ae27d48359e60f707c50 HEAD
+          git diff --exit-code bdb26584d4bcc7aa9655ae27d48359e60f707c50 HEAD -- runtime_autonomous/PTAR_NG_MOE_V01_WIN81_X64
+          test "$(git hash-object src/hlsl/moe_ng_v02/ptar_moe_ng_v02_lab18_admission_ps.hlsl)" = "27ab6720ffedfc8d12046c647b5ada680323d703"
+          grep -q "exactly 1 GatherGreen + 4 SampleLevel" src/hlsl/moe_ng_v02/ptar_moe_ng_v02_lab18_admission_ps.hlsl
+          ! grep -Eqi 'NIS|NVENC|frame.?generation|RWTexture|RWBuffer|AppendStructuredBuffer|ConsumeStructuredBuffer|Interlocked' src/hlsl/moe_ng_v02/ptar_moe_ng_v02_lab18_admission_ps.hlsl
+
+  build-warp-package:
+    if: contains(github.event.head_commit.message, '[run-v02-runtime]')
+    needs: source-freeze-audit
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Locate FXC and Visual C++ toolchain
+        id: tools
+        shell: pwsh
+        run: |
+          $fxc = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue |
+                 Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } |
+                 Sort-Object FullName -Descending |
+                 Select-Object -First 1
+          if (-not $fxc) { throw 'fxc.exe not found on windows-latest' }
+          $vswhere="${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) { throw 'vswhere.exe not found' }
+          $vcvars = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Auxiliary\Build\vcvars64.bat' | Select-Object -First 1
+          if (-not $vcvars) { throw 'vcvars64.bat not found' }
+          "fxc=$($fxc.FullName)" >> $env:GITHUB_OUTPUT
+          "vcvars=$vcvars" >> $env:GITHUB_OUTPUT
+
+      - name: Stage validated shaders and compile frozen LAB18 DXBC
+        shell: pwsh
+        run: |
+          $root = Join-Path $PWD 'lab_results\runtime_v02'
+          $bundle = Join-Path $root 'PTAR_NG_MOE_V02_LAB18_WIN81_X64'
+          $shaders = Join-Path $bundle 'shaders'
+          $evid = Join-Path $bundle 'build_evidence'
+          New-Item -ItemType Directory -Force $shaders,$evid | Out-Null
+
+          Copy-Item 'runtime_autonomous\PTAR_NG_MOE_V01_WIN81_X64\shaders\ptar_vs.cso' $shaders
+          Copy-Item 'runtime_autonomous\PTAR_NG_MOE_V01_WIN81_X64\shaders\ptar_moe_ng_v01_sf5_ps.cso' $shaders
+          Copy-Item 'runtime_autonomous\PTAR_NG_MOE_V01_WIN81_X64\shaders\ptar_k185_control_ps.cso' $shaders
+
+          $fxc='${{ steps.tools.outputs.fxc }}'
+          $lab18 = Join-Path $shaders 'ptar_moe_ng_v02_lab18_admission_ps.cso'
+          $asm = Join-Path $evid 'ptar_moe_ng_v02_lab18_admission_ps.asm'
+          & $fxc /nologo /T ps_5_0 /E main /O3 /WX /Fo $lab18 /Fc $asm 'src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab18_admission_ps.hlsl'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path $lab18)) { throw 'LAB18 CSO was not generated' }
+          if ((Get-Item $lab18).Length -le 0) { throw 'LAB18 CSO is empty' }
+
+          $txt=Get-Content $asm -Raw
+          $g=([regex]::Matches($txt,'(?mi)^\s*gather4\w*\b')).Count
+          $s=([regex]::Matches($txt,'(?mi)^\s*sample\w*\b')).Count
+          $u=([regex]::Matches($txt,'(?mi)^\s*dcl_uav\w*\b')).Count
+          $inst=([regex]::Matches($txt,'(?mi)^\s*(?!dcl_|def\b|ret\b|if\b|else\b|endif\b|loop\b|endloop\b|break\b)([a-z][a-z0-9_]*)\s')).Count
+          $audit=[pscustomobject]@{shader='LAB18';gather4=$g;sample_ops=$s;uav_decl=$u;instruction_proxy=$inst;cso_bytes=(Get-Item $lab18).Length;sha256=(Get-FileHash $lab18 -Algorithm SHA256).Hash.ToLowerInvariant()}
+          $audit | Export-Csv -NoTypeInformation (Join-Path $evid 'LAB18_DXBC_AUDIT.csv')
+          $audit | Format-List | Out-String | Set-Content -Encoding ascii (Join-Path $evid 'LAB18_DXBC_AUDIT.txt')
+          if ($g -ne 1) { throw "LAB18 gather4 footprint changed: $g" }
+          if ($s -ne 4) { throw "LAB18 sample footprint changed: $s" }
+          if ($u -ne 0) { throw "LAB18 UAV footprint changed: $u" }
+          '${{ steps.tools.outputs.fxc }}' | Set-Content -Encoding ascii (Join-Path $evid 'FXC_PATH.txt')
+
+      - name: Generate build-time shader hash header and provenance
+        shell: pwsh
+        run: |
+          $root = Join-Path $PWD 'lab_results\runtime_v02'
+          $bundle = Join-Path $root 'PTAR_NG_MOE_V02_LAB18_WIN81_X64'
+          $shaders = Join-Path $bundle 'shaders'
+          $evid = Join-Path $bundle 'build_evidence'
+          $gen = Join-Path $root 'generated'
+          New-Item -ItemType Directory -Force $gen | Out-Null
+
+          $hVS=(Get-FileHash (Join-Path $shaders 'ptar_vs.cso') -Algorithm SHA256).Hash.ToLowerInvariant()
+          $h02=(Get-FileHash (Join-Path $shaders 'ptar_moe_ng_v02_lab18_admission_ps.cso') -Algorithm SHA256).Hash.ToLowerInvariant()
+          $h01=(Get-FileHash (Join-Path $shaders 'ptar_moe_ng_v01_sf5_ps.cso') -Algorithm SHA256).Hash.ToLowerInvariant()
+          $hK=(Get-FileHash (Join-Path $shaders 'ptar_k185_control_ps.cso') -Algorithm SHA256).Hash.ToLowerInvariant()
+
+          @"
+          #pragma once
+          #define PTAR_SHA_VS "$hVS"
+          #define PTAR_SHA_V02 "$h02"
+          #define PTAR_SHA_V01 "$h01"
+          #define PTAR_SHA_K185 "$hK"
+          "@ | Set-Content -Encoding ascii (Join-Path $gen 'PTARV02GeneratedHashes.h')
+
+          $prov=[ordered]@{
+            runtime_id='PTAR-NG-MoE-v02-LAB18-AUTONOMOUS-BENCH'
+            target='Windows 8.1 x64 / D3D11 FL11_0'
+            source_branch_base='SOURCE'
+            source_base_commit='bdb26584d4bcc7aa9655ae27d48359e60f707c50'
+            research_branch='lab/moe-ng-v02-native-detail'
+            frozen_candidate_commit='bda10f16ad287eaac5fabba58e88aedc2651dd34'
+            postfreeze_validation_commit='1f837599717e6504a2ddabf38cb707d5bcff0b37'
+            frozen_shader_blob='27ab6720ffedfc8d12046c647b5ada680323d703'
+            software_gate_run=34247986293
+            runtime_compile_mode='PRECOMPILED_DXBC_ONLY_AT_RUNTIME'
+            runtime_hlsl_compiler_required=$false
+            texture_contract='1 GatherGreen + 4 SampleLevel + 0 UAV'
+            shaders=[ordered]@{
+              'ptar_vs.cso'=[ordered]@{sha256=$hVS}
+              'ptar_moe_ng_v02_lab18_admission_ps.cso'=[ordered]@{sha256=$h02}
+              'ptar_moe_ng_v01_sf5_ps.cso'=[ordered]@{sha256=$h01}
+              'ptar_k185_control_ps.cso'=[ordered]@{sha256=$hK}
+            }
+          }
+          $prov | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 (Join-Path $bundle 'SHADER_PROVENANCE.json')
+
+      - name: Build Windows 8.1 /MT autonomous host
+        shell: pwsh
+        run: |
+          $root = Join-Path $PWD 'lab_results\runtime_v02'
+          $bundle = Join-Path $root 'PTAR_NG_MOE_V02_LAB18_WIN81_X64'
+          $bin = Join-Path $bundle 'bin'
+          $evid = Join-Path $bundle 'build_evidence'
+          $gen = Join-Path $root 'generated'
+          New-Item -ItemType Directory -Force $bin | Out-Null
+          $src = Join-Path $PWD 'runtime_autonomous\PTAR_NG_MOE_V02_LAB18_WIN81_X64\source\ptar_v02_runtime_bench.cpp'
+          $inc = Join-Path $PWD 'runtime_autonomous\PTAR_NG_MOE_V01_WIN81_X64\include'
+          $exe = Join-Path $bin 'ptar_v02_runtime_bench.exe'
+          $obj = Join-Path $gen 'ptar_v02_runtime_bench.obj'
+          $vcvars='${{ steps.tools.outputs.vcvars }}'
+          $cmd = "call `"$vcvars`" && cl /nologo /EHsc /O2 /MT /W4 /WX /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /DUNICODE /D_UNICODE /I `"$inc`" /I `"$gen`" /Fo:`"$obj`" `"$src`" /Fe:`"$exe`" /link /SUBSYSTEM:CONSOLE,6.03 d3d11.lib dxgi.lib bcrypt.lib"
+          cmd.exe /d /s /c $cmd
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path $exe)) { throw 'Autonomous host was not generated' }
+
+          $imports = Join-Path $evid 'IMPORTS_VALIDATED.txt'
+          $cmd2 = "call `"$vcvars`" && dumpbin /dependents `"$exe`" > `"$imports`""
+          cmd.exe /d /s /c $cmd2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $bad=Select-String -Path $imports -Pattern 'D3DCOMPILER|VCRUNTIME|MSVCP|UCRTBASE|API-MS-WIN-CRT' -CaseSensitive:$false
+          if ($bad) { $bad | ForEach-Object { $_.Line }; throw 'Forbidden runtime/toolchain import detected' }
+
+          (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant() | Set-Content -Encoding ascii (Join-Path $evid 'HOST_SHA256.txt')
+
+      - name: Copy launch/docs and execute D3D11 WARP smoke bench
+        shell: pwsh
+        run: |
+          $root = Join-Path $PWD 'lab_results\runtime_v02'
+          $bundle = Join-Path $root 'PTAR_NG_MOE_V02_LAB18_WIN81_X64'
+          Copy-Item 'runtime_autonomous\PTAR_NG_MOE_V02_LAB18_WIN81_X64\RUN_AUTONOMOUS_ONLY.bat' $bundle
+          Copy-Item 'runtime_autonomous\PTAR_NG_MOE_V02_LAB18_WIN81_X64\README_AUTONOMOUS.txt' $bundle
+          $smoke = Join-Path $bundle 'build_evidence\WARP_SMOKE'
+          New-Item -ItemType Directory -Force $smoke | Out-Null
+          $exe = Join-Path $bundle 'bin\ptar_v02_runtime_bench.exe'
+          & $exe --bundle-root $bundle --out $smoke --warp --smoke *> (Join-Path $smoke 'console.txt')
+          $rc=$LASTEXITCODE
+          Get-Content (Join-Path $smoke 'console.txt')
+          if ($rc -ne 0) { exit $rc }
+          if (-not (Test-Path (Join-Path $smoke 'timing.csv'))) { throw 'WARP smoke timing.csv missing' }
+          if ((Import-Csv (Join-Path $smoke 'timing.csv')).Count -ne 3) { throw 'WARP smoke did not report all three shaders' }
+          if (-not (Select-String -Path (Join-Path $smoke 'runtime_summary.txt') -Pattern 'runtime_d3dcompiler_required=NO' -Quiet)) { throw 'Runtime summary missing no-D3DCompiler proof' }
+
+      - name: Build immutable bundle manifest and ZIP
+        shell: pwsh
+        run: |
+          $root = Join-Path $PWD 'lab_results\runtime_v02'
+          $bundle = Join-Path $root 'PTAR_NG_MOE_V02_LAB18_WIN81_X64'
+          $manifest = Join-Path $bundle 'BUNDLE_SHA256.txt'
+          $lines = Get-ChildItem $bundle -Recurse -File |
+            Where-Object { $_.FullName -ne $manifest } |
+            Sort-Object FullName |
+            ForEach-Object {
+              $rel=$_.FullName.Substring($bundle.Length+1).Replace('\','/')
+              $h=(Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              "$h  $rel"
+            }
+          $lines | Set-Content -Encoding ascii $manifest
+
+          foreach($line in Get-Content $manifest) {
+            if($line -notmatch '^([0-9a-f]{64})  (.+)$') { throw "Malformed manifest line: $line" }
+            $expected=$Matches[1]; $rel=$Matches[2].Replace('/','\')
+            $p=Join-Path $bundle $rel
+            if(-not (Test-Path $p)) { throw "Manifest file missing: $rel" }
+            $got=(Get-FileHash $p -Algorithm SHA256).Hash.ToLowerInvariant()
+            if($got -ne $expected) { throw "Manifest mismatch: $rel" }
+          }
+
+          $zip = Join-Path $root 'PTAR_NG_MOE_V02_LAB18_WIN81_X64.zip'
+          Compress-Archive -Path $bundle -DestinationPath $zip -CompressionLevel Optimal
+          if (-not (Test-Path $zip)) { throw 'Runtime ZIP missing' }
+          (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant() | Set-Content -Encoding ascii (Join-Path $root 'PACKAGE_SHA256.txt')
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-NG-MoE-v02-LAB18-autonomous-runtime
+          path: |
+            lab_results/runtime_v02/PTAR_NG_MOE_V02_LAB18_WIN81_X64.zip
+            lab_results/runtime_v02/PACKAGE_SHA256.txt
