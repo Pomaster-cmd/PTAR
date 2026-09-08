@@ -1,0 +1,76 @@
+{
+  "protocol": "LAB19_POST_FREEZE_FRESH_VALIDATION",
+  "status": "PASS_FROZEN_RESULT",
+  "candidate_status": "LAB18_FROZEN_CANDIDATE_PASSED_FIRST_INDEPENDENT_POST_FREEZE_VALIDATION",
+  "candidate_commit": "bda10f16ad287eaac5fabba58e88aedc2651dd34",
+  "validation_head_commit": "bbeac25982212ba787714884c1d3493aba4d94bf",
+  "workflow_run_id": 34237806863,
+  "workflow_run_conclusion": "success",
+  "artifact_id": 10060628351,
+  "artifact_name": "moe-ng-v02-lab19-postfreeze-validation",
+  "artifact_sha256": "7a722fa6c31ed03c51e70c57597d4ae16f3c9220f748b198b32495143ca25833",
+  "artifact_file_sha256": {
+    "SUMMARY.json": "4914334a4608aa2dc880d57bf59d326c78dae3cdb8ceb3ef5211de199448fb52",
+    "PER_CASE.csv": "bc3b3148a0258804ad812a40025a4c6db286647ab5d68464033b4d9fff1050b6",
+    "CASE_HASHES.csv": "ef3e0d15723ac4c9a0ddf0b76e9295f974c4344b6528b181c86d525122d6a9d9"
+  },
+  "candidate": {
+    "kind": "lc_bal_central",
+    "coh_t": 0.75,
+    "coh_w": 0.18,
+    "bal_t": 0.10,
+    "bal_w": 0.15,
+    "central_t": 0.10,
+    "central_w": 0.15,
+    "strength": 0.50
+  },
+  "independence": {
+    "fresh_generator_authored_after_candidate_freeze": true,
+    "old_C_used": false,
+    "LAB16_cases_used": false,
+    "case_count": 36,
+    "unique_case_ids": 36,
+    "unique_hr_hashes": 36,
+    "unique_lr_hashes": 36,
+    "families": 6,
+    "cases_per_family": 6
+  },
+  "metrics": {
+    "overall_mean_gap_v01_db": 0.5862257302468011,
+    "overall_worst_gap_v01_db": 0.02380879250235779,
+    "overall_best_gap_v01_db": 1.1245999241339177,
+    "overall_wins_v01": 36,
+    "overall_cases": 36,
+    "overall_mean_gate": 0.20297924147129484,
+    "structural_mean_gap_v01_db": 0.15427296721938433,
+    "structural_worst_gap_v01_db": 0.02380879250235779,
+    "structural_wins_v01": 18,
+    "structural_cases": 18,
+    "texture_mean_gap_v01_db": 1.018178493274218,
+    "texture_worst_gap_v01_db": 0.9343276932378046,
+    "texture_wins_v01": 18,
+    "texture_cases": 18,
+    "worst_family_mean_gap_v01_db": 0.0526513306039463
+  },
+  "precommitted_gate_results": {
+    "overall_mean_gap_v01_db_min_0.08": true,
+    "overall_worst_gap_v01_db_min_minus0.15": true,
+    "overall_wins_v01_min_24": true,
+    "structural_mean_gap_v01_db_min_minus0.02": true,
+    "structural_worst_gap_v01_db_min_minus0.15": true,
+    "texture_mean_gap_v01_db_min_0.15": true,
+    "texture_worst_gap_v01_db_min_minus0.05": true,
+    "worst_family_mean_gap_v01_db_min_minus0.05": true,
+    "all_pass": true
+  },
+  "independent_recalculation": {
+    "performed_from_PER_CASE_csv": true,
+    "overall_mean_matches_summary": true,
+    "overall_worst_matches_summary": true,
+    "wins_match_summary": true,
+    "family_counts_match_protocol": true,
+    "group_counts_match_protocol": true,
+    "case_hash_ids_match_result_ids": true
+  },
+  "policy": "This records the observed LAB19 result without retuning the LAB18 candidate, LAB19 thresholds, or LAB19 generator. PASS permits subsequent software integration gates only. It does not authorize runtime or main promotion."
+}
