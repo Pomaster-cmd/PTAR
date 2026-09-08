@@ -22,25 +22,30 @@ jobs:
         shell: pwsh
         run: python -m pip install --disable-pip-version-check numpy pillow
 
-      - name: Compile LAB22 twice and require deterministic DXBC
+      - name: Compile exact research LAB22 twice and require deterministic DXBC
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
           $stage=Join-Path $env:RUNNER_TEMP 'ptar_v02_lab22_runtime'
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
           $src=Join-Path $env:GITHUB_WORKSPACE 'src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab22_phase_fused_mc_ps.hlsl'
+          $blob=(git hash-object -- $src).Trim().ToLowerInvariant()
+          if($blob -ne '6800a01a4b383ddd2bdf7f3c8b625265a54205e2') { throw "LAB22 research blob mismatch: $blob" }
           $cso1=Join-Path $stage 'lab22_a.cso'
           $cso2=Join-Path $stage 'lab22_b.cso'
           $asm=Join-Path $stage 'lab22.asm'
-          $fxc=Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Filter fxc.exe -Recurse -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1
-          if(-not $fxc){ throw 'fxc.exe not found' }
-          & $fxc.FullName /nologo /T ps_5_0 /E main /O3 /Ges /Fo $cso1 /Fc $asm $src
+          $fxc=Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Filter fxc.exe -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if(-not $fxc){ throw 'x64 fxc.exe not found' }
+          & $fxc.FullName /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo $cso1 /Fc $asm $src
           if($LASTEXITCODE -ne 0){ throw 'FXC compile A failed' }
-          & $fxc.FullName /nologo /T ps_5_0 /E main /O3 /Ges /Fo $cso2 $src
+          & $fxc.FullName /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo $cso2 $src
           if($LASTEXITCODE -ne 0){ throw 'FXC compile B failed' }
           $h1=(Get-FileHash $cso1 -Algorithm SHA256).Hash.ToLowerInvariant()
           $h2=(Get-FileHash $cso2 -Algorithm SHA256).Hash.ToLowerInvariant()
           if($h1 -ne $h2){ throw "non-deterministic DXBC: $h1 != $h2" }
+          if($h1 -ne '148a26f453a49fa319ea7aa7a448ef30b01dece508fccc6bd21f4fdae10926b8') { throw "research DXBC reproducibility mismatch: $h1" }
           $asmText=Get-Content $asm -Raw
           $gather=([regex]::Matches($asmText,'(?mi)^\s*gather4')).Count
           $sample=([regex]::Matches($asmText,'(?mi)^\s*sample_l')).Count
@@ -49,7 +54,7 @@ jobs:
           "LAB22_CSO=$cso1" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "LAB22_CSO_SHA=$h1" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "LAB22_FXC=$($fxc.FullName)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
-          Write-Host "[PASS] deterministic LAB22 DXBC SHA256=$h1; 1 Gather4 + 4 SampleLevel; 0 UAV"
+          Write-Host "[PASS] exact research blob + deterministic research DXBC SHA256=$h1; 1 Gather4 + 4 SampleLevel; 0 UAV"
 
       - name: Prepare isolated bundle from frozen v01 scaffold
         shell: pwsh
@@ -83,6 +88,7 @@ jobs:
             "runtime_commit": "$env:GITHUB_SHA",
             "research_branch": "lab/moe-ng-v02-native-detail",
             "research_lab22_commit": "4d33659856078554f39f02a29ea7c775761195c7",
+            "research_lab22_blob": "6800a01a4b383ddd2bdf7f3c8b625265a54205e2",
             "research_lab22_run": 34261881420,
             "research_lab22_artifact_digest": "sha256:3488946ddbd5aceaf6a9644b777ea16c52a4b4447e72f44b2595916371b34d11",
             "research_warp_direct_max_abs": 0.0,
@@ -122,7 +128,8 @@ jobs:
           $imports=Get-Content (Join-Path $env:LAB22_BUNDLE 'build_evidence\IMPORTS_VALIDATED.txt') -Raw
           if($imports -match 'D3DCOMPILER|VCRUNTIME|MSVCP|UCRTBASE|API-MS-WIN-CRT'){ throw 'forbidden runtime import detected' }
           $src=Get-Content (Join-Path $env:LAB22_BUNDLE 'source\ptar_moe_ng_v02_autonomous_validation.cpp') -Raw
-          if($src -match 'D3DCompile'){ throw 'runtime host contains D3DCompile' }
+          if($src -match '(?i)\bD3DCompile(?:2|FromFile)?\s*\('){ throw 'runtime host contains a D3DCompile-family call' }
+          if($src -match '(?is)LoadLibrary(?:Ex)?[AW]?\s*\([^\)]*d3dcompiler'){ throw 'runtime host dynamically loads d3dcompiler' }
           $csoHash=(Get-FileHash $cso -Algorithm SHA256).Hash.ToLowerInvariant()
           if($csoHash -ne $env:LAB22_CSO_SHA){ throw 'packaged LAB22 shader hash mismatch' }
           $exeHash=(Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -130,6 +137,7 @@ jobs:
             "variant=PTAR_NG_MOE_V02_LAB22_PHASE_FUSED_MC",
             "exe_sha256=$exeHash",
             "cso_sha256=$csoHash",
+            "research_shader_blob=6800a01a4b383ddd2bdf7f3c8b625265a54205e2",
             "expected_png_count=42",
             "input_png_count=42",
             "runtime_d3dcompiler_required=NO",
