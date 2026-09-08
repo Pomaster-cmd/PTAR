@@ -1,0 +1,54 @@
+{
+  "protocol": "LAB16_POST_FREEZE_FRESH_VALIDATION",
+  "purpose": "One-shot validation of the frozen LAB15 candidate on newly authored deterministic cases. Not a tuning sweep.",
+  "candidate_freeze_commit": "a5002e47b15c61ea26e94d01df4f5b9481560bea",
+  "candidate_file": "lab_protocols/LAB15_FROZEN_CANDIDATE.json",
+  "generator_file": "tools/lab_moe_ng_v02_fresh_validation.py",
+  "old_C_used": false,
+  "fresh_case_count": 36,
+  "fresh_case_families": {
+    "structural": [
+      "fresh_slanted_strokes",
+      "fresh_junctions",
+      "fresh_glyph_stencil"
+    ],
+    "texture_frequency": [
+      "fresh_frequency_chirp",
+      "fresh_anisotropic_texture",
+      "fresh_microtexture_gradient"
+    ]
+  },
+  "geometry": {
+    "hr": [288, 288],
+    "lr": [192, 192],
+    "scale": 1.5
+  },
+  "input_generation": {
+    "source": "PTAR-PERCEPTUAL-V1-A metadata contract",
+    "library": "scikit-image",
+    "version": "0.26.0",
+    "function": "skimage.transform.resize",
+    "order": 3,
+    "mode": "reflect",
+    "anti_aliasing": true,
+    "preserve_range": true,
+    "clip": true,
+    "domain": "sRGB/code values (not linearized)"
+  },
+  "precommitted_acceptance_gates": {
+    "overall_mean_gap_v01_db_min": 0.05,
+    "overall_worst_gap_v01_db_min": -0.20,
+    "structural_mean_gap_v01_db_min": -0.03,
+    "structural_worst_gap_v01_db_min": -0.20,
+    "texture_mean_gap_v01_db_min": 0.10
+  },
+  "hard_invariants": [
+    "all generated HR/LR/runtime outputs finite",
+    "hybrid output remains in [0,1]",
+    "v01, LAB07 MC and LAB15 hybrid output exact 288x288 from 192x192 input",
+    "frozen LAB15 candidate identity and parameters match the committed freeze",
+    "no parameter sweep and no candidate selection occurs in LAB16"
+  ],
+  "post_observation_rule": "After the first observed LAB16 result, neither candidate parameters, LAB16 thresholds nor this generated corpus may be changed to rescue the frozen candidate. Failure rejects it. A later candidate must use another newly authored untouched validation set.",
+  "promotion": "No main, SOURCE, runtime or stable product promotion is authorized by a LAB16 PASS alone."
+}
