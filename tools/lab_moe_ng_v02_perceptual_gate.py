@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""LAB06 perceptual/native-band diagnostic for PTAR-NG MoE v02.
+"""LAB07 always-on MC perceptual/native-band diagnostic for PTAR-NG MoE v02.
 
-This is a diagnostic, not a new acceptance protocol. It evaluates the current
-relative-routed MC candidate against bilinear and the validated MoE v01 path on
-the immutable V1_A and B_GRID corpora, preserving the A+B / C split used by
-the LAB05/LAB06 non-leaky selection process.
+This is a diagnostic, not a new acceptance protocol. It evaluates the selected
+always-on MC candidate against bilinear and validated MoE v01 on immutable V1_A
+and B_GRID corpora. LAB07 architecture selection used A+B only; crop C was
+consulted only after that choice. Legacy lab05_* metric field names are retained
+for artifact-schema continuity.
 
-The spectral band is explicitly defined here as radial 0.20..1/3 cycles per HR
-pixel. 1/3 is the LR Nyquist limit when LR samples are spaced 1.5 HR pixels.
-Changing this band definition changes the diagnostic and must be reported.
+The spectral band is radial 0.20..1/3 cycles per HR pixel. 1/3 is the LR
+Nyquist limit when LR samples are spaced 1.5 HR pixels.
 """
 import argparse
 import csv
@@ -23,7 +23,6 @@ import lab_moe_ng_v02_hermite_sweep as h5
 import lab_moe_ng_v02_sweep as v02base
 
 LUMA = np.asarray([0.2126, 0.7152, 0.0722], dtype=np.float32)
-REL_HI = np.float32(0.08)
 BAND_LO = 0.20
 BAND_HI = 1.0 / 3.0
 EPS = 1.0e-12
@@ -82,9 +81,9 @@ def spectral_metrics(ref_rgb, cand_rgb):
 
 def render_current(lr):
     base, experts, ac, rc = h5.planes(lr)
-    gate = h5.sat(rc / REL_HI)
-    out = base + (experts["mc"] - base) * gate[..., None]
-    return out.astype(np.float32), gate.astype(np.float32), base, experts["mc"]
+    gate = np.ones(base.shape[:2], dtype=np.float32)
+    out = experts["mc"].astype(np.float32)
+    return out, gate, base, experts["mc"]
 
 
 def eval_case(corpus, row, protocol):
@@ -93,8 +92,6 @@ def eval_case(corpus, row, protocol):
 
     lab05, gate, bil, mc = render_current(lr)
     bil2, v01, _, _ = v02base.components(lr)
-
-    # Both helpers implement the same grid-aligned bilinear contract.
     bilinear_helper_max_abs = float(np.max(np.abs(bil.astype(np.float64) - bil2.astype(np.float64))))
 
     outputs = {"bilinear": bil, "v01": v01, "lab05": lab05}
@@ -112,9 +109,6 @@ def eval_case(corpus, row, protocol):
             "native_band_energy_abs_error_db": sea,
         }
 
-    # The candidate is a convex blend between grid bilinear and a monotone-
-    # clamped MC expert. These are hard numerical invariants, not perceptual
-    # thresholds.
     lo = np.minimum(bil, mc)
     hi = np.maximum(bil, mc)
     below = np.maximum(lo - lab05, 0.0)
@@ -226,13 +220,12 @@ def main():
         "V1_A": [r for r in rows if r["protocol"] == "V1_A"],
     }
     summary = {
-        "protocol": "LAB06_RELONLY_MC_NATIVE_BAND_DIAGNOSTIC_V1",
+        "protocol": "LAB07_ALWAYS_ON_MC_NATIVE_BAND_DIAGNOSTIC_V1",
         "acceptance_protocol": False,
         "selection_used_this_diagnostic": False,
         "candidate": {
             "expert": "mc",
-            "router": "relative_curvature_only",
-            "rel_hi": float(REL_HI),
+            "router": "none_always_on",
             "strength": 1.0,
         },
         "spectral_definition": {
@@ -246,12 +239,9 @@ def main():
         "groups": {k: aggregate(v) for k, v in groups.items()},
     }
 
-    # Only mathematical/runtime invariants are hard-gated here. Spectral and
-    # perceptual figures remain diagnostics until an acceptance threshold is
-    # explicitly versioned.
     invariants = {
         "all_finite": summary["groups"]["all"]["all_finite"],
-        "gate_le_1": summary["groups"]["all"]["max_gate"] <= 1.0 + 1.0e-6,
+        "gate_eq_1": abs(summary["groups"]["all"]["max_gate"] - 1.0) <= 1.0e-6,
         "convex_hull_max_violation_le_1e-6": summary["groups"]["all"]["max_convex_hull_violation"] <= 1.0e-6,
         "range_01_max_violation_le_1e-6": summary["groups"]["all"]["max_range_01_violation"] <= 1.0e-6,
         "bilinear_helpers_agree_le_2e-6": summary["groups"]["all"]["max_bilinear_helper_abs"] <= 2.0e-6,
@@ -261,7 +251,7 @@ def main():
     (out / "SUMMARY.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(summary, indent=2))
     if not summary["invariants_pass"]:
-        raise SystemExit("LAB06 native-band diagnostic invariant failure")
+        raise SystemExit("LAB07 native-band diagnostic invariant failure")
 
 
 if __name__ == "__main__":

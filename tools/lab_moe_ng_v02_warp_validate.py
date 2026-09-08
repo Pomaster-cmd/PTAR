@@ -1,15 +1,11 @@
 #!/usr/bin/env python3
-"""LAB06 relative-routed MC D3D11 WARP runtime validator.
+"""LAB07 always-on MC D3D11 WARP runtime validator.
 
 Generates a deterministic float32 RGBA test texture and two independent CPU
-references:
-  * ideal_float: mathematically exact bilinear weights;
-  * d3d11_filter: D3D11's 8-bit subtexel filtering-weight precision.
-
-The direction decision uses the intended 2x2 green neighborhood directly; it
-does not emulate GatherGreen component ordering. Gather-coordinate/swizzle,
-resource-binding, phase, sampling, constant-buffer, or DXBC execution errors
-therefore remain visible in the WARP comparison.
+references: ideal mathematical bilinear weights and D3D11's 8-bit subtexel
+filtering precision. The direction decision uses the intended 2x2 green
+neighborhood directly, so GatherGreen ordering/resource/phase/sample/DXBC
+execution errors remain visible in the WARP comparison.
 """
 import argparse
 import json
@@ -17,18 +13,12 @@ from pathlib import Path
 import numpy as np
 
 F=np.float32
-LUMA=np.array([0.2126,0.7152,0.0722],dtype=np.float32)
-EPS=F(1.0e-6)
 IN_W=24
 IN_H=24
 OUT_W=36
 OUT_H=36
 D3D11_SUBTEXEL_BITS=8
 DEFAULT_TOL=2.0e-6
-
-
-def sat(x):
-    return np.minimum(np.maximum(x,F(0)),F(1)).astype(np.float32)
 
 
 def quantize_subtexel(t):
@@ -67,10 +57,6 @@ def h13(f0,f1,m0,m1):
 def h23(f0,f1,m0,m1):
     h=(F(7)*f0+F(2)*m0+F(20)*f1-F(4)*m1)*F(1/27)
     return np.minimum(np.maximum(h,np.minimum(f0,f1)),np.maximum(f0,f1)).astype(np.float32)
-
-
-def luma(c):
-    return F(np.sum(c[:3]*LUMA,dtype=np.float32))
 
 
 def generate_input():
@@ -113,18 +99,9 @@ def cpu_reference(img,d3d11_filter):
             if phase==0:
                 out[oy,ox]=f0
                 continue
-            t=F(2/3) if phase==1 else F(1/3)
-            bil=(f0*(F(1)-t)+f1*t).astype(np.float32)
             d0=f0-fm1; d1=f1-f0; d2=f2-f1
             m0=mc_slope(d0,d1); m1=mc_slope(d1,d2)
-            mc=h23(f0,f1,m0,m1) if phase==1 else h13(f0,f1,m0,m1)
-            ym1=luma(fm1); y0v=luma(f0); y1v=luma(f1); y2v=luma(f2)
-            c0=abs(F(ym1-F(2)*y0v+y1v)); c1=abs(F(y0v-F(2)*y1v+y2v))
-            ac=F(max(c0,c1))
-            slope=F(max(abs(F(y0v-ym1)),abs(F(y1v-y0v)),abs(F(y2v-y1v))))
-            rc=F(ac/F(slope+EPS))
-            gate=F(sat(F(rc/F(.08))))
-            out[oy,ox]=(bil+(mc-bil)*gate).astype(np.float32)
+            out[oy,ox]=h23(f0,f1,m0,m1) if phase==1 else h13(f0,f1,m0,m1)
     return out
 
 
@@ -174,7 +151,7 @@ def validate(outdir,gpu_path,tol):
     d3d_stats=error_stats(gpu,d3d,tol)
     ideal_stats=error_stats(gpu,ideal,tol)
     summary={
-        'protocol':'LAB06_RELONLY_MC_D3D11_WARP_RUNTIME_PARITY',
+        'protocol':'LAB07_ALWAYS_ON_MC_D3D11_WARP_RUNTIME_PARITY',
         'driver_requested':'D3D_DRIVER_TYPE_WARP',
         'physical_gpu_executed':False,
         'd3d11_subtexel_fractional_bits':D3D11_SUBTEXEL_BITS,

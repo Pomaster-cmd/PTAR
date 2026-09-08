@@ -1,11 +1,11 @@
-// PTAR-NG MoE v02 - LAB06 Relative-Routed MC Native Detail
+// PTAR-NG MoE v02 - LAB07 Always-On MC Native Detail
 // Direct3D 11 / Shader Model 5.0 / Windows 8.1 target.
 //
-// This v02 expert does NOT scale the v01 K185 correction. It reconstructs the
-// selected direction with a shape-preserving monotonized-central (MC) cubic
-// Hermite segment, then routes from directional bilinear using relative
-// curvature only. LAB06 removed the absolute-curvature stage after a non-leaky
-// A+B architecture ablation; crop C remained holdout until after selection.
+// LAB07 removes the curvature router after a cost-aware non-leaky A+B
+// architecture selection showed always-on MC quality-equivalent to LAB06
+// relative routing. Crop C was evaluated only after the architecture choice.
+// The selected directional segment is reconstructed directly with a
+// shape-preserving monotonized-central (MC) cubic Hermite expert.
 //
 // Texture contract preserved:
 //     1 GatherGreen + 4 SampleLevel
@@ -27,17 +27,10 @@ float2 TexelCenterUV(float2 texelPos)
     return (texelPos+0.5f)/gInputSize;
 }
 
-float Luma709(float4 c)
-{
-    return dot(c.rgb,float3(0.2126f,0.7152f,0.0722f));
-}
-
 float4 MCSlope(float4 a,float4 b)
 {
     // Exact MC limiter in a cheaper algebraic form:
     // minmod((a+b)/2,2a,2b).
-    // Opposite signs are masked to zero; when signs agree, clamping the
-    // centered slope to +/-2*min(|a|,|b|) is algebraically identical.
     float4 avg=0.5f*(a+b);
     float4 lim=2.0f*min(abs(a),abs(b));
     float4 limited=clamp(avg,-lim,lim);
@@ -58,31 +51,13 @@ float4 Hermite23(float4 f0,float4 f1,float4 m0,float4 m1)
     return clamp(h,min(f0,f1),max(f0,f1));
 }
 
-float RelativeDetailGate(float4 fm1,float4 f0,float4 f1,float4 f2)
-{
-    float ym1=Luma709(fm1);
-    float y0 =Luma709(f0);
-    float y1 =Luma709(f1);
-    float y2 =Luma709(f2);
-
-    float c0=abs(ym1-2.0f*y0+y1);
-    float c1=abs(y0-2.0f*y1+y2);
-    float absCurv=max(c0,c1);
-    float localSlope=max(abs(y0-ym1),max(abs(y1-y0),abs(y2-y1)));
-    float relCurv=absCurv/(localSlope+1.0e-6f);
-
-    // LAB06 train selection: A+B crops from BOTH B-GRID and V1_A.
-    // Crop C remained untouched until the architecture was selected.
-    return saturate(relCurv*(1.0f/0.08f));
-}
-
 float4 main(PSIn input) : SV_Target
 {
     uint2 outPix=(uint2)input.position.xy;
     float2 srcPos=float2(outPix)*(2.0f/3.0f);
     float2 srcFloor=floor(srcPos);
 
-    // Same gather orientation contract as validated MoE v01.
+    // Same gather orientation contract as validated MoE v01/LAB06.
     float2 gatherUV=(srcFloor+1.0f)/gInputSize;
     float4 g=gSource.GatherGreen(gLinearClamp,gatherUV);
 
@@ -108,19 +83,13 @@ float4 main(PSIn input) : SV_Target
     if(phaseIndex==0u)
         return f0;
 
-    float phaseFrac=(phaseIndex==1u)?(2.0f/3.0f):(1.0f/3.0f);
-    float4 bilinear=lerp(f0,f1,phaseFrac);
-
     float4 d0=f0-fm1;
     float4 d1=f1-f0;
     float4 d2=f2-f1;
     float4 m0=MCSlope(d0,d1);
     float4 m1=MCSlope(d1,d2);
 
-    float4 mc=(phaseIndex==1u)
+    return (phaseIndex==1u)
         ? Hermite23(f0,f1,m0,m1)
         : Hermite13(f0,f1,m0,m1);
-
-    float detailGate=RelativeDetailGate(fm1,f0,f1,f2);
-    return lerp(bilinear,mc,detailGate);
 }
