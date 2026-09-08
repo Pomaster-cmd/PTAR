@@ -1,0 +1,137 @@
+name: LAB PTAR-NG MoE v02 LAB21 DXBC Cost Audit
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-native-detail
+
+permissions:
+  contents: read
+
+jobs:
+  static-dxbc-cost-audit:
+    if: contains(github.event.head_commit.message, '[run-lab21]')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Locate FXC
+        id: fxc
+        shell: pwsh
+        run: |
+          $fxc = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue |
+                 Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } |
+                 Sort-Object FullName -Descending |
+                 Select-Object -First 1
+          if (-not $fxc) { throw 'fxc.exe not found' }
+          "path=$($fxc.FullName)" >> $env:GITHUB_OUTPUT
+
+      - name: Compile frozen v01 and selected LAB07 identically
+        shell: pwsh
+        run: |
+          $out='lab_results\moe_ng_v02_lab21_dxbc_cost'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          $fxc='${{ steps.fxc.outputs.path }}'
+          & $fxc /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$out\v01.cso" /Fc "$out\v01.asm" src\hlsl\moe_ng_v01\ptar_moe_ng_v01_sf5_ps.hlsl
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $fxc /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$out\lab07.cso" /Fc "$out\lab07.asm" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_mc_native_detail_ps.hlsl
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-FileHash "$out\v01.cso" -Algorithm SHA256 | Format-List | Out-File "$out\HASHES.txt"
+          Get-FileHash "$out\lab07.cso" -Algorithm SHA256 | Format-List | Out-File "$out\HASHES.txt" -Append
+
+      - name: Extract instruction and opcode audit
+        shell: pwsh
+        run: |
+          @'
+          import csv, json, re
+          from collections import Counter
+          from pathlib import Path
+
+          root = Path('lab_results/moe_ng_v02_lab21_dxbc_cost')
+          shaders = {'v01': root/'v01.asm', 'lab07': root/'lab07.asm'}
+          rows = []
+          hist = {}
+
+          # FXC assembly executable instructions. Exclude declarations, constant defs
+          # and structural/comment lines; retain branches and ret separately in the
+          # full opcode histogram so the audit is inspectable rather than a single proxy.
+          op_re = re.compile(r'^\s*([A-Za-z][A-Za-z0-9_]*)\b')
+          skip_prefix = ('dcl_',)
+          skip_exact = {'def', 'defi', 'defb'}
+
+          for name, path in shaders.items():
+              ops = []
+              for raw in path.read_text(encoding='utf-8', errors='replace').splitlines():
+                  s = raw.lstrip()
+                  if not s or s.startswith('//'):
+                      continue
+                  m = op_re.match(raw)
+                  if not m:
+                      continue
+                  op = m.group(1).lower()
+                  if op.startswith(skip_prefix) or op in skip_exact:
+                      continue
+                  ops.append(op)
+              c = Counter(ops)
+              hist[name] = dict(sorted(c.items()))
+              tex = sum(v for k,v in c.items() if k.startswith('sample'))
+              gather = sum(v for k,v in c.items() if k.startswith('gather4'))
+              branches = sum(c.get(k,0) for k in ('if_nz','if_z','else','endif','switch','case','default','endswitch'))
+              alu = len(ops) - tex - gather - c.get('ret',0) - branches
+              rows.append({
+                  'shader': name,
+                  'instruction_total': len(ops),
+                  'alu_proxy': alu,
+                  'gather4_ops': gather,
+                  'sample_ops': tex,
+                  'branch_structural_ops': branches,
+                  'ret_ops': c.get('ret',0),
+                  'cso_bytes': (root/f'{name}.cso').stat().st_size,
+              })
+
+          with (root/'SUMMARY.csv').open('w', newline='', encoding='utf-8') as f:
+              w=csv.DictWriter(f, fieldnames=rows[0].keys()); w.writeheader(); w.writerows(rows)
+          (root/'OPCODE_HISTOGRAM.json').write_text(json.dumps(hist, indent=2, sort_keys=True)+'\n', encoding='utf-8')
+
+          by = {r['shader']:r for r in rows}
+          v, q = by['v01'], by['lab07']
+          delta = {
+              'protocol': 'LAB21_IDENTICAL_FXC_O3_GES_PS_5_0',
+              'v01': v,
+              'lab07': q,
+              'delta_lab07_minus_v01': {k:q[k]-v[k] for k in ('instruction_total','alu_proxy','gather4_ops','sample_ops','branch_structural_ops','cso_bytes')},
+              'ratio_lab07_over_v01': {
+                  'instruction_total': q['instruction_total']/v['instruction_total'] if v['instruction_total'] else None,
+                  'alu_proxy': q['alu_proxy']/v['alu_proxy'] if v['alu_proxy'] else None,
+                  'cso_bytes': q['cso_bytes']/v['cso_bytes'] if v['cso_bytes'] else None,
+              },
+              'texture_contract_pass': all(r['gather4_ops']==1 and r['sample_ops']==4 for r in rows),
+          }
+          (root/'DELTA.json').write_text(json.dumps(delta, indent=2)+'\n', encoding='utf-8')
+          print(json.dumps(delta, indent=2))
+          if not delta['texture_contract_pass']:
+              raise SystemExit('Texture contract mismatch: expected 1 Gather4 + 4 Sample ops for both shaders')
+          '@ | python -
+
+      - name: Emit source provenance
+        shell: pwsh
+        run: |
+          $out='lab_results\moe_ng_v02_lab21_dxbc_cost'
+          @(
+            "protocol=LAB21_IDENTICAL_FXC_O3_GES_PS_5_0",
+            "branch=$env:GITHUB_REF_NAME",
+            "commit=$env:GITHUB_SHA",
+            "v01_source=src/hlsl/moe_ng_v01/ptar_moe_ng_v01_sf5_ps.hlsl",
+            "lab07_source=src/hlsl/moe_ng_v02/ptar_moe_ng_v02_mc_native_detail_ps.hlsl",
+            "fxc=${{ steps.fxc.outputs.path }}"
+          ) | Set-Content "$out\PROVENANCE.txt"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: moe-ng-v02-lab21-dxbc-cost-audit
+          path: lab_results/moe_ng_v02_lab21_dxbc_cost
