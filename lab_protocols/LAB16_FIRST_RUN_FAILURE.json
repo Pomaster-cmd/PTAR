@@ -1,0 +1,64 @@
+{
+  "protocol": "LAB16_POST_FREEZE_FRESH_VALIDATION_RESULT",
+  "status": "FAIL",
+  "candidate_status": "REJECTED",
+  "lab16_run_id": 34229997518,
+  "lab16_head_sha": "15061c7252979d67cc7a91442c5a62e266e33b64",
+  "artifact_id": 10057363013,
+  "artifact_name": "moe-ng-v02-lab16-fresh-validation",
+  "artifact_sha256": "9ca65e7d56d2a4aeebc78f512c6f9201d3ffbfc1f67068005de78ac3e8b34edd",
+  "frozen_candidate_commit": "a5002e47b15c61ea26e94d01df4f5b9481560bea",
+  "frozen_candidate": {
+    "kind": "bal_noturn",
+    "bal_t": 0.15,
+    "bal_w": 0.10,
+    "strength": 0.50
+  },
+  "precommitted_checks": {
+    "overall_mean": true,
+    "overall_worst": false,
+    "structural_mean": false,
+    "structural_worst": false,
+    "texture_mean": true
+  },
+  "observed": {
+    "all": {
+      "cases": 36,
+      "mean_gap_v01_db": 0.29588431450134045,
+      "worst_gap_v01_db": -0.5610330035577675,
+      "wins_v01": 25
+    },
+    "structural": {
+      "cases": 18,
+      "mean_gap_v01_db": -0.1047354877647854,
+      "worst_gap_v01_db": -0.5610330035577675,
+      "wins_v01": 7
+    },
+    "texture_frequency": {
+      "cases": 18,
+      "mean_gap_v01_db": 0.6965041167674664,
+      "worst_gap_v01_db": 0.5132405806990263,
+      "wins_v01": 18
+    }
+  },
+  "family_observations": {
+    "fresh_slanted_strokes": {"mean_gap_v01_db": 0.0014911790740044968, "worst_gap_v01_db": -0.01639217011840799},
+    "fresh_junctions": {"mean_gap_v01_db": -0.16259873729515917, "worst_gap_v01_db": -0.5610330035577675},
+    "fresh_glyph_stencil": {"mean_gap_v01_db": -0.15309890507320154, "worst_gap_v01_db": -0.3200578325724024},
+    "fresh_frequency_chirp": {"mean_gap_v01_db": 0.7213392626129878, "worst_gap_v01_db": 0.5467772095485763},
+    "fresh_anisotropic_texture": {"mean_gap_v01_db": 0.8143067577288589, "worst_gap_v01_db": 0.5506932297213183},
+    "fresh_microtexture_gradient": {"mean_gap_v01_db": 0.5538663299605524, "worst_gap_v01_db": 0.5132405806990263}
+  },
+  "interpretation": [
+    "The failure is a metric validation failure (exit code 2), not an infrastructure or execution failure.",
+    "Outer-balance preserves strong gains on all 18 fresh texture/frequency cases but does not safely discriminate junction/glyph structure.",
+    "Fresh junctions can exhibit very high outer-balance (~0.92 mean family value), so high outer-balance is not sufficient evidence for MC safety.",
+    "Fresh glyphs have very low mean gate, yet localized gated pixels are still sufficient to cause material regressions; a global mean-gate criterion is therefore inadequate."
+  ],
+  "methodological_lock": {
+    "do_not_tune_LAB15_against_LAB16": true,
+    "LAB16_is_now_reused_diagnostic": true,
+    "next_candidate_requires_new_post_freeze_validation_set": true
+  },
+  "promotion": "No main, SOURCE, runtime or stable baseline promotion."
+}
