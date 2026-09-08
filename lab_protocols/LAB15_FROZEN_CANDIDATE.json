@@ -1,0 +1,49 @@
+{
+  "protocol": "LAB15_FROZEN_OUTER_BALANCE_CANDIDATE",
+  "frozen_from_commit": "6c7869bfb927bd4fc7abcbf17203b38b0290d29c",
+  "selection_run_id": 34227242075,
+  "selection_artifact": "moe-ng-v02-lab15-outer-balance",
+  "selection_artifact_sha256": "f7ffbaed09bd98cf871e5a22348aab1c1b9d2cc5ac88f4421a0514278fc9efa5",
+  "selection_protocol": "LAB15_OUTER_BALANCE_AB_SELECT_REUSED_C_DIAGNOSTIC",
+  "selection_used_C": false,
+  "C_is_pristine_holdout": false,
+  "candidate": {
+    "kind": "bal_noturn",
+    "bal_t": 0.15,
+    "bal_w": 0.10,
+    "strength": 0.50
+  },
+  "definition": {
+    "outer_balance": "min(abs(d0),abs(d2)) / (max(abs(d0),abs(d2)) + 1e-6)",
+    "turn": "((d0*d1)<0) OR ((d1*d2)<0)",
+    "gate": "0.5 * saturate((outer_balance-0.15)/0.10) * (1-turn)"
+  },
+  "texture_fetch_delta": 0,
+  "training_A_B": {
+    "cases": 56,
+    "mean_gap_v01_db": 0.1491508256275038,
+    "worst_gap_v01_db": -0.1498511453817457,
+    "wins_v01": 44,
+    "structural_mean_gap_v01_db": 0.014615309443143154,
+    "structural_worst_gap_v01_db": -0.1498511453817457
+  },
+  "reused_C_diagnostic": {
+    "cases": 28,
+    "mean_gap_v01_db": 0.15952078752655563,
+    "worst_gap_v01_db": -0.1498511453817457,
+    "wins_v01": 23,
+    "structural_mean_gap_v01_db": 0.017881183940818463,
+    "structural_worst_gap_v01_db": -0.1498511453817457
+  },
+  "freeze_policy": {
+    "immutable_for_next_validation": true,
+    "no_parameter_change_after_LAB16_observation": true,
+    "LAB16_must_be_created_after_this_freeze_commit": true,
+    "LAB16_is_validation_not_tuning": true
+  },
+  "notes": [
+    "A+B selected the candidate. Reused C is diagnostic only because earlier LAB10-LAB14 observations informed architecture.",
+    "The next validation corpus and generator definitions must be authored only after this freeze commit.",
+    "No main, SOURCE, runtime, shader, or stable baseline promotion is implied by this research freeze."
+  ]
+}
