@@ -1,0 +1,173 @@
+#!/usr/bin/env python3
+"""LAB05-MC D3D11 WARP runtime validator.
+
+Generates a deterministic float32 RGBA test texture and an independent CPU
+reference, then compares a WARP-rendered R32G32B32A32_FLOAT readback.
+The CPU direction decision uses the intended 2x2 green neighborhood directly;
+it does not emulate GatherGreen component ordering, so gather-coordinate or
+swizzle mistakes are observable at runtime.
+"""
+import argparse
+import json
+from pathlib import Path
+import numpy as np
+
+F=np.float32
+LUMA=np.array([0.2126,0.7152,0.0722],dtype=np.float32)
+EPS=F(1.0e-6)
+IN_W=24
+IN_H=24
+OUT_W=36
+OUT_H=36
+DEFAULT_TOL=5.0e-5
+
+
+def sat(x):
+    return np.minimum(np.maximum(x,F(0)),F(1)).astype(np.float32)
+
+
+def sample_linear(img,x,y):
+    h,w,_=img.shape
+    x=F(np.clip(F(x),F(0),F(w-1)))
+    y=F(np.clip(F(y),F(0),F(h-1)))
+    x0=int(np.floor(x)); y0=int(np.floor(y))
+    x1=min(x0+1,w-1); y1=min(y0+1,h-1)
+    tx=F(x-F(x0)); ty=F(y-F(y0))
+    a=(img[y0,x0]*(F(1)-tx)+img[y0,x1]*tx).astype(np.float32)
+    b=(img[y1,x0]*(F(1)-tx)+img[y1,x1]*tx).astype(np.float32)
+    return (a*(F(1)-ty)+b*ty).astype(np.float32)
+
+
+def mc_slope(a,b):
+    avg=F(.5)*(a+b)
+    lim=F(2)*np.minimum(np.abs(a),np.abs(b))
+    limited=np.minimum(np.maximum(avg,-lim),lim).astype(np.float32)
+    same=F(1) if np.all(a*b >= F(0)) else None
+    # HLSL step is component-wise, not vector-wide.
+    mask=(a*b>=F(0)).astype(np.float32)
+    return (limited*mask).astype(np.float32)
+
+
+def h13(f0,f1,m0,m1):
+    h=(F(20)*f0+F(4)*m0+F(7)*f1-F(2)*m1)*F(1/27)
+    return np.minimum(np.maximum(h,np.minimum(f0,f1)),np.maximum(f0,f1)).astype(np.float32)
+
+
+def h23(f0,f1,m0,m1):
+    h=(F(7)*f0+F(2)*m0+F(20)*f1-F(4)*m1)*F(1/27)
+    return np.minimum(np.maximum(h,np.minimum(f0,f1)),np.maximum(f0,f1)).astype(np.float32)
+
+
+def luma(c):
+    return F(np.sum(c[:3]*LUMA,dtype=np.float32))
+
+
+def generate_input():
+    y,x=np.mgrid[0:IN_H,0:IN_W]
+    xf=x.astype(np.float32)/F(IN_W-1)
+    yf=y.astype(np.float32)/F(IN_H-1)
+    checker=((x//2+y//3)&1).astype(np.float32)
+    diag=((x+2*y)%7<3).astype(np.float32)
+    rings=(np.sin(np.sqrt((x-11.5)**2+(y-11.5)**2)*1.7)*0.5+0.5).astype(np.float32)
+    rng=np.random.default_rng(0x50544152)
+    noise=rng.random((IN_H,IN_W),dtype=np.float32)
+    r=F(.08)+F(.42)*xf+F(.18)*checker+F(.12)*diag+F(.08)*noise
+    g=F(.05)+F(.30)*yf+F(.28)*checker+F(.17)*diag+F(.10)*rings
+    b=F(.04)+F(.20)*(F(1)-xf)+F(.16)*checker+F(.28)*rings+F(.08)*noise
+    a=np.ones_like(r,dtype=np.float32)
+    img=np.stack([r,g,b,a],axis=2).astype(np.float32)
+    return np.clip(img,F(0),F(1)).astype(np.float32)
+
+
+def cpu_reference(img):
+    h,w,_=img.shape
+    out=np.empty((OUT_H,OUT_W,4),dtype=np.float32)
+    green=img[:,:,1]
+    for oy in range(OUT_H):
+        for ox in range(OUT_W):
+            sx=F(ox)*F(2/3); sy=F(oy)*F(2/3)
+            fx=int(np.floor(sx)); fy=int(np.floor(sy))
+            x0=min(max(fx,0),w-1); x1=min(max(fx+1,0),w-1)
+            y0=min(max(fy,0),h-1); y1=min(max(fy+1,0),h-1)
+            tl=green[y0,x0]; tr=green[y0,x1]; bl=green[y1,x0]; br=green[y1,x1]
+            gx=F((tr+br)-(tl+bl)); gy=F((bl+br)-(tl+tr))
+            use_x=bool(abs(gx)>=abs(gy))
+            if use_x:
+                bx=F(fx); by=sy; ax=F(1); ay=F(0); phase=ox%3
+            else:
+                bx=sx; by=F(fy); ax=F(0); ay=F(1); phase=oy%3
+            fm1=sample_linear(img,bx-ax,by-ay)
+            f0 =sample_linear(img,bx,by)
+            f1 =sample_linear(img,bx+ax,by+ay)
+            f2 =sample_linear(img,bx+F(2)*ax,by+F(2)*ay)
+            if phase==0:
+                out[oy,ox]=f0
+                continue
+            t=F(2/3) if phase==1 else F(1/3)
+            bil=(f0*(F(1)-t)+f1*t).astype(np.float32)
+            d0=f0-fm1; d1=f1-f0; d2=f2-f1
+            m0=mc_slope(d0,d1); m1=mc_slope(d1,d2)
+            mc=h23(f0,f1,m0,m1) if phase==1 else h13(f0,f1,m0,m1)
+            ym1=luma(fm1); y0v=luma(f0); y1v=luma(f1); y2v=luma(f2)
+            c0=abs(F(ym1-F(2)*y0v+y1v)); c1=abs(F(y0v-F(2)*y1v+y2v))
+            ac=F(max(c0,c1))
+            slope=F(max(abs(F(y0v-ym1)),abs(F(y1v-y0v)),abs(F(y2v-y1v))))
+            rc=F(ac/F(slope+EPS))
+            gate=F(sat(F(rc/F(.60)))*sat(F(ac/F(.16))))
+            out[oy,ox]=(bil+(mc-bil)*gate).astype(np.float32)
+    return out
+
+
+def prepare(outdir):
+    outdir.mkdir(parents=True,exist_ok=True)
+    img=generate_input(); ref=cpu_reference(img)
+    img.tofile(outdir/'input.f32')
+    ref.tofile(outdir/'expected.f32')
+    meta={'input_width':IN_W,'input_height':IN_H,'output_width':OUT_W,'output_height':OUT_H,'format':'R32G32B32A32_FLOAT','reference':'independent intended-neighborhood CPU implementation'}
+    (outdir/'META.json').write_text(json.dumps(meta,indent=2)+'\n',encoding='utf-8')
+    print(json.dumps(meta,indent=2))
+
+
+def validate(outdir,gpu_path,tol):
+    expected=np.fromfile(outdir/'expected.f32',dtype=np.float32)
+    gpu=np.fromfile(gpu_path,dtype=np.float32)
+    n=OUT_W*OUT_H*4
+    if expected.size!=n or gpu.size!=n:
+        raise SystemExit(f'size mismatch expected={expected.size} gpu={gpu.size} floats required={n}')
+    expected=expected.reshape(OUT_H,OUT_W,4); gpu=gpu.reshape(OUT_H,OUT_W,4)
+    if not np.isfinite(gpu).all():
+        raise SystemExit('GPU output contains NaN/Inf')
+    diff=np.abs(gpu-expected)
+    flat=int(np.argmax(diff)); y,x,c=np.unravel_index(flat,diff.shape)
+    per_channel=[float(diff[:,:,i].max()) for i in range(4)]
+    pixels_over=int(np.count_nonzero(np.any(diff>F(tol),axis=2)))
+    summary={
+        'protocol':'LAB05_MC_D3D11_WARP_RUNTIME_PARITY',
+        'driver_requested':'D3D_DRIVER_TYPE_WARP',
+        'physical_gpu_executed':False,
+        'tolerance_abs':float(tol),
+        'max_abs':float(diff.max()),
+        'mean_abs':float(diff.mean()),
+        'per_channel_max_abs':per_channel,
+        'pixels_over_tolerance':pixels_over,
+        'worst_pixel':{'x':int(x),'y':int(y),'channel':int(c),'expected':float(expected[y,x,c]),'actual':float(gpu[y,x,c])},
+        'pass':bool(float(diff.max())<=tol)
+    }
+    (outdir/'SUMMARY.json').write_text(json.dumps(summary,indent=2)+'\n',encoding='utf-8')
+    print(json.dumps(summary,indent=2))
+    if not summary['pass']:
+        raise SystemExit('WARP PARITY FAIL')
+
+
+def main():
+    ap=argparse.ArgumentParser()
+    ap.add_argument('--outdir',required=True)
+    ap.add_argument('--prepare',action='store_true')
+    ap.add_argument('--gpu')
+    ap.add_argument('--tol',type=float,default=DEFAULT_TOL)
+    a=ap.parse_args(); out=Path(a.outdir)
+    if a.prepare: prepare(out)
+    if a.gpu: validate(out,Path(a.gpu),a.tol)
+    if not a.prepare and not a.gpu: ap.error('specify --prepare and/or --gpu')
+
+if __name__=='__main__': main()
