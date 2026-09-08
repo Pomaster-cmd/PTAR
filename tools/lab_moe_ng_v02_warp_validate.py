@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """LAB05-MC D3D11 WARP runtime validator.
 
-Generates a deterministic float32 RGBA test texture and an independent CPU
-reference, then compares a WARP-rendered R32G32B32A32_FLOAT readback.
-The CPU direction decision uses the intended 2x2 green neighborhood directly;
-it does not emulate GatherGreen component ordering, so gather-coordinate or
-swizzle mistakes are observable at runtime.
+Generates a deterministic float32 RGBA test texture and two independent CPU
+references:
+  * ideal_float: mathematically exact bilinear weights;
+  * d3d11_filter: D3D11's 8-bit subtexel filtering-weight precision.
+
+The direction decision uses the intended 2x2 green neighborhood directly; it
+does not emulate GatherGreen component ordering. Gather-coordinate/swizzle,
+resource-binding, phase, sampling, constant-buffer, or DXBC execution errors
+therefore remain visible in the WARP comparison.
 """
 import argparse
 import json
@@ -19,20 +23,29 @@ IN_W=24
 IN_H=24
 OUT_W=36
 OUT_H=36
-DEFAULT_TOL=5.0e-5
+D3D11_SUBTEXEL_BITS=8
+DEFAULT_TOL=2.0e-6
 
 
 def sat(x):
     return np.minimum(np.maximum(x,F(0)),F(1)).astype(np.float32)
 
 
-def sample_linear(img,x,y):
+def quantize_subtexel(t):
+    n=1 << D3D11_SUBTEXEL_BITS
+    return F(np.floor(float(t)*n + 0.5)/n)
+
+
+def sample_linear(img,x,y,d3d11_filter=False):
     h,w,_=img.shape
     x=F(np.clip(F(x),F(0),F(w-1)))
     y=F(np.clip(F(y),F(0),F(h-1)))
     x0=int(np.floor(x)); y0=int(np.floor(y))
     x1=min(x0+1,w-1); y1=min(y0+1,h-1)
     tx=F(x-F(x0)); ty=F(y-F(y0))
+    if d3d11_filter:
+        tx=quantize_subtexel(tx)
+        ty=quantize_subtexel(ty)
     a=(img[y0,x0]*(F(1)-tx)+img[y0,x1]*tx).astype(np.float32)
     b=(img[y1,x0]*(F(1)-tx)+img[y1,x1]*tx).astype(np.float32)
     return (a*(F(1)-ty)+b*ty).astype(np.float32)
@@ -42,8 +55,6 @@ def mc_slope(a,b):
     avg=F(.5)*(a+b)
     lim=F(2)*np.minimum(np.abs(a),np.abs(b))
     limited=np.minimum(np.maximum(avg,-lim),lim).astype(np.float32)
-    same=F(1) if np.all(a*b >= F(0)) else None
-    # HLSL step is component-wise, not vector-wide.
     mask=(a*b>=F(0)).astype(np.float32)
     return (limited*mask).astype(np.float32)
 
@@ -75,11 +86,10 @@ def generate_input():
     g=F(.05)+F(.30)*yf+F(.28)*checker+F(.17)*diag+F(.10)*rings
     b=F(.04)+F(.20)*(F(1)-xf)+F(.16)*checker+F(.28)*rings+F(.08)*noise
     a=np.ones_like(r,dtype=np.float32)
-    img=np.stack([r,g,b,a],axis=2).astype(np.float32)
-    return np.clip(img,F(0),F(1)).astype(np.float32)
+    return np.clip(np.stack([r,g,b,a],axis=2),F(0),F(1)).astype(np.float32)
 
 
-def cpu_reference(img):
+def cpu_reference(img,d3d11_filter):
     h,w,_=img.shape
     out=np.empty((OUT_H,OUT_W,4),dtype=np.float32)
     green=img[:,:,1]
@@ -96,10 +106,10 @@ def cpu_reference(img):
                 bx=F(fx); by=sy; ax=F(1); ay=F(0); phase=ox%3
             else:
                 bx=sx; by=F(fy); ax=F(0); ay=F(1); phase=oy%3
-            fm1=sample_linear(img,bx-ax,by-ay)
-            f0 =sample_linear(img,bx,by)
-            f1 =sample_linear(img,bx+ax,by+ay)
-            f2 =sample_linear(img,bx+F(2)*ax,by+F(2)*ay)
+            fm1=sample_linear(img,bx-ax,by-ay,d3d11_filter)
+            f0 =sample_linear(img,bx,by,d3d11_filter)
+            f1 =sample_linear(img,bx+ax,by+ay,d3d11_filter)
+            f2 =sample_linear(img,bx+F(2)*ax,by+F(2)*ay,d3d11_filter)
             if phase==0:
                 out[oy,ox]=f0
                 continue
@@ -120,43 +130,62 @@ def cpu_reference(img):
 
 def prepare(outdir):
     outdir.mkdir(parents=True,exist_ok=True)
-    img=generate_input(); ref=cpu_reference(img)
+    img=generate_input()
+    ideal=cpu_reference(img,False)
+    d3d=cpu_reference(img,True)
     img.tofile(outdir/'input.f32')
-    ref.tofile(outdir/'expected.f32')
-    meta={'input_width':IN_W,'input_height':IN_H,'output_width':OUT_W,'output_height':OUT_H,'format':'R32G32B32A32_FLOAT','reference':'independent intended-neighborhood CPU implementation'}
+    ideal.tofile(outdir/'expected_ideal.f32')
+    d3d.tofile(outdir/'expected_d3d11.f32')
+    delta=np.abs(d3d-ideal)
+    meta={
+        'input_width':IN_W,'input_height':IN_H,
+        'output_width':OUT_W,'output_height':OUT_H,
+        'format':'R32G32B32A32_FLOAT',
+        'd3d11_subtexel_fractional_bits':D3D11_SUBTEXEL_BITS,
+        'ideal_vs_d3d11_filter_max_abs':float(delta.max()),
+        'ideal_vs_d3d11_filter_mean_abs':float(delta.mean()),
+        'reference':'independent intended-neighborhood CPU implementation'
+    }
     (outdir/'META.json').write_text(json.dumps(meta,indent=2)+'\n',encoding='utf-8')
     print(json.dumps(meta,indent=2))
 
 
-def validate(outdir,gpu_path,tol):
-    expected=np.fromfile(outdir/'expected.f32',dtype=np.float32)
-    gpu=np.fromfile(gpu_path,dtype=np.float32)
-    n=OUT_W*OUT_H*4
-    if expected.size!=n or gpu.size!=n:
-        raise SystemExit(f'size mismatch expected={expected.size} gpu={gpu.size} floats required={n}')
-    expected=expected.reshape(OUT_H,OUT_W,4); gpu=gpu.reshape(OUT_H,OUT_W,4)
-    if not np.isfinite(gpu).all():
-        raise SystemExit('GPU output contains NaN/Inf')
-    diff=np.abs(gpu-expected)
+def error_stats(actual,expected,tol):
+    diff=np.abs(actual-expected)
     flat=int(np.argmax(diff)); y,x,c=np.unravel_index(flat,diff.shape)
-    per_channel=[float(diff[:,:,i].max()) for i in range(4)]
-    pixels_over=int(np.count_nonzero(np.any(diff>F(tol),axis=2)))
+    return {
+        'max_abs':float(diff.max()),
+        'mean_abs':float(diff.mean()),
+        'per_channel_max_abs':[float(diff[:,:,i].max()) for i in range(4)],
+        'pixels_over_tolerance':int(np.count_nonzero(np.any(diff>F(tol),axis=2))),
+        'worst_pixel':{'x':int(x),'y':int(y),'channel':int(c),'expected':float(expected[y,x,c]),'actual':float(actual[y,x,c])}
+    }
+
+
+def validate(outdir,gpu_path,tol):
+    n=OUT_W*OUT_H*4
+    gpu=np.fromfile(gpu_path,dtype=np.float32)
+    ideal=np.fromfile(outdir/'expected_ideal.f32',dtype=np.float32)
+    d3d=np.fromfile(outdir/'expected_d3d11.f32',dtype=np.float32)
+    if gpu.size!=n or ideal.size!=n or d3d.size!=n:
+        raise SystemExit(f'size mismatch gpu={gpu.size} ideal={ideal.size} d3d11={d3d.size} required={n}')
+    gpu=gpu.reshape(OUT_H,OUT_W,4); ideal=ideal.reshape(OUT_H,OUT_W,4); d3d=d3d.reshape(OUT_H,OUT_W,4)
+    if not np.isfinite(gpu).all(): raise SystemExit('GPU output contains NaN/Inf')
+    d3d_stats=error_stats(gpu,d3d,tol)
+    ideal_stats=error_stats(gpu,ideal,tol)
     summary={
         'protocol':'LAB05_MC_D3D11_WARP_RUNTIME_PARITY',
         'driver_requested':'D3D_DRIVER_TYPE_WARP',
         'physical_gpu_executed':False,
+        'd3d11_subtexel_fractional_bits':D3D11_SUBTEXEL_BITS,
         'tolerance_abs':float(tol),
-        'max_abs':float(diff.max()),
-        'mean_abs':float(diff.mean()),
-        'per_channel_max_abs':per_channel,
-        'pixels_over_tolerance':pixels_over,
-        'worst_pixel':{'x':int(x),'y':int(y),'channel':int(c),'expected':float(expected[y,x,c]),'actual':float(gpu[y,x,c])},
-        'pass':bool(float(diff.max())<=tol)
+        'vs_d3d11_filter_reference':d3d_stats,
+        'vs_ideal_float_reference':ideal_stats,
+        'pass':bool(d3d_stats['max_abs']<=tol)
     }
     (outdir/'SUMMARY.json').write_text(json.dumps(summary,indent=2)+'\n',encoding='utf-8')
     print(json.dumps(summary,indent=2))
-    if not summary['pass']:
-        raise SystemExit('WARP PARITY FAIL')
+    if not summary['pass']: raise SystemExit('WARP PARITY FAIL')
 
 
 def main():
