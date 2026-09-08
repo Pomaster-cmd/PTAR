@@ -1,0 +1,10 @@
+{
+  "protocol": "LAB19_POST_FREEZE_FRESH_VALIDATION",
+  "action": "EXECUTE_ONCE",
+  "frozen_candidate_commit": "bda10f16ad287eaac5fabba58e88aedc2651dd34",
+  "protocol_file": "lab_protocols/LAB19_FRESH_VALIDATION_PROTOCOL.json",
+  "generator_file": "tools/lab_moe_ng_v02_postfreeze_cases.py",
+  "validation_file": "tools/lab_moe_ng_v02_postfreeze_validation.py",
+  "workflow_file": ".github/workflows/lab_moe_ng_v02_postfreeze_validation.yml",
+  "policy": "Run the precommitted LAB19 validation exactly once without tuning candidate parameters, thresholds, or generators from observed results."
+}
