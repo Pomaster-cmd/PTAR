@@ -1,0 +1,32 @@
+name: LAB PTAR-NG MoE v02 Step-Support Router
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-native-detail
+
+permissions:
+  contents: read
+
+jobs:
+  step-support:
+    if: contains(github.event.head_commit.message, '[run-step-support]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: python -m pip install --disable-pip-version-check numpy pillow
+      - name: Run LAB13 step-support router search
+        run: >-
+          python tools/lab_moe_ng_v02_step_support.py
+          --bgrid corpus/current/PTAR_PERCEPTUAL_V1_B_GRID
+          --v1a corpus/current/PTAR_PERCEPTUAL_V1_A
+          --out lab_results/moe_ng_v02_step_support
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: moe-ng-v02-lab13-step-support
+          path: lab_results/moe_ng_v02_step_support
