@@ -29,8 +29,16 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def require_sha(path: Path, expected: str) -> None:
-    got = sha256(path)
+def sha256_text_lf(path: Path) -> str:
+    # Git for Windows can materialize CRLF even when the repository blob and
+    # frozen manifest were hashed with LF.  Normalize text only; binary CSO
+    # checks remain byte-exact.
+    data = path.read_bytes().replace(b"\r\n", b"\n")
+    return hashlib.sha256(data).hexdigest()
+
+
+def require_sha(path: Path, expected: str, *, normalize_text_lf: bool = False) -> None:
+    got = sha256_text_lf(path) if normalize_text_lf else sha256(path)
     if got != expected:
         raise RuntimeError(f"SHA mismatch {path}: expected {expected}, got {got}")
 
@@ -130,7 +138,7 @@ def main() -> None:
     vs = v01 / "shaders/ptar_vs.cso"
     k185 = v01 / "shaders/ptar_k185_control_ps.cso"
     old_moe = v01 / "shaders/ptar_moe_ng_v01_sf5_ps.cso"
-    require_sha(host, V01_HOST_SHA)
+    require_sha(host, V01_HOST_SHA, normalize_text_lf=True)
     require_sha(vs, VS_CSO_SHA)
     require_sha(k185, K185_CSO_SHA)
     require_sha(old_moe, V01_MOE_CSO_SHA)
