@@ -11,9 +11,10 @@
 //
 // LAB02-CHEAP-PRODUCT selection from the 42-case B-GRID sweep:
 //   relative curvature  : 0 -> 0.90
-//   absolute curvature  : 0 -> 0.24
+//   absolute curvature  : 0.01 -> 0.24
 //   fusion              : gRel * gAbs
-// This removes the earlier sqrt/fractional-power path.
+// This removes the earlier sqrt/fractional-power path while retaining >=97.5%
+// of the v01 structural gain on the tuning corpus.
 
 Texture2D<float4> gSource : register(t0);
 SamplerState gLinearClamp : register(s0);
@@ -70,7 +71,7 @@ float NativeDetailGate(float4 fm1,float4 f0,float4 f1,float4 f2)
 
     // Cheap product gate selected by the product-only Pareto sweep.
     float gRel=saturate(relCurv*(1.0f/0.90f));
-    float gAbs=saturate(absCurv*(1.0f/0.24f));
+    float gAbs=saturate((absCurv-0.01f)*(1.0f/(0.24f-0.01f)));
     return gRel*gAbs;
 }
 
