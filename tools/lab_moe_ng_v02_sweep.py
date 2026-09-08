@@ -42,7 +42,8 @@ def main():
  rows=list(csv.DictReader((cor/'CORPUS_MANIFEST.csv').open(newline='',encoding='utf-8')));cases=[]
  for i,r in enumerate(rows,1):
   hr=load(cor/r['reference_path']);lr=load(cor/r['input_path']);b,m,ac,rc=components(lr);pb=psnr(hr,b);pm=psnr(hr,m);cases.append((r['case_id'],r['family'],hr,b,m,ac,rc,pb,pm));print(f'precompute {i:02d}/{len(rows)} {r["case_id"]}')
- rel_los=[.20,.275,.35,.45];rel_his=[.45,.60,.80];abs_los=[.03,.05,.07,.09];abs_his=[.10,.14,.18,.24];exps=[.35,.50,.75,1.0]
+ # LAB02 fine sweep around the coarse Pareto frontier. 810 candidates.
+ rel_los=[.20,.275,.35];rel_his=[.70,.80,.90];abs_los=[.02,.03,.04];abs_his=[.20,.22,.24,.26,.28];exps=[.75,.80,.85,.90,.95,1.0]
  res=[]
  for rlo,rhi,alo,ahi,exp in itertools.product(rel_los,rel_his,abs_los,abs_his,exps):
   if rhi<=rlo or ahi<=alo:continue
@@ -54,10 +55,15 @@ def main():
   freq=[x for x in vals if x[0]=='mixed_frequency_synthetic'];freq_gap=sum(x[3]-x[1] for x in freq)/len(freq)
   nat=[x for x in vals if x[0] in NATURAL_FAMILIES];nat_gap=sum(x[3]-x[1] for x in nat)/len(nat);nat_worst=min(x[3]-x[1] for x in nat)
   v1better=sum(x[3]>x[2] for x in vals);bbetter=sum(x[3]>x[1] for x in vals)
-  score=mean-5*max(0,.97-ret)-.35*max(0,-.5-freq_gap)
+  # Ranking favours the intended gate: >=97.5% structural retention, >=1 dB
+  # synthetic-frequency gain over bilinear, and no natural case below -0.15 dB.
+  score=mean-8*max(0,.975-ret)-.5*max(0,1.0-freq_gap)-.5*max(0,-.15-nat_worst)
   res.append({'rel_lo':rlo,'rel_hi':rhi,'abs_lo':alo,'abs_hi':ahi,'exp':exp,'mean_psnr':mean,'struct_gain_retention':ret,'freq_synth_gap_vs_bilinear':freq_gap,'natural_mean_gap_vs_bilinear':nat_gap,'natural_worst_gap_vs_bilinear':nat_worst,'better_than_v01_cases':v1better,'better_than_bilinear_cases':bbetter,'score':score})
  res.sort(key=lambda x:x['score'],reverse=True)
  with (out/'SWEEP_ALL.csv').open('w',newline='',encoding='utf-8') as f:w=csv.DictWriter(f,fieldnames=list(res[0]));w.writeheader();w.writerows(res)
+ feasible=[x for x in res if x['struct_gain_retention']>=.975 and x['freq_synth_gap_vs_bilinear']>=1.0 and x['natural_worst_gap_vs_bilinear']>=-.15]
+ feasible.sort(key=lambda x:x['mean_psnr'],reverse=True)
  (out/'SWEEP_TOP.json').write_text(json.dumps(res[:30],indent=2)+'\n',encoding='utf-8')
- print(json.dumps(res[:20],indent=2))
+ (out/'PARETO_FEASIBLE.json').write_text(json.dumps(feasible[:50],indent=2)+'\n',encoding='utf-8')
+ print('TOP SCORE');print(json.dumps(res[:20],indent=2));print('FEASIBLE');print(json.dumps(feasible[:20],indent=2))
 if __name__=='__main__':main()
