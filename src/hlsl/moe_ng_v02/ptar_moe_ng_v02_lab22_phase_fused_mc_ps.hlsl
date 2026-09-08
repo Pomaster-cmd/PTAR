@@ -5,7 +5,14 @@
 // texture contract, exact x1.5 phase mapping and shape clamp while eliminating
 // duplicated phase-specific Hermite evaluation in compiled DXBC.
 //
-// Texture contract preserved: 1 GatherGreen + 4 SampleLevel, 0 UAV.
+// LAB07 baseline computes both H23 and H13 expressions and selects the result.
+// LAB22 selects the four Hermite coefficients first, then evaluates one cubic
+// expression and one shape clamp. This is an algebraic/code-generation study;
+// admission requires direct WARP equivalence and independent CPU parity.
+//
+// Texture contract preserved:
+//     1 GatherGreen + 4 SampleLevel
+// No UAV. No intermediate texture. Exact x1.5 only.
 
 Texture2D<float4> gSource : register(t0);
 SamplerState gLinearClamp : register(s0);
@@ -68,6 +75,9 @@ float4 main(PSIn input) : SV_Target
     float4 m0=MCSlope(d0,d1);
     float4 m1=MCSlope(d1,d2);
 
+    // Exact LAB07 Hermite coefficient sets, selected before arithmetic:
+    // phase 1 / t=2/3: [7, 2, 20, -4] / 27
+    // phase 2 / t=1/3: [20, 4, 7, -2] / 27
     float4 coeff=(phaseIndex==1u)
         ? float4(7.0f,2.0f,20.0f,-4.0f)
         : float4(20.0f,4.0f,7.0f,-2.0f);
