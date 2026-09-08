@@ -1,0 +1,36 @@
+{
+  "protocol": "LAB17_LOCAL_HARM_FEATURE_AUDIT",
+  "status": "PRE_RUN_DEFINITION",
+  "purpose": "Analyze where always-on MC is locally harmful after LAB16 rejected LAB15, using only zero-fetch features already derivable from existing samples.",
+  "selection_or_tuning": false,
+  "consumed_dataset": "LAB16_POST_FREEZE_FRESH_VALIDATION",
+  "lab15_candidate_status": "REJECTED",
+  "shader_changed": false,
+  "runtime_changed": false,
+  "texture_fetch_delta": 0,
+  "feature_policy": {
+    "base_features": "LAB14 directional feature set",
+    "derived_fixed_features": [
+      "crossness = 1 - coherence",
+      "cross_range = crossness * local_range",
+      "balance_cross = outer_balance * crossness",
+      "balance_cross_range = outer_balance * crossness * local_range",
+      "line_range = coherence * local_range"
+    ],
+    "local_error_definition": "mean_rgb((MC-HR)^2) - mean_rgb((v01-HR)^2)",
+    "positive_local_error": "MC locally harms",
+    "negative_local_error": "MC locally benefits"
+  },
+  "anti_leakage_policy": {
+    "LAB17_can_inform_future_architecture": true,
+    "LAB17_must_not_select_or_freeze_a_candidate": true,
+    "any_future_candidate_requires_separate_selection_and_freeze": true,
+    "post_freeze_validation_set_must_be_authored_after_that_future_freeze": true
+  },
+  "protected_refs": ["main", "SOURCE"],
+  "notes": [
+    "LAB16 is already consumed and is therefore diagnostic, not a holdout.",
+    "No LAB17 observation may be represented as independent validation.",
+    "No main, SOURCE, runtime, stable baseline, shader package, or product promotion is implied."
+  ]
+}
