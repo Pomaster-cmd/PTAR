@@ -1,0 +1,64 @@
+{
+  "protocol": "LAB19_POST_FREEZE_FRESH_VALIDATION",
+  "status": "PRE_RUN_DEFINITION",
+  "frozen_candidate_commit": "bda10f16ad287eaac5fabba58e88aedc2651dd34",
+  "frozen_candidate_file": "lab_protocols/LAB18_FROZEN_CANDIDATE.json",
+  "validation_not_tuning": true,
+  "generator_authored_after_freeze": true,
+  "uses_reused_C": false,
+  "uses_LAB16_cases": false,
+  "case_count": 36,
+  "cases_per_family": 6,
+  "families": {
+    "structural": [
+      "postfreeze_curved_ribbons",
+      "postfreeze_rotated_boxes",
+      "postfreeze_sparse_paths"
+    ],
+    "texture": [
+      "postfreeze_wave_interference",
+      "postfreeze_crosshatch",
+      "postfreeze_multiscale_field"
+    ]
+  },
+  "generation": {
+    "hr_size": [288, 288],
+    "lr_size": [192, 192],
+    "scale": 1.5,
+    "seed": 19091873,
+    "domain": "sRGB/code values (not linearized)",
+    "downsample": {
+      "library": "scikit-image",
+      "version": "0.26.0",
+      "function": "skimage.transform.resize",
+      "order": 3,
+      "mode": "reflect",
+      "anti_aliasing": true,
+      "preserve_range": true,
+      "clip": true
+    }
+  },
+  "precommitted_gates": {
+    "overall_mean_gap_v01_db_min": 0.08,
+    "overall_worst_gap_v01_db_min": -0.15,
+    "overall_wins_v01_min": 24,
+    "structural_mean_gap_v01_db_min": -0.02,
+    "structural_worst_gap_v01_db_min": -0.15,
+    "texture_mean_gap_v01_db_min": 0.15,
+    "texture_worst_gap_v01_db_min": -0.05,
+    "worst_family_mean_gap_v01_db_min": -0.05
+  },
+  "post_observation_policy": {
+    "no_candidate_parameter_change": true,
+    "no_gate_threshold_change": true,
+    "no_generator_change_to_improve_result": true,
+    "failure_rejects_LAB18_frozen_candidate": true,
+    "success_allows_only_next_software_gates_not_main_promotion": true
+  },
+  "protected_refs": ["main", "SOURCE"],
+  "notes": [
+    "Every HR reference is deterministic procedural content defined only after the LAB18 freeze commit.",
+    "The structural families deliberately differ from LAB16 slanted strokes, junctions and glyph stencil; the texture families differ from LAB16 chirp, anisotropic texture and microtexture-gradient definitions.",
+    "LAB19 is the first independent post-freeze validation for the LAB18 candidate."
+  ]
+}
