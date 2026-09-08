@@ -1,0 +1,49 @@
+{
+  "protocol": "PTAR_NG_MOE_V02_LAB18_AUTONOMOUS_SOFTWARE_PASS",
+  "status": "PASS",
+  "artifact_build_commit": "e6fd61d9649b41453844d42b41e65246894e817c",
+  "source_base_commit": "bdb26584d4bcc7aa9655ae27d48359e60f707c50",
+  "research_frozen_candidate_commit": "bda10f16ad287eaac5fabba58e88aedc2651dd34",
+  "research_postfreeze_validation_commit": "1f837599717e6504a2ddabf38cb707d5bcff0b37",
+  "frozen_shader_blob": "27ab6720ffedfc8d12046c647b5ada680323d703",
+  "research_software_gate_run": 34247986293,
+  "autonomous_build_run": 34249589230,
+  "github_artifact_id": 10065444414,
+  "github_artifact_sha256": "9c73bb6b40839476a083f6f2dbbf3a95a3091bcccf959c2d93b414aeb00798a9",
+  "package_sha256": "bce9714871937cdbeedf089916260f6c1479c6306ca7ed5b6f3471bbf64f09cc",
+  "host_sha256": "103b964165580872cd6bd36370b4a0a475aa3871659c1e5cef2366f3be969ebc",
+  "lab18_cso_sha256": "059ff35e5680ca9f6eea0f192bb575a247040352a5500f073e91fbdf81efd191",
+  "v01_cso_sha256": "bb531ad6f797d2db4a362c82673067e39b7aa3a8fbb0ea19f786a053556a2279",
+  "k185_cso_sha256": "6bd926e85f21dd08788ff9d189c472800a5e0eb726091158ed1ecde3d06d8c16",
+  "vs_cso_sha256": "6328bbd87aac73b07d6112de593f781b2769381aae65fa9c2bcfa06fdc68585c",
+  "texture_contract": {
+    "gather4": 1,
+    "sample_ops": 4,
+    "uav_decl": 0,
+    "instruction_proxy": 128,
+    "lab18_cso_bytes": 5544
+  },
+  "runtime_contract": {
+    "target": "Windows 8.1 x64 / D3D11 FL11_0",
+    "pe_subsystem": "Windows CUI 6.03",
+    "precompiled_dxbc_only": true,
+    "runtime_d3dcompiler_required": false,
+    "dynamic_crt_required": false,
+    "imports": ["d3d11.dll", "dxgi.dll", "bcrypt.dll", "KERNEL32.dll"]
+  },
+  "warp_smoke": {
+    "status": "PASS",
+    "input": "320x180",
+    "output": "480x270",
+    "samples_per_shader": 12,
+    "all_shader_hash_checks": "PASS",
+    "all_three_shader_render_smokes": "PASS",
+    "timing_is_performance_evidence": false
+  },
+  "package_integrity": {
+    "zip_crc": "PASS",
+    "manifest_entries": 18,
+    "manifest_errors": 0
+  },
+  "next_gate": "Physical GTX 960M targeted timing run; do not infer physical-GPU performance from WARP."
+}
