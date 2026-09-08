@@ -1,0 +1,44 @@
+{
+  "protocol": "LAB17_LOCAL_HARM_FEATURE_AUDIT",
+  "status": "COMPLETED_DIAGNOSTIC",
+  "run_id": 34232395303,
+  "run_head_sha": "6f1cf3fd6e03798803d721813ad53eaab85b52b9",
+  "conclusion": "success",
+  "artifact": "moe-ng-v02-lab17-local-harm-audit",
+  "artifact_id": 10058348049,
+  "artifact_sha256": "81f357e988d7eaabdc416cf79a425312eb8468511f9e2cdc848025a215a3054f",
+  "selection_or_tuning": false,
+  "consumed_dataset": "LAB16_POST_FREEZE_FRESH_VALIDATION",
+  "case_count": 36,
+  "feature_count": 19,
+  "key_observations": {
+    "junctions": {
+      "family_mean_coherence": 0.9806,
+      "family_mean_outer_balance": 0.9189,
+      "interpretation": "LAB15 outer-balance is not a safety signal: fresh junctions are highly outer-balanced and highly coherent, so LAB15 strongly opens on them."
+    },
+    "glyph_stencil": {
+      "family_mean_coherence": 0.0909,
+      "family_mean_outer_balance": 0.0208,
+      "sparse_harm": "Although whole-case LAB15 gate activation is tiny, harmful glyph pixels are a selective high-coherence/high-monotonicity subset; sparse leakage is sufficient to cause large case PSNR loss."
+    },
+    "texture_frequency": {
+      "family_mean_coherence_range": [0.4276, 0.4543],
+      "interpretation": "The three fresh texture/frequency families occupy substantially lower coherence than fresh junctions and slanted structural strokes, while always-on MC was strongly beneficial on all 18 texture cases in LAB16."
+    },
+    "structural_pixel_separation": {
+      "strongest_existing_feature_by_harm_vs_benefit_standardized_separation": "turn",
+      "harm_minus_benefit_sd": -0.21334668378406305,
+      "note": "No individual audited zero-fetch feature is a strong local harm classifier across all structural pixels; architecture should therefore use conservative conjunctions rather than treat one feature as an oracle."
+    }
+  },
+  "architecture_implication": "Test a conservative texture-admission router that starts from v01 and admits MC primarily in lower-coherence, supported/monotone texture regions instead of trying to make outer-balance itself a universal safety gate.",
+  "anti_leakage": {
+    "LAB16_is_consumed_diagnostic": true,
+    "LAB17_may_inform_architecture": true,
+    "LAB17_must_not_be_called_validation": true,
+    "future_candidate_selection_must_use_A_B_only": true,
+    "future_post_freeze_validation_corpus_must_be_authored_after_freeze": true
+  },
+  "protected_refs": ["main", "SOURCE"]
+}
