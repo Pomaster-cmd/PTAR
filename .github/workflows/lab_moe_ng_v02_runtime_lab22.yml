@@ -1,0 +1,154 @@
+name: LAB PTAR-NG MoE v02 LAB22 Autonomous Runtime
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-runtime-lab22
+
+permissions:
+  contents: read
+
+jobs:
+  build-autonomous-lab22-bundle:
+    if: contains(github.event.head_commit.message, '[run-runtime-lab22]')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install reference dependencies
+        shell: pwsh
+        run: python -m pip install --disable-pip-version-check numpy pillow
+
+      - name: Compile LAB22 twice and require deterministic DXBC
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $stage=Join-Path $env:RUNNER_TEMP 'ptar_v02_lab22_runtime'
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          $src=Join-Path $env:GITHUB_WORKSPACE 'src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab22_phase_fused_mc_ps.hlsl'
+          $cso1=Join-Path $stage 'lab22_a.cso'
+          $cso2=Join-Path $stage 'lab22_b.cso'
+          $asm=Join-Path $stage 'lab22.asm'
+          $fxc=Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Filter fxc.exe -Recurse -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1
+          if(-not $fxc){ throw 'fxc.exe not found' }
+          & $fxc.FullName /nologo /T ps_5_0 /E main /O3 /Ges /Fo $cso1 /Fc $asm $src
+          if($LASTEXITCODE -ne 0){ throw 'FXC compile A failed' }
+          & $fxc.FullName /nologo /T ps_5_0 /E main /O3 /Ges /Fo $cso2 $src
+          if($LASTEXITCODE -ne 0){ throw 'FXC compile B failed' }
+          $h1=(Get-FileHash $cso1 -Algorithm SHA256).Hash.ToLowerInvariant()
+          $h2=(Get-FileHash $cso2 -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($h1 -ne $h2){ throw "non-deterministic DXBC: $h1 != $h2" }
+          $asmText=Get-Content $asm -Raw
+          $gather=([regex]::Matches($asmText,'(?mi)^\s*gather4')).Count
+          $sample=([regex]::Matches($asmText,'(?mi)^\s*sample_l')).Count
+          if($gather -ne 1 -or $sample -ne 4){ throw "texture contract mismatch gather=$gather sample=$sample" }
+          if($asmText -match '(?mi)^\s*(store_uav|atomic_)'){ throw 'UAV operation detected' }
+          "LAB22_CSO=$cso1" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "LAB22_CSO_SHA=$h1" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "LAB22_FXC=$($fxc.FullName)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "[PASS] deterministic LAB22 DXBC SHA256=$h1; 1 Gather4 + 4 SampleLevel; 0 UAV"
+
+      - name: Prepare isolated bundle from frozen v01 scaffold
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $bundle=Join-Path $env:RUNNER_TEMP 'PTAR_NG_MOE_V02_LAB22_WIN81_X64'
+          python tools/prepare_moe_ng_v02_runtime_bundle.py --root $env:GITHUB_WORKSPACE --v02-cso $env:LAB22_CSO --out $bundle
+          if($LASTEXITCODE -ne 0){ throw 'bundle preparation failed' }
+          "LAB22_BUNDLE=$bundle" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Relabel bundle to LAB22 without changing reference algorithm
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $old=Join-Path $env:LAB22_BUNDLE 'shaders\ptar_moe_ng_v02_mc_native_detail_ps.cso'
+          $new=Join-Path $env:LAB22_BUNDLE 'shaders\ptar_moe_ng_v02_lab22_phase_fused_mc_ps.cso'
+          if(-not (Test-Path $old)){ throw 'prepared shader missing' }
+          Move-Item $old $new
+          $host=Join-Path $env:LAB22_BUNDLE 'source\ptar_moe_ng_v02_autonomous_validation.cpp'
+          $t=Get-Content $host -Raw
+          $t=$t.Replace('ptar_moe_ng_v02_mc_native_detail_ps.cso','ptar_moe_ng_v02_lab22_phase_fused_mc_ps.cso')
+          $t=$t.Replace('PTAR-NG MoE v02 LAB07','PTAR-NG MoE v02 LAB22')
+          $t=$t.Replace('PTAR_NG_MOE_V02_LAB07_MC','PTAR_NG_MOE_V02_LAB22_PHASE_FUSED_MC')
+          $t=$t.Replace('MoE v02 LAB07','MoE v02 LAB22')
+          Set-Content -Path $host -Value $t -Encoding utf8
+          if((Get-Content $host -Raw) -match 'ptar_moe_ng_v02_mc_native_detail_ps\.cso|PTAR_NG_MOE_V02_LAB07_MC'){ throw 'LAB07 runtime label remains' }
+          @"
+          {
+            "variant": "PTAR_NG_MOE_V02_LAB22_PHASE_FUSED_MC",
+            "runtime_branch": "$env:GITHUB_REF_NAME",
+            "runtime_commit": "$env:GITHUB_SHA",
+            "research_branch": "lab/moe-ng-v02-native-detail",
+            "research_lab22_commit": "4d33659856078554f39f02a29ea7c775761195c7",
+            "research_lab22_run": 34261881420,
+            "research_lab22_artifact_digest": "sha256:3488946ddbd5aceaf6a9644b777ea16c52a4b4447e72f44b2595916371b34d11",
+            "research_warp_direct_max_abs": 0.0,
+            "research_warp_probe_count": 5,
+            "texture_contract": "1_GatherGreen_4_SampleLevel_0_UAV",
+            "v02_cso_sha256": "$env:LAB22_CSO_SHA",
+            "cpu_reference_algorithm": "LAB07 always-on MC; LAB22 is WARP bit-exact phase fusion",
+            "expected_cases": 42,
+            "v01_runtime_modified_in_place": false,
+            "hardware_executed": false
+          }
+          "@ | Set-Content (Join-Path $env:LAB22_BUNDLE 'SHADER_PROVENANCE.json') -Encoding utf8
+
+      - name: Build autonomous host /MT for Windows 8.1
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $vswhere=Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs=(& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1)
+          if(-not $vs){ throw 'Visual Studio C++ toolchain not found' }
+          $vcvars=Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
+          $build=Join-Path $env:LAB22_BUNDLE 'BUILD_HOST_ONCE_IN_DEV_ENV.bat'
+          cmd.exe /d /s /c ('"'+$vcvars+'" && call "'+$build+'"')
+          if($LASTEXITCODE -ne 0){ throw "autonomous host build failed: $LASTEXITCODE" }
+
+      - name: Static audit finished LAB22 bundle
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $exe=Join-Path $env:LAB22_BUNDLE 'bin\ptar_moe_ng_v02_autonomous_validation.exe'
+          $cso=Join-Path $env:LAB22_BUNDLE 'shaders\ptar_moe_ng_v02_lab22_phase_fused_mc_ps.cso'
+          $expected=Join-Path $env:LAB22_BUNDLE 'corpus\expected_moe_v02_float32'
+          $inputs=Join-Path $env:LAB22_BUNDLE 'corpus\input_lr'
+          if(-not (Test-Path $exe) -or -not (Test-Path $cso)){ throw 'finished runtime binary/shader missing' }
+          if((Get-ChildItem $expected -Filter '*.png' -File).Count -ne 42){ throw 'expected reference count != 42' }
+          if((Get-ChildItem $inputs -Filter '*.png' -File).Count -ne 42){ throw 'input corpus count != 42' }
+          $imports=Get-Content (Join-Path $env:LAB22_BUNDLE 'build_evidence\IMPORTS_VALIDATED.txt') -Raw
+          if($imports -match 'D3DCOMPILER|VCRUNTIME|MSVCP|UCRTBASE|API-MS-WIN-CRT'){ throw 'forbidden runtime import detected' }
+          $src=Get-Content (Join-Path $env:LAB22_BUNDLE 'source\ptar_moe_ng_v02_autonomous_validation.cpp') -Raw
+          if($src -match 'D3DCompile'){ throw 'runtime host contains D3DCompile' }
+          $csoHash=(Get-FileHash $cso -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($csoHash -ne $env:LAB22_CSO_SHA){ throw 'packaged LAB22 shader hash mismatch' }
+          $exeHash=(Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          @(
+            "variant=PTAR_NG_MOE_V02_LAB22_PHASE_FUSED_MC",
+            "exe_sha256=$exeHash",
+            "cso_sha256=$csoHash",
+            "expected_png_count=42",
+            "input_png_count=42",
+            "runtime_d3dcompiler_required=NO",
+            "dynamic_crt_required=NO",
+            "windows_subsystem_target=6.03",
+            "hardware_executed=false"
+          ) | Set-Content (Join-Path $env:LAB22_BUNDLE 'build_evidence\LAB22_STATIC_AUDIT.txt') -Encoding ascii
+          Write-Host '[PASS] LAB22 autonomous bundle static audit complete; no physical GPU executed'
+
+      - name: Package LAB22 hardware-validation candidate
+        shell: pwsh
+        run: |
+          $zip=Join-Path $env:RUNNER_TEMP 'PTAR_NG_MOE_V02_LAB22_WIN81_X64.zip'
+          Compress-Archive -Path (Join-Path $env:LAB22_BUNDLE '*') -DestinationPath $zip -CompressionLevel Optimal
+          $hash=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "LAB22_ZIP=$zip" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "ZIP_SHA256=$hash"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-NG-MOE-V02-LAB22-WIN81-X64
+          path: ${{ env.LAB22_ZIP }}
