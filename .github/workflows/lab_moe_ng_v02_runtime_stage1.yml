@@ -1,0 +1,61 @@
+name: LAB PTAR-NG MoE v02 Runtime Stage 1
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-runtime-integration
+
+permissions:
+  contents: read
+
+jobs:
+  source-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify frozen baseline and v02 source contract
+        run: python tests/test_moe_ng_v02_runtime_stage1.py
+
+  compile-sm5:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Locate FXC and compile selected LAB07 shader
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $src = Join-Path $env:GITHUB_WORKSPACE 'src\hlsl\moe_ng_v02\ptar_moe_ng_v02_mc_native_detail_ps.hlsl'
+          $outDir = Join-Path $env:GITHUB_WORKSPACE 'lab_results\moe_ng_v02_runtime_stage1'
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+          $cso = Join-Path $outDir 'ptar_moe_ng_v02_mc_native_detail_ps.cso'
+          $asm = Join-Path $outDir 'ptar_moe_ng_v02_mc_native_detail_ps.asm'
+
+          $fxc = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Filter fxc.exe -Recurse -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if (-not $fxc) { throw 'fxc.exe not found on windows-latest runner' }
+
+          & $fxc.FullName /nologo /T ps_5_0 /E main /O3 /Ges /Fo $cso $src
+          if ($LASTEXITCODE -ne 0) { throw "FXC compile failed: $LASTEXITCODE" }
+          & $fxc.FullName /nologo /dumpbin $cso | Out-File -Encoding ascii $asm
+          if ($LASTEXITCODE -ne 0) { throw "FXC dumpbin failed: $LASTEXITCODE" }
+
+          $bytes = [System.IO.File]::ReadAllBytes($cso)
+          if ($bytes.Length -lt 4) { throw 'CSO too small' }
+          $magic = [System.Text.Encoding]::ASCII.GetString($bytes,0,4)
+          if ($magic -ne 'DXBC') { throw "Invalid CSO magic: $magic" }
+
+          $hash = (Get-FileHash -Algorithm SHA256 $cso).Hash.ToLowerInvariant()
+          "sha256=$hash" | Set-Content -Encoding ascii (Join-Path $outDir 'CSO_SHA256.txt')
+          "fxc=$($fxc.FullName)" | Add-Content -Encoding ascii (Join-Path $outDir 'CSO_SHA256.txt')
+          "profile=ps_5_0" | Add-Content -Encoding ascii (Join-Path $outDir 'CSO_SHA256.txt')
+          "entry=main" | Add-Content -Encoding ascii (Join-Path $outDir 'CSO_SHA256.txt')
+          "flags=/O3 /Ges" | Add-Content -Encoding ascii (Join-Path $outDir 'CSO_SHA256.txt')
+          Write-Host "[PASS] DXBC compiled SHA256=$hash"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: moe-ng-v02-runtime-stage1-dxbc
+          path: lab_results/moe_ng_v02_runtime_stage1
