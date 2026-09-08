@@ -1,0 +1,79 @@
+name: LAB PTAR-NG MoE v02 Native Detail
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-native-detail
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cpu-benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install benchmark dependencies
+        run: python -m pip install --disable-pip-version-check numpy pillow scikit-image
+      - name: Run 42-case B-GRID + analytic LAB02 benchmark
+        run: >-
+          python tools/lab_moe_ng_v02.py
+          --corpus corpus/current/PTAR_PERCEPTUAL_V1_B_GRID
+          --out lab_results/moe_ng_v02
+      - uses: actions/upload-artifact@v4
+        with:
+          name: moe-ng-v02-cpu-benchmark
+          path: lab_results/moe_ng_v02
+
+  fxc-sm5-audit:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Locate FXC
+        id: fxc
+        shell: pwsh
+        run: |
+          $fxc = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue |
+                 Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } |
+                 Sort-Object FullName -Descending |
+                 Select-Object -First 1
+          if (-not $fxc) { throw 'fxc.exe not found on windows-latest' }
+          "path=$($fxc.FullName)" >> $env:GITHUB_OUTPUT
+          Write-Host "FXC=$($fxc.FullName)"
+      - name: Compile PS 5.0 and emit assembly
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force lab_results\moe_ng_v02 | Out-Null
+          & '${{ steps.fxc.outputs.path }}' /nologo /T ps_5_0 /E main /O3 /WX `
+             /Fo lab_results\moe_ng_v02\ptar_moe_ng_v02.cso `
+             /Fc lab_results\moe_ng_v02\ptar_moe_ng_v02.asm `
+             src\hlsl\moe_ng_v02\ptar_moe_ng_v02_native_detail_ps.hlsl
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Audit DXBC texture footprint and instruction report
+        shell: pwsh
+        run: |
+          $asm = Get-Content lab_results\moe_ng_v02\ptar_moe_ng_v02.asm -Raw
+          $gather = ([regex]::Matches($asm, '(?m)^\s*gather4')).Count
+          $sample = ([regex]::Matches($asm, '(?m)^\s*sample_l')).Count
+          $uav = ([regex]::Matches($asm, '(?m)^\s*(store_uav|ld_uav|dcl_uav)')).Count
+          $slot = [regex]::Match($asm, 'approximately\s+(\d+)\s+instruction slots used')
+          $slots = if ($slot.Success) { [int]$slot.Groups[1].Value } else { -1 }
+          $report = [ordered]@{
+            gather4 = $gather
+            sample_l = $sample
+            uav_tokens = $uav
+            instruction_slots = $slots
+            cso_bytes = (Get-Item lab_results\moe_ng_v02\ptar_moe_ng_v02.cso).Length
+          }
+          $report | ConvertTo-Json | Tee-Object -FilePath lab_results\moe_ng_v02\DXBC_AUDIT.json
+          if ($gather -ne 1) { throw "Expected 1 gather4, got $gather" }
+          if ($sample -ne 4) { throw "Expected 4 sample_l, got $sample" }
+          if ($uav -ne 0) { throw "Expected 0 UAV tokens, got $uav" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: moe-ng-v02-fxc-sm5-audit
+          path: lab_results/moe_ng_v02
