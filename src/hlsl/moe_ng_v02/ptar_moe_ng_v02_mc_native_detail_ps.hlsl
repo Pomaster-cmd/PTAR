@@ -1,10 +1,11 @@
-// PTAR-NG MoE v02 - LAB05-MC Native Detail
+// PTAR-NG MoE v02 - LAB06 Relative-Routed MC Native Detail
 // Direct3D 11 / Shader Model 5.0 / Windows 8.1 target.
 //
-// This is the first v02 expert that does NOT scale the v01 K185 correction.
-// It reconstructs the selected direction with a shape-preserving
-// monotonized-central (MC) cubic Hermite segment, then routes from directional
-// bilinear using a cheap curvature product gate.
+// This v02 expert does NOT scale the v01 K185 correction. It reconstructs the
+// selected direction with a shape-preserving monotonized-central (MC) cubic
+// Hermite segment, then routes from directional bilinear using relative
+// curvature only. LAB06 removed the absolute-curvature stage after a non-leaky
+// A+B architecture ablation; crop C remained holdout until after selection.
 //
 // Texture contract preserved:
 //     1 GatherGreen + 4 SampleLevel
@@ -57,7 +58,7 @@ float4 Hermite23(float4 f0,float4 f1,float4 m0,float4 m1)
     return clamp(h,min(f0,f1),max(f0,f1));
 }
 
-float NativeDetailGate(float4 fm1,float4 f0,float4 f1,float4 f2)
+float RelativeDetailGate(float4 fm1,float4 f0,float4 f1,float4 f2)
 {
     float ym1=Luma709(fm1);
     float y0 =Luma709(f0);
@@ -70,11 +71,9 @@ float NativeDetailGate(float4 fm1,float4 f0,float4 f1,float4 f2)
     float localSlope=max(abs(y0-ym1),max(abs(y1-y0),abs(y2-y1)));
     float relCurv=absCurv/(localSlope+1.0e-6f);
 
-    // LAB05 selected on A+B crops from BOTH B-GRID and V1_A;
-    // crop C remained untouched until after selection.
-    float gRel=saturate(relCurv*(1.0f/0.60f));
-    float gAbs=saturate(absCurv*(1.0f/0.16f));
-    return gRel*gAbs;
+    // LAB06 train selection: A+B crops from BOTH B-GRID and V1_A.
+    // Crop C remained untouched until the architecture was selected.
+    return saturate(relCurv*(1.0f/0.08f));
 }
 
 float4 main(PSIn input) : SV_Target
@@ -122,6 +121,6 @@ float4 main(PSIn input) : SV_Target
         ? Hermite23(f0,f1,m0,m1)
         : Hermite13(f0,f1,m0,m1);
 
-    float detailGate=NativeDetailGate(fm1,f0,f1,f2);
+    float detailGate=RelativeDetailGate(fm1,f0,f1,f2);
     return lerp(bilinear,mc,detailGate);
 }

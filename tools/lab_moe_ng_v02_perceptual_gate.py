@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""LAB05 perceptual/native-band diagnostic for PTAR-NG MoE v02.
+"""LAB06 perceptual/native-band diagnostic for PTAR-NG MoE v02.
 
 This is a diagnostic, not a new acceptance protocol. It evaluates the current
-LAB05-MC candidate against bilinear and the validated MoE v01 path on the
-immutable V1_A and B_GRID corpora, preserving the A+B / C split used by the
-LAB05 Hermite selection.
+relative-routed MC candidate against bilinear and the validated MoE v01 path on
+the immutable V1_A and B_GRID corpora, preserving the A+B / C split used by
+the LAB05/LAB06 non-leaky selection process.
 
 The spectral band is explicitly defined here as radial 0.20..1/3 cycles per HR
 pixel. 1/3 is the LR Nyquist limit when LR samples are spaced 1.5 HR pixels.
@@ -23,8 +23,7 @@ import lab_moe_ng_v02_hermite_sweep as h5
 import lab_moe_ng_v02_sweep as v02base
 
 LUMA = np.asarray([0.2126, 0.7152, 0.0722], dtype=np.float32)
-REL_HI = np.float32(0.60)
-ABS_HI = np.float32(0.16)
+REL_HI = np.float32(0.08)
 BAND_LO = 0.20
 BAND_HI = 1.0 / 3.0
 EPS = 1.0e-12
@@ -83,7 +82,7 @@ def spectral_metrics(ref_rgb, cand_rgb):
 
 def render_current(lr):
     base, experts, ac, rc = h5.planes(lr)
-    gate = h5.sat(rc / REL_HI) * h5.sat(ac / ABS_HI)
+    gate = h5.sat(rc / REL_HI)
     out = base + (experts["mc"] - base) * gate[..., None]
     return out.astype(np.float32), gate.astype(np.float32), base, experts["mc"]
 
@@ -113,8 +112,9 @@ def eval_case(corpus, row, protocol):
             "native_band_energy_abs_error_db": sea,
         }
 
-    # LAB05 is a convex blend between grid bilinear and a monotone-clamped MC
-    # expert. These are hard numerical invariants, not perceptual thresholds.
+    # The candidate is a convex blend between grid bilinear and a monotone-
+    # clamped MC expert. These are hard numerical invariants, not perceptual
+    # thresholds.
     lo = np.minimum(bil, mc)
     hi = np.maximum(bil, mc)
     below = np.maximum(lo - lab05, 0.0)
@@ -226,14 +226,13 @@ def main():
         "V1_A": [r for r in rows if r["protocol"] == "V1_A"],
     }
     summary = {
-        "protocol": "LAB05_MC_NATIVE_BAND_DIAGNOSTIC_V1",
+        "protocol": "LAB06_RELONLY_MC_NATIVE_BAND_DIAGNOSTIC_V1",
         "acceptance_protocol": False,
         "selection_used_this_diagnostic": False,
         "candidate": {
             "expert": "mc",
+            "router": "relative_curvature_only",
             "rel_hi": float(REL_HI),
-            "abs_lo": 0.0,
-            "abs_hi": float(ABS_HI),
             "strength": 1.0,
         },
         "spectral_definition": {
@@ -262,7 +261,7 @@ def main():
     (out / "SUMMARY.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(summary, indent=2))
     if not summary["invariants_pass"]:
-        raise SystemExit("LAB05 native-band diagnostic invariant failure")
+        raise SystemExit("LAB06 native-band diagnostic invariant failure")
 
 
 if __name__ == "__main__":

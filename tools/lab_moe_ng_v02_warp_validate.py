@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""LAB05-MC D3D11 WARP runtime validator.
+"""LAB06 relative-routed MC D3D11 WARP runtime validator.
 
 Generates a deterministic float32 RGBA test texture and two independent CPU
 references:
@@ -123,7 +123,7 @@ def cpu_reference(img,d3d11_filter):
             ac=F(max(c0,c1))
             slope=F(max(abs(F(y0v-ym1)),abs(F(y1v-y0v)),abs(F(y2v-y1v))))
             rc=F(ac/F(slope+EPS))
-            gate=F(sat(F(rc/F(.60)))*sat(F(ac/F(.16))))
+            gate=F(sat(F(rc/F(.08))))
             out[oy,ox]=(bil+(mc-bil)*gate).astype(np.float32)
     return out
 
@@ -174,7 +174,7 @@ def validate(outdir,gpu_path,tol):
     d3d_stats=error_stats(gpu,d3d,tol)
     ideal_stats=error_stats(gpu,ideal,tol)
     summary={
-        'protocol':'LAB05_MC_D3D11_WARP_RUNTIME_PARITY',
+        'protocol':'LAB06_RELONLY_MC_D3D11_WARP_RUNTIME_PARITY',
         'driver_requested':'D3D_DRIVER_TYPE_WARP',
         'physical_gpu_executed':False,
         'd3d11_subtexel_fractional_bits':D3D11_SUBTEXEL_BITS,

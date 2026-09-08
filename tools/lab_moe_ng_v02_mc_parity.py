@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""LAB05-MC CPU/HLSL algebra + corpus parity gate.
+"""LAB06 relative-routed MC CPU/HLSL algebra + corpus parity gate.
 
 This does not execute a GPU shader. It independently mirrors the committed
-SM5 HLSL math in float32 and compares it with the LAB05 CPU reference over
+SM5 HLSL math in float32 and compares it with the LAB06 CPU reference over
 both perceptual corpora plus a deterministic random algebra stress test.
 """
 import argparse,csv,json
@@ -53,7 +53,7 @@ def mirror(lr):
     ac=np.maximum(np.abs(y[:,:,0]-F(2)*y[:,:,1]+y[:,:,2]),np.abs(y[:,:,1]-F(2)*y[:,:,2]+y[:,:,3])).astype(np.float32)
     slope=np.maximum(np.abs(y[:,:,1]-y[:,:,0]),np.maximum(np.abs(y[:,:,2]-y[:,:,1]),np.abs(y[:,:,3]-y[:,:,2]))).astype(np.float32)
     rc=ac/(slope+ref.EPS)
-    gate=(ref.sat(rc/F(.60))*ref.sat(ac/F(.16))).astype(np.float32)
+    gate=ref.sat(rc/F(.08)).astype(np.float32)
     out=(bil+(mc-bil)*gate[...,None]).astype(np.float32)
     out=np.where((phase==0)[...,None],f0,out).astype(np.float32)
     return out
@@ -61,7 +61,7 @@ def mirror(lr):
 
 def reference(lr):
     base,E,ac,rc=ref.planes(lr)
-    gate=(ref.sat(rc/F(.60))*ref.sat(ac/F(.16))).astype(np.float32)
+    gate=ref.sat(rc/F(.08)).astype(np.float32)
     return (base+(E['mc']-base)*gate[...,None]).astype(np.float32)
 
 
@@ -91,7 +91,7 @@ def main():
             print(f'{proto} {i:02d}/{len(manifest)} {r["case_id"]} max_abs={mx:.9g}')
     with (out/'PER_CASE.csv').open('w',newline='',encoding='utf-8') as f:
         w=csv.DictWriter(f,fieldnames=list(rows[0])); w.writeheader(); w.writerows(rows)
-    summary={'protocol':'LAB05_MC_CPU_HLSL_FLOAT32_PARITY','gpu_executed':False,'tolerance_abs':TOL,'random_algebra':alg,'corpus_cases':len(rows),'corpus_worst_max_abs':worst,'pass':max([worst,*alg.values()])<=TOL}
+    summary={'protocol':'LAB06_RELONLY_MC_CPU_HLSL_FLOAT32_PARITY','gpu_executed':False,'tolerance_abs':TOL,'random_algebra':alg,'corpus_cases':len(rows),'corpus_worst_max_abs':worst,'pass':max([worst,*alg.values()])<=TOL}
     (out/'SUMMARY.json').write_text(json.dumps(summary,indent=2)+'\n',encoding='utf-8')
     print(json.dumps(summary,indent=2))
     if not summary['pass']: raise SystemExit('PARITY FAIL')
