@@ -1,0 +1,44 @@
+{
+  "protocol": "LAB18_TEXTURE_ADMISSION_AB_SELECTION",
+  "status": "PRE_RUN_DEFINITION",
+  "architecture_source": "LAB17 diagnostic: fresh texture/frequency families were lower-coherence than fresh junction/slanted structures; LAB15 outer-balance was rejected as a universal safety criterion.",
+  "selection": {
+    "datasets": ["PTAR_PERCEPTUAL_V1_B_GRID A+B", "PTAR_PERCEPTUAL_V1_A A+B"],
+    "uses_reused_C": false,
+    "uses_LAB16": false,
+    "ranking": "LAB13 robust A/B, protocol, family and source-balanced score/feasibility",
+    "candidate_families": ["lc", "lc_bal", "lc_bal_noturn", "lc_central", "lc_bal_central"]
+  },
+  "routing_principle": "v01 safe base; admit MC only through a low/moderate-coherence texture gate, optionally requiring outer-slope balance and/or supported central slope.",
+  "runtime_budget": {
+    "texture_fetch_delta": 0,
+    "uses_existing_2x2_gather_features": true,
+    "uses_existing_fm1_f0_f1_f2": true,
+    "no_uav": true,
+    "no_intermediate_texture": true
+  },
+  "post_selection_diagnostics": {
+    "reused_C": "diagnostic only; not a pristine holdout",
+    "LAB16": "already consumed; architecture screen only, never independent validation",
+    "LAB16_precommitted_screen_gates": {
+      "overall_mean_gap_v01_db_min": 0.08,
+      "overall_worst_gap_v01_db_min": -0.15,
+      "structural_mean_gap_v01_db_min": -0.02,
+      "structural_worst_gap_v01_db_min": -0.15,
+      "texture_mean_gap_v01_db_min": 0.20
+    }
+  },
+  "freeze_policy": {
+    "freeze_allowed_only_if_A_B_candidate_is_feasible": true,
+    "freeze_allowed_only_if_all_precommitted_LAB16_architecture_screen_gates_pass": true,
+    "no_parameter_change_after_freeze": true,
+    "new_post_freeze_validation_corpus_must_be_authored_only_after_freeze_commit": true,
+    "new_post_freeze_validation_is_required_before_runtime_or_product_promotion": true
+  },
+  "protected_refs": ["main", "SOURCE"],
+  "notes": [
+    "LAB18 is architecture selection, not product validation.",
+    "The LAB16 screen is intentionally strict but cannot establish generalization because LAB16 informed LAB17 and LAB18 architecture.",
+    "No runtime, shader package, main, SOURCE or stable baseline promotion is implied."
+  ]
+}
