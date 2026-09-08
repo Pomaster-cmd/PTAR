@@ -1,0 +1,41 @@
+name: LAB PTAR-NG MoE v02 Post-Freeze Validation
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-native-detail
+
+permissions:
+  contents: read
+
+jobs:
+  postfreeze-validation:
+    if: contains(github.event.head_commit.message, '[run-lab19]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify LAB18 freeze chronology and immutability
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor bda10f16ad287eaac5fabba58e88aedc2651dd34 a315a44d856d45b3f78f3f5c2c6709fcc8b3bb19
+          git merge-base --is-ancestor bda10f16ad287eaac5fabba58e88aedc2651dd34 HEAD
+          git diff --exit-code bda10f16ad287eaac5fabba58e88aedc2651dd34 HEAD -- lab_protocols/LAB18_FROZEN_CANDIDATE.json
+      - name: Install exact validation dependencies
+        run: python -m pip install --disable-pip-version-check numpy pillow scikit-image==0.26.0
+      - name: Run LAB19 independent post-freeze validation
+        run: >-
+          python tools/lab_moe_ng_v02_postfreeze_validation.py
+          --frozen lab_protocols/LAB18_FROZEN_CANDIDATE.json
+          --protocol lab_protocols/LAB19_FRESH_VALIDATION_PROTOCOL.json
+          --out lab_results/moe_ng_v02_lab19_postfreeze_validation
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: moe-ng-v02-lab19-postfreeze-validation
+          path: lab_results/moe_ng_v02_lab19_postfreeze_validation
