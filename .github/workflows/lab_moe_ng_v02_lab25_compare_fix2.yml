@@ -1,0 +1,149 @@
+name: LAB25 Comparator Fix Patch v2
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-lab25-hw-compare
+
+permissions:
+  contents: read
+
+jobs:
+  build-fixed-comparator:
+    if: contains(github.event.head_commit.message, '[run-lab25-compare-fix2]')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout frozen LAB22 comparator template
+        uses: actions/checkout@v4
+        with:
+          ref: 6006fb7d2a5fa297493422303620dbfa8b243b6c
+          path: _lab22_hw_ref
+
+      - name: Locate VS x64 toolchain
+        shell: pwsh
+        run: |
+          $vswhere=Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs=(& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1)
+          if(-not $vs){ throw 'Visual Studio C++ toolchain not found' }
+          "VCVARS=$(Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat')" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Generate corrected source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $stage=Join-Path $env:RUNNER_TEMP 'lab25_compare_fix2'
+          New-Item -ItemType Directory -Force $stage | Out-Null
+          $env:STAGE=$stage
+          "STAGE=$stage" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          @'
+          from pathlib import Path
+          import os,re
+          src=Path('_lab22_hw_ref/tools/moe_ng_v02_lab22_hw_compare.cpp').read_text(encoding='utf-8')
+          src=src.replace('LAB07_SHA="caa7352d84c1a9ea840ff0f783323478a4f1532a949a1d3640ba4c04b441ebd1"','LAB25_SHA="ee882f82dd017c470a5003cd522f2cb5ec31ce4b31ae341ec75f3bb737642e72"')
+          src=src.replace('ptar_moe_ng_v02_mc_native_detail_ps.cso','ptar_moe_ng_v02_lab25_proven_shape_ps.cso')
+          src=re.sub(r'\bp07\b','p25',src)
+          src=re.sub(r'\bb07\b','b25',src)
+          src=src.replace('LAB07','LAB25').replace('lab07','lab25')
+          src=src.replace('LAB22 SAME-RUN HARDWARE COMPARISON','LAB25 SAME-RUN HARDWARE COMPARISON')
+          src=src.replace('moe_ng_v02_lab22_hw_compare.exe','moe_ng_v02_lab25_hw_compare.exe')
+          vals={
+            'VS':'6328bbd87aac73b07d6112de593f781b2769381aae65fa9c2bcfa06fdc68585c',
+            'LAB22':'148a26f453a49fa319ea7aa7a448ef30b01dece508fccc6bd21f4fdae10926b8',
+            'LAB25':'ee882f82dd017c470a5003cd522f2cb5ec31ce4b31ae341ec75f3bb737642e72',
+            'K185':'6bd926e85f21dd08788ff9d189c472800a5e0eb726091158ed1ecde3d06d8c16'}
+          for k,v in vals.items():
+              if v not in src: raise SystemExit(f'{k} SHA missing after transform')
+          bad='6328bbd87aac73b25d6112de593f781b2769381aae65fa9c2bcfa06fdc68585c'
+          if bad in src: raise SystemExit('corrupted VS SHA still present')
+          if 'LAB07' in src or 'lab07' in src: raise SystemExit('LAB07 token remains')
+          if 'SAMPLE_TRIADS=600u' not in src: raise SystemExit('600-triad protocol missing')
+          Path(os.environ['STAGE'],'moe_ng_v02_lab25_hw_compare.cpp').write_text(src,encoding='utf-8')
+          print('[PASS] token-safe transform; SHA constants verified')
+          '@ | python -
+          if($LASTEXITCODE -ne 0){ throw 'source transform failed' }
+
+      - name: Build MT Win8.1 comparator
+        shell: pwsh
+        run: |
+          $src=Join-Path $env:STAGE 'moe_ng_v02_lab25_hw_compare.cpp'
+          $exe=Join-Path $env:STAGE 'moe_ng_v02_lab25_hw_compare.exe'
+          $inc=Join-Path $env:GITHUB_WORKSPACE '_lab22_hw_ref\runtime_autonomous\PTAR_NG_MOE_V01_WIN81_X64\include'
+          $cmd=@"
+          call "$env:VCVARS"
+          cl /nologo /EHsc /O2 /MT /W4 /WX /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /DUNICODE /D_UNICODE /I "$inc" "$src" /Fe:"$exe" /link /SUBSYSTEM:CONSOLE,6.03 d3d11.lib dxgi.lib bcrypt.lib
+          if errorlevel 1 exit /b %errorlevel%
+          dumpbin /dependents "$exe" > "$env:STAGE\IMPORTS.txt"
+          exit /b %errorlevel%
+          "@
+          $bat=Join-Path $env:RUNNER_TEMP 'build_lab25_compare_fix2.bat'
+          Set-Content $bat $cmd -Encoding ascii
+          cmd.exe /d /s /c "`"$bat`""
+          if($LASTEXITCODE -ne 0){ throw "build failed $LASTEXITCODE" }
+
+      - name: Hard audit
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $src=Join-Path $env:STAGE 'moe_ng_v02_lab25_hw_compare.cpp'
+          $exe=Join-Path $env:STAGE 'moe_ng_v02_lab25_hw_compare.exe'
+          $imports=Get-Content (Join-Path $env:STAGE 'IMPORTS.txt') -Raw
+          if($imports -match 'D3DCOMPILER|VCRUNTIME|MSVCP|UCRTBASE|API-MS-WIN-CRT'){ throw 'forbidden import' }
+          $txt=Get-Content $src -Raw
+          $good='6328bbd87aac73b07d6112de593f781b2769381aae65fa9c2bcfa06fdc68585c'
+          $bad='6328bbd87aac73b25d6112de593f781b2769381aae65fa9c2bcfa06fdc68585c'
+          if($txt -notmatch [regex]::Escape($good) -or $txt -match [regex]::Escape($bad)){ throw 'VS SHA source audit failed' }
+          $hash=(Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          @(
+            'LAB25_COMPARATOR_FIX_AUDIT=PASS',
+            'root_cause=UNSCOPED_b07_TO_b25_REPLACEMENT_CORRUPTED_VS_SHA',
+            "fixed_exe_sha256=$hash",
+            "vs_expected_sha=$good",
+            'samples=600',
+            'permutations=6',
+            'runtime_d3dcompiler_required=NO',
+            'dynamic_crt_required=NO',
+            'windows_subsystem_target=6.03',
+            'physical_gpu_executed=false'
+          ) | Set-Content (Join-Path $env:STAGE 'AUDIT.txt') -Encoding ascii
+          Write-Host "[PASS] fixed comparator audit; exe=$hash"
+
+      - name: Add launcher
+        shell: pwsh
+        run: |
+          @'
+          @echo off
+          setlocal EnableExtensions
+          for %%I in ("%~dp0.") do set "BUNDLE=%%~fI"
+          set "OUT=%BUNDLE%\results_lab25_compare_only_%RANDOM%_%RANDOM%"
+          if not exist "%BUNDLE%\bin\moe_ng_v02_lab25_hw_compare.exe" (
+            echo [PTAR] FAIL - corrected comparator missing in bin.
+            pause
+            exit /b 10
+          )
+          mkdir "%OUT%" >nul 2>nul
+          echo [PTAR] LAB22 / LAB25 / K185 same-run balanced comparison only...
+          echo [PTAR] Do not close this window. Wait for the final PASS line.
+          "%BUNDLE%\bin\moe_ng_v02_lab25_hw_compare.exe" --bundle-root "%BUNDLE%" --out "%OUT%"
+          set "RC=%ERRORLEVEL%"
+          if not "%RC%"=="0" (
+            echo [PTAR] FAIL rc=%RC%
+            echo [PTAR] Partial results: "%OUT%"
+            pause
+            exit /b %RC%
+          )
+          echo [PTAR] PASS - comparison complete.
+          echo [PTAR] Results: "%OUT%"
+          pause
+          exit /b 0
+          '@ | Set-Content (Join-Path $env:STAGE 'RUN_LAB25_COMPARE_ONLY_FIXED.bat') -Encoding ascii
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-LAB25-COMPARE-ONLY-FIX-v2
+          path: |
+            ${{ env.STAGE }}/moe_ng_v02_lab25_hw_compare.exe
+            ${{ env.STAGE }}/RUN_LAB25_COMPARE_ONLY_FIXED.bat
+            ${{ env.STAGE }}/AUDIT.txt
+            ${{ env.STAGE }}/IMPORTS.txt
