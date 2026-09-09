@@ -1,0 +1,188 @@
+name: LAB PTAR-NG MoE v02 LAB25 Proven Shape Clamp Removal
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-native-detail
+
+permissions:
+  contents: read
+
+jobs:
+  fxc-warp-proof:
+    if: contains(github.event.head_commit.message, '[run-lab25]')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install validator dependency
+        run: python -m pip install --disable-pip-version-check numpy
+
+      - name: Locate x64 FXC
+        id: fxc
+        shell: pwsh
+        run: |
+          $fxc=Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Filter fxc.exe -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if(-not $fxc){ throw 'fxc.exe not found' }
+          "path=$($fxc.FullName)" >> $env:GITHUB_OUTPUT
+
+      - name: Compile LAB22 and LAB25 identically
+        shell: pwsh
+        run: |
+          $out='lab_results\moe_ng_v02_lab25'; New-Item -ItemType Directory -Force $out | Out-Null
+          $fxc='${{ steps.fxc.outputs.path }}'
+          & $fxc /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$out\lab22.cso" /Fc "$out\lab22.asm" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab22_phase_fused_mc_ps.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & $fxc /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$out\lab25.cso" /Fc "$out\lab25.asm" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab25_proven_shape_ps.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & $fxc /nologo /T vs_5_0 /E main /O3 /Ges /WX /Fo "$out\fullscreen_vs.cso" src\hlsl\moe_ng_v02\lab_fullscreen_vs.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+
+      - name: Static DXBC cost and texture gate
+        shell: pwsh
+        run: |
+          @'
+          import csv,json,re
+          from collections import Counter
+          from pathlib import Path
+          p=Path('lab_results/moe_ng_v02_lab25'); rows=[]; hist={}
+          op_re=re.compile(r'^\s*([A-Za-z][A-Za-z0-9_]*)\b')
+          for name in ('lab22','lab25'):
+              ops=[]
+              for raw in (p/f'{name}.asm').read_text(encoding='utf-8',errors='replace').splitlines():
+                  s=raw.lstrip()
+                  if not s or s.startswith('//') or s.startswith('ps_5_0'): continue
+                  m=op_re.match(raw)
+                  if not m: continue
+                  op=m.group(1).lower()
+                  if op.startswith('dcl_') or op in {'def','defi','defb'}: continue
+                  ops.append(op)
+              c=Counter(ops); hist[name]=dict(sorted(c.items()))
+              rows.append({'shader':name,'instruction_total':len(ops),'gather4_ops':sum(v for k,v in c.items() if k.startswith('gather4')),'sample_ops':sum(v for k,v in c.items() if k.startswith('sample')),'uav_ops':sum(v for k,v in c.items() if k.startswith('store_uav') or k.startswith('atomic_')),'min_ops':c.get('min',0),'max_ops':c.get('max',0),'cso_bytes':(p/f'{name}.cso').stat().st_size})
+          with (p/'STATIC_SUMMARY.csv').open('w',newline='',encoding='utf-8') as f:
+              w=csv.DictWriter(f,fieldnames=rows[0].keys()); w.writeheader(); w.writerows(rows)
+          (p/'OPCODE_HISTOGRAM.json').write_text(json.dumps(hist,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          a,b=rows
+          d={k:b[k]-a[k] for k in ('instruction_total','gather4_ops','sample_ops','uav_ops','min_ops','max_ops','cso_bytes')}
+          report={'protocol':'LAB25_PROVEN_SHAPE_CLAMP_REMOVAL','lab22':a,'lab25':b,'delta_lab25_minus_lab22':d,'texture_contract_pass':all(r['gather4_ops']==1 and r['sample_ops']==4 and r['uav_ops']==0 for r in rows),'static_reduction_pass':b['instruction_total']<a['instruction_total']}
+          (p/'STATIC_DELTA.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps(report,indent=2))
+          if not report['texture_contract_pass']: raise SystemExit('texture contract failure')
+          if not report['static_reduction_pass']: raise SystemExit('LAB25 did not reduce executable instruction count')
+          '@ | python -
+
+      - name: Analytic and float32 redundancy proof gate
+        shell: pwsh
+        run: |
+          @'
+          import json, numpy as np
+          from pathlib import Path
+          p=Path('lab_results/moe_ng_v02_lab25')
+          # Analytic normalized bounds implied by alpha,beta in [0,2].
+          analytic={'phase13_min':3/27,'phase13_max':15/27,'phase23_min':12/27,'phase23_max':24/27}
+          if not (0 < analytic['phase13_min'] <= analytic['phase13_max'] < 1): raise SystemExit('phase13 proof failed')
+          if not (0 < analytic['phase23_min'] <= analytic['phase23_max'] < 1): raise SystemExit('phase23 proof failed')
+          F=np.float32
+          def slope(a,b):
+              avg=F(.5)*(a+b); lim=F(2)*np.minimum(np.abs(a),np.abs(b)); limited=np.minimum(np.maximum(avg,-lim),lim); return limited*(a*b>=F(0)).astype(np.float32)
+          rng=np.random.default_rng(0x4C41423235)
+          n=1000000
+          fm1=rng.random(n,dtype=np.float32); f0=rng.random(n,dtype=np.float32); f1=rng.random(n,dtype=np.float32); f2=rng.random(n,dtype=np.float32)
+          d0=f0-fm1; d1=f1-f0; d2=f2-f1; m0=slope(d0,d1); m1=slope(d1,d2)
+          h13=(F(20)*f0+F(4)*m0+F(7)*f1-F(2)*m1)*F(1/27)
+          h23=(F(7)*f0+F(2)*m0+F(20)*f1-F(4)*m1)*F(1/27)
+          lo=np.minimum(f0,f1); hi=np.maximum(f0,f1)
+          c13=np.minimum(np.maximum(h13,lo),hi); c23=np.minimum(np.maximum(h23,lo),hi)
+          diff13=np.count_nonzero(h13!=c13); diff23=np.count_nonzero(h23!=c23)
+          report={'protocol':'LAB25_ANALYTIC_PLUS_FLOAT32_REDUNDANCY','analytic':analytic,'random_intervals':n,'phase13_clamp_changed_values':int(diff13),'phase23_clamp_changed_values':int(diff23),'finite':bool(np.isfinite(h13).all() and np.isfinite(h23).all()),'pass':bool(diff13==0 and diff23==0)}
+          (p/'SHAPE_CLAMP_PROOF.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps(report,indent=2))
+          if not report['pass']: raise SystemExit('float32 clamp redundancy counterexample found')
+          '@ | python -
+
+      - name: Build WARP harness
+        shell: pwsh
+        run: |
+          $out='lab_results\moe_ng_v02_lab25'
+          $vswhere="${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vcvars=& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Auxiliary\Build\vcvars64.bat' | Select-Object -First 1
+          if(-not $vcvars){ throw 'vcvars64.bat not found' }
+          $cmd="call `"$vcvars`" && cl /nologo /EHsc /O2 /std:c++17 tools\lab_moe_ng_v02_warp_harness.cpp /Fe:$out\warp_harness.exe d3d11.lib dxgi.lib"
+          cmd.exe /d /s /c $cmd
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+
+      - name: Prepare independent CPU reference
+        run: python tools/lab_moe_ng_v02_warp_validate.py --outdir lab_results/moe_ng_v02_lab25 --prepare
+
+      - name: Canonical WARP bit-exact gate
+        shell: pwsh
+        run: |
+          $out='lab_results\moe_ng_v02_lab25'
+          & "$out\warp_harness.exe" "$out\input.f32" 24 24 36 36 "$out\lab22.cso" "$out\fullscreen_vs.cso" "$out\lab22_output.f32" *> "$out\WARP_LAB22.txt"
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & "$out\warp_harness.exe" "$out\input.f32" 24 24 36 36 "$out\lab25.cso" "$out\fullscreen_vs.cso" "$out\lab25_output.f32" *> "$out\WARP_LAB25.txt"
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          python tools/lab_moe_ng_v02_warp_validate.py --outdir $out --gpu "$out\lab25_output.f32" --tol 0.000002
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          Copy-Item "$out\SUMMARY.json" "$out\LAB25_CPU_PARITY.json"
+          @'
+          import json,numpy as np
+          from pathlib import Path
+          p=Path('lab_results/moe_ng_v02_lab25'); a=np.fromfile(p/'lab22_output.f32',dtype=np.float32); b=np.fromfile(p/'lab25_output.f32',dtype=np.float32)
+          if a.size!=b.size: raise SystemExit('size mismatch')
+          exact=np.array_equal(a,b)
+          r={'protocol':'LAB25_DIRECT_WARP_BIT_EXACT_CANONICAL','values':int(a.size),'different_values':int(np.count_nonzero(a!=b)),'bit_exact':bool(exact)}
+          (p/'DIRECT_EQUIVALENCE_CANONICAL.json').write_text(json.dumps(r,indent=2)+'\n',encoding='utf-8'); print(json.dumps(r,indent=2))
+          if not exact: raise SystemExit('LAB25 canonical output is not bit-exact to LAB22')
+          '@ | python -
+
+      - name: Additional WARP stress probes
+        shell: pwsh
+        run: |
+          @'
+          import numpy as np
+          from pathlib import Path
+          p=Path('lab_results/moe_ng_v02_lab25'); H=W=24; y,x=np.mgrid[0:H,0:W]; F=np.float32
+          def rgba(r,g,b): return np.stack([r,g,b,np.ones((H,W),dtype=np.float32)],axis=2).astype(np.float32)
+          c=np.full((H,W),F(.37)); rgba(c,c,c).tofile(p/'probe_constant.f32')
+          xf=x.astype(np.float32)/F(W-1); yf=y.astype(np.float32)/F(H-1); rgba(F(.05)+F(.85)*xf,F(.08)+F(.80)*yf,F(.10)+F(.40)*xf+F(.35)*yf).tofile(p/'probe_affine.f32')
+          st=(x>=12).astype(np.float32); dg=((x+y)>=23).astype(np.float32); rgba(st,dg,F(.25)+F(.70)*st).tofile(p/'probe_steps.f32')
+          ch=((x+y)&1).astype(np.float32); stripes=((2*x+y)%5<2).astype(np.float32); rng=np.random.default_rng(0x4C41423235); noise=rng.random((H,W),dtype=np.float32); rgba(F(.05)+F(.9)*ch,F(.05)+F(.8)*stripes,F(.05)+F(.75)*noise).tofile(p/'probe_hf_noise.f32')
+          '@ | python -
+          $out='lab_results\moe_ng_v02_lab25'
+          foreach($n in @('constant','affine','steps','hf_noise')){
+            & "$out\warp_harness.exe" "$out\probe_$n.f32" 24 24 36 36 "$out\lab22.cso" "$out\fullscreen_vs.cso" "$out\probe_${n}_lab22.f32" *> "$out\WARP_${n}_LAB22.txt"
+            if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+            & "$out\warp_harness.exe" "$out\probe_$n.f32" 24 24 36 36 "$out\lab25.cso" "$out\fullscreen_vs.cso" "$out\probe_${n}_lab25.f32" *> "$out\WARP_${n}_LAB25.txt"
+            if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          }
+          @'
+          import json,numpy as np
+          from pathlib import Path
+          p=Path('lab_results/moe_ng_v02_lab25'); rows=[]
+          for n in ('constant','affine','steps','hf_noise'):
+              a=np.fromfile(p/f'probe_{n}_lab22.f32',dtype=np.float32); b=np.fromfile(p/f'probe_{n}_lab25.f32',dtype=np.float32)
+              if a.size!=b.size: raise SystemExit(f'{n}: size mismatch')
+              rows.append({'probe':n,'different_values':int(np.count_nonzero(a!=b)),'bit_exact':bool(np.array_equal(a,b)),'finite':bool(np.isfinite(b).all())})
+          r={'protocol':'LAB25_DIRECT_WARP_BIT_EXACT_STRESS','probes':rows,'pass':all(x['bit_exact'] and x['finite'] for x in rows)}
+          (p/'DIRECT_EQUIVALENCE_PROBES.json').write_text(json.dumps(r,indent=2)+'\n',encoding='utf-8'); print(json.dumps(r,indent=2))
+          if not r['pass']: raise SystemExit('LAB25 stress equivalence failure')
+          '@ | python -
+
+      - name: Emit hashes and provenance
+        shell: pwsh
+        run: |
+          $out='lab_results\moe_ng_v02_lab25'
+          Get-FileHash "$out\lab22.cso" -Algorithm SHA256 | Format-List | Out-File "$out\HASHES.txt"
+          Get-FileHash "$out\lab25.cso" -Algorithm SHA256 | Format-List | Out-File "$out\HASHES.txt" -Append
+          @("protocol=LAB25_PROVEN_SHAPE_CLAMP_REMOVAL","branch=$env:GITHUB_REF_NAME","commit=$env:GITHUB_SHA","baseline=LAB22_HARDWARE_SELECTED","physical_gpu_executed=false") | Set-Content "$out\PROVENANCE.txt"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: moe-ng-v02-lab25-proven-shape
+          path: lab_results/moe_ng_v02_lab25
