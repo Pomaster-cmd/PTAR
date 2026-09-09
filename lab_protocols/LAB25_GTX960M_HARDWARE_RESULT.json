@@ -1,0 +1,58 @@
+{
+  "protocol": "LAB25_GTX960M_SAME_RUN_BALANCED_COMPARE",
+  "source_zip": "results_lab25_compare_only_27492_28023.zip",
+  "source_zip_sha256": "4df808b51f08bddd830b3bc205f86f30a261acc3cf0d2d098f1e4c3ab67aed90",
+  "adapter": "NVIDIA GeForce GTX 960M",
+  "samples": 600,
+  "order_protocol": "SIX_ROTATING_PERMUTATIONS_BALANCED",
+  "full_run": {
+    "lab25_median_ms": 0.903936,
+    "lab22_median_ms": 0.974544,
+    "k185_median_ms": 0.698096,
+    "paired_lab22_minus_lab25_mean_ms": 0.06860698666666666,
+    "paired_lab22_minus_lab25_median_ms": 0.068336,
+    "lab25_faster_count": 600,
+    "lab22_faster_count": 0,
+    "ties": 0,
+    "paired_speedup_median_percent": 7.435212930021204
+  },
+  "pstate_transition": {
+    "mixed_sample": 187,
+    "observation": "sample 187 crosses the regime transition inside a triad; exclude it from regime-specific summaries"
+  },
+  "early_regime": {
+    "samples": "0-186",
+    "n": 187,
+    "lab25_median_ms": 0.67968,
+    "lab22_median_ms": 0.743584,
+    "k185_median_ms": 0.500448,
+    "paired_delta_median_ms": 0.063456,
+    "paired_speedup_median_percent": 8.528729708837936
+  },
+  "late_regime": {
+    "samples": "188-599",
+    "n": 412,
+    "lab25_median_ms": 0.905552,
+    "lab22_median_ms": 0.976016,
+    "k185_median_ms": 0.700512,
+    "paired_delta_median_ms": 0.07056,
+    "paired_speedup_median_percent": 7.231719566301289
+  },
+  "clean_excluding_transition": {
+    "n": 599,
+    "paired_delta_median_ms": 0.06832,
+    "paired_speedup_median_percent": 7.433141059255384,
+    "lab25_faster_count": 599
+  },
+  "hardware_parity_context": {
+    "lab25_42_case_parity": "PASS",
+    "max_error_lsb": 1,
+    "note": "validated in immediately preceding LAB25 full hardware run"
+  },
+  "selection": {
+    "lab25_selected_over_lab22": true,
+    "reason": "LAB25 preserves final-format software equivalence and hardware parity while winning 600/600 same-run comparisons; gain persists across both P-state regimes."
+  },
+  "main_modified": false,
+  "source_modified": false
+}
