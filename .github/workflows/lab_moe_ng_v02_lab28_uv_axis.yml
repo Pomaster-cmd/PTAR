@@ -1,0 +1,138 @@
+name: LAB28 UV-Axis Codegen and WARP Gate
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-lab28-axis-address
+
+permissions:
+  contents: read
+
+jobs:
+  lab28-gate:
+    if: contains(github.event.head_commit.message, '[run-lab28]')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --disable-pip-version-check numpy
+
+      - name: Compile LAB27 and LAB28
+        shell: pwsh
+        run: |
+          $out='lab_results\lab28_uv_axis'; New-Item -ItemType Directory -Force $out | Out-Null
+          $fxc=Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if(-not $fxc){ throw 'x64 FXC not found' }
+          & $fxc.FullName /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$out\lab27.cso" /Fc "$out\lab27.asm" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab27_scalar_phase_mod_ps.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & $fxc.FullName /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$out\lab28.cso" /Fc "$out\lab28.asm" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab28_uv_axis_ps.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & $fxc.FullName /nologo /T vs_5_0 /E main /O3 /Ges /WX /Fo "$out\fullscreen_vs.cso" src\hlsl\moe_ng_v02\lab_fullscreen_vs.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          $h27=(Get-FileHash "$out\lab27.cso" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($h27 -ne '48e3964198c6d1e4371201655519d8ccfc37fe22838b26f3ce4e93cd20d3db44'){ throw "LAB27 hash mismatch $h27" }
+          $h28=(Get-FileHash "$out\lab28.cso" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "LAB27_HASH=$h27" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "LAB28_HASH=$h28" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "LAB27=$h27 LAB28=$h28"
+
+      - name: DXBC codegen audit
+        shell: pwsh
+        run: |
+          @'
+          import json,re,os
+          from collections import Counter
+          from pathlib import Path
+          root=Path('lab_results/lab28_uv_axis')
+          out={}
+          op_re=re.compile(r'^\s*([A-Za-z][A-Za-z0-9_]*)\b')
+          for name in ('lab27','lab28'):
+              lines=(root/f'{name}.asm').read_text(encoding='utf-8',errors='replace').splitlines()
+              ops=[]
+              for raw in lines:
+                  s=raw.lstrip()
+                  if not s or s.startswith('//') or s.startswith('ps_5_0'): continue
+                  m=op_re.match(raw)
+                  if not m: continue
+                  op=m.group(1).lower()
+                  if op.startswith('dcl_') or op in {'def','defi','defb'}: continue
+                  ops.append(op)
+              c=Counter(ops)
+              out[name]={
+                  'sha256':os.environ[name.upper()+'_HASH'],
+                  'instruction_total':len(ops),
+                  'cso_bytes':(root/f'{name}.cso').stat().st_size,
+                  'gather4_ops':sum(v for k,v in c.items() if k.startswith('gather4')),
+                  'sample_l_ops':sum(v for k,v in c.items() if k.startswith('sample_l')),
+                  'uav_ops':sum(v for k,v in c.items() if k.startswith('store_uav') or k.startswith('atomic_')),
+                  'op_counts':dict(sorted(c.items()))
+              }
+          texture_ok=all(x['gather4_ops']==1 and x['sample_l_ops']==4 and x['uav_ops']==0 for x in out.values())
+          result={'protocol':'LAB28_UV_AXIS_DXBC_CODEGEN','lab27':out['lab27'],'lab28':out['lab28'],'texture_contract_pass':texture_ok}
+          result['instruction_delta']=out['lab28']['instruction_total']-out['lab27']['instruction_total']
+          result['byte_delta']=out['lab28']['cso_bytes']-out['lab27']['cso_bytes']
+          (root/'DXBC_CODEGEN.json').write_text(json.dumps(result,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps(result,indent=2))
+          if not texture_ok: raise SystemExit('texture contract changed')
+          '@ | python -
+
+      - name: Build WARP harness
+        shell: pwsh
+        run: |
+          $out='lab_results\lab28_uv_axis'
+          $vswhere="${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vcvars=& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Auxiliary\Build\vcvars64.bat' | Select-Object -First 1
+          if(-not $vcvars){ throw 'vcvars64.bat not found' }
+          $cmd="call `"$vcvars`" && cl /nologo /EHsc /O2 /std:c++17 tools\lab_moe_ng_v02_warp_harness.cpp /Fe:$out\warp_harness.exe d3d11.lib dxgi.lib"
+          cmd.exe /d /s /c $cmd
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+
+      - name: Multi-resolution WARP parity LAB27 vs LAB28
+        shell: pwsh
+        run: |
+          @'
+          import json,subprocess
+          from pathlib import Path
+          import numpy as np
+          root=Path('lab_results/lab28_uv_axis')
+          dims=[(24,24),(64,64),(192,192),(320,180),(640,360),(1280,720)]
+          rows=[]
+          for W,H in dims:
+              OW,OH=W*3//2,H*3//2
+              y,x=np.mgrid[0:H,0:W]
+              xf=x.astype(np.float32)/np.float32(max(W-1,1)); yf=y.astype(np.float32)/np.float32(max(H-1,1))
+              rng=np.random.default_rng(280000+W*7+H*11)
+              noise=rng.random((H,W),dtype=np.float32)
+              checker=((x+y)&1).astype(np.float32)
+              img=np.stack([
+                  np.clip(.06+.62*xf+.28*checker,0,1),
+                  np.clip(.04+.67*yf+.24*noise,0,1),
+                  np.clip(.08+.50*noise+.35*(xf*yf),0,1),
+                  np.ones((H,W),np.float32)
+              ],axis=2).astype(np.float32)
+              ip=root/f'in_{W}x{H}.f32'; a=root/f'a_{W}x{H}.f32'; b=root/f'b_{W}x{H}.f32'; img.tofile(ip)
+              exe=str(root/'warp_harness.exe'); vs=str(root/'fullscreen_vs.cso')
+              subprocess.run([exe,str(ip),str(W),str(H),str(OW),str(OH),str(root/'lab27.cso'),vs,str(a)],check=True)
+              subprocess.run([exe,str(ip),str(W),str(H),str(OW),str(OH),str(root/'lab28.cso'),vs,str(b)],check=True)
+              aa=np.fromfile(a,np.float32); bb=np.fromfile(b,np.float32); d=np.abs(aa-bb)
+              rows.append({'input':f'{W}x{H}','output':f'{OW}x{OH}','values':int(aa.size),'different_values':int(np.count_nonzero(d)),'max_abs':float(d.max()) if d.size else 0.0,'bit_exact':bool(np.array_equal(aa,bb))})
+              for p in (ip,a,b): p.unlink(missing_ok=True)
+          result={'protocol':'LAB28_MULTIRES_WARP_PARITY','cases':rows,'pass':all(r['bit_exact'] for r in rows)}
+          (root/'WARP_PARITY.json').write_text(json.dumps(result,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps(result,indent=2))
+          if not result['pass']: raise SystemExit('LAB28 is not bit-exact to LAB27')
+          '@ | python -
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lab28-uv-axis-codegen-warp
+          path: |
+            lab_results/lab28_uv_axis/DXBC_CODEGEN.json
+            lab_results/lab28_uv_axis/WARP_PARITY.json
+            lab_results/lab28_uv_axis/lab27.asm
+            lab_results/lab28_uv_axis/lab28.asm
+            lab_results/lab28_uv_axis/lab27.cso
+            lab_results/lab28_uv_axis/lab28.cso
