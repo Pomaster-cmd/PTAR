@@ -1,0 +1,33 @@
+{
+  "protocol": "LAB26_PHASE0_EARLY_EXIT_SOFTWARE_ADMISSION",
+  "baseline": "LAB25_HARDWARE_SELECTED",
+  "research_commit": "eb6ac2635251dd39d44782886a7a1bb24fcae692",
+  "workflow_run": 34347812420,
+  "artifact_id": 10102451758,
+  "artifact_digest": "sha256:2f4fac4507a1f8d4d6f00fe5f4ebb48c6ff7ceeb2d107a29dfed3d2fea67152f",
+  "lab25_cso_sha256": "ee882f82dd017c470a5003cd522f2cb5ec31ce4b31ae341ec75f3bb737642e72",
+  "lab26_cso_sha256": "ac02f3d69923e1173c0d82439ce4094012d7ce62fb92e44141a444158f3829cb",
+  "static": {
+    "lab25_instruction_total": 62,
+    "lab26_instruction_total": 62,
+    "lab25_cso_bytes": 2920,
+    "lab26_cso_bytes": 2920,
+    "worst_case_texture_contract": "1_GatherGreen_4_SampleLevel_0_UAV",
+    "lab26_sample_asm_lines": [61, 70, 71, 76],
+    "lab26_branch_asm_lines": [62, 65],
+    "phase0_fetch_skip_compiled": true,
+    "interpretation": "FXC retained a control-flow branch between the first SampleLevel and the remaining three SampleLevel operations. Phase-0 lanes can therefore skip fm1/f1/f2 dynamically, although physical-GPU benefit is not assumed."
+  },
+  "warp": {
+    "direct_bit_exact_to_lab25": true,
+    "probes": ["canonical", "affine", "steps", "hf"],
+    "different_values_total": 0,
+    "cpu_reference_max_abs": 1.1920928955078125e-7,
+    "cpu_reference_tolerance_abs": 2e-6,
+    "pass": true
+  },
+  "hardware_status": "NOT_YET_EXECUTED",
+  "admission": "TARGETED_HARDWARE_COMPARE_ALLOWED",
+  "main_modified": false,
+  "source_modified": false
+}
