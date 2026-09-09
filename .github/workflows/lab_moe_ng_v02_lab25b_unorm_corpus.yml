@@ -1,0 +1,165 @@
+name: LAB PTAR-NG MoE v02 LAB25b UNORM8 Corpus Gate
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-native-detail
+
+permissions:
+  contents: read
+
+jobs:
+  warp-unorm-corpus:
+    if: contains(github.event.head_commit.message, '[run-lab25b]')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: python -m pip install --disable-pip-version-check numpy pillow
+
+      - name: Locate FXC and compile frozen shaders
+        id: fxc
+        shell: pwsh
+        run: |
+          $out='lab_results\moe_ng_v02_lab25b'; New-Item -ItemType Directory -Force $out | Out-Null
+          $fxc=Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Filter fxc.exe -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if(-not $fxc){ throw 'fxc.exe not found' }
+          & $fxc.FullName /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$out\lab22.cso" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab22_phase_fused_mc_ps.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & $fxc.FullName /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$out\lab25.cso" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab25_proven_shape_ps.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & $fxc.FullName /nologo /T vs_5_0 /E main /O3 /Ges /WX /Fo "$out\fullscreen_vs.cso" src\hlsl\moe_ng_v02\lab_fullscreen_vs.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          $h22=(Get-FileHash "$out\lab22.cso" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $h25=(Get-FileHash "$out\lab25.cso" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($h22 -ne '148a26f453a49fa319ea7aa7a448ef30b01dece508fccc6bd21f4fdae10926b8'){ throw "LAB22 hash mismatch $h22" }
+          if($h25 -ne 'ee882f82dd017c470a5003cd522f2cb5ec31ce4b31ae341ec75f3bb737642e72'){ throw "LAB25 hash mismatch $h25" }
+          Write-Host "[PASS] frozen DXBC LAB22=$h22 LAB25=$h25"
+
+      - name: Build UNORM8 WARP harness
+        shell: pwsh
+        run: |
+          $out='lab_results\moe_ng_v02_lab25b'
+          $vswhere="${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vcvars=& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Auxiliary\Build\vcvars64.bat' | Select-Object -First 1
+          if(-not $vcvars){ throw 'vcvars64.bat not found' }
+          $cmd="call `"$vcvars`" && cl /nologo /EHsc /O2 /std:c++17 tools\lab_moe_ng_v02_warp_harness_unorm8.cpp /Fe:$out\warp_unorm8.exe d3d11.lib dxgi.lib"
+          cmd.exe /d /s /c $cmd
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+
+      - name: Prepare 42 canonical LR inputs
+        shell: pwsh
+        run: |
+          @'
+          import csv
+          import numpy as np
+          from pathlib import Path
+          from PIL import Image
+          src=Path('runtime_autonomous/PTAR_NG_MOE_V01_WIN81_X64/corpus/input_lr')
+          out=Path('lab_results/moe_ng_v02_lab25b'); inp=out/'inputs_f32'; inp.mkdir(parents=True,exist_ok=True)
+          rows=[]
+          files=sorted(src.glob('*.png'))
+          if len(files)!=42: raise SystemExit(f'expected 42 corpus PNGs, got {len(files)}')
+          for p in files:
+              im=Image.open(p).convert('RGBA')
+              w,h=im.size
+              if (w*3)%2 or (h*3)%2: raise SystemExit(f'{p.name}: dimensions not exact x1.5')
+              a=np.asarray(im,dtype=np.float32)/np.float32(255.0)
+              q=inp/(p.stem+'.f32'); a.tofile(q)
+              rows.append({'case':p.stem,'input':str(q),'inW':w,'inH':h,'outW':w*3//2,'outH':h*3//2})
+          with (out/'CORPUS_MANIFEST.csv').open('w',newline='',encoding='utf-8') as f:
+              wr=csv.DictWriter(f,fieldnames=rows[0].keys()); wr.writeheader(); wr.writerows(rows)
+          print(f'prepared {len(rows)} corpus inputs')
+          '@ | python -
+
+      - name: Run LAB22 vs LAB25 on 42-case WARP UNORM8 corpus
+        shell: pwsh
+        run: |
+          @'
+          import csv,json,subprocess
+          from pathlib import Path
+          out=Path('lab_results/moe_ng_v02_lab25b'); exe=out/'warp_unorm8.exe'; ps22=out/'lab22.cso'; ps25=out/'lab25.cso'; vs=out/'fullscreen_vs.cso'
+          rows=[]; total_diff=0; total_bytes=0
+          with (out/'CORPUS_MANIFEST.csv').open(newline='',encoding='utf-8') as f:
+              manifest=list(csv.DictReader(f))
+          od=out/'corpus_outputs'; od.mkdir(exist_ok=True)
+          for r in manifest:
+              case=r['case']; a=od/(case+'_lab22.rgba8'); b=od/(case+'_lab25.rgba8')
+              args0=[str(exe),r['input'],r['inW'],r['inH'],r['outW'],r['outH'],str(ps22),str(vs),str(a)]
+              args1=[str(exe),r['input'],r['inW'],r['inH'],r['outW'],r['outH'],str(ps25),str(vs),str(b)]
+              subprocess.run(args0,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
+              subprocess.run(args1,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
+              ba=a.read_bytes(); bb=b.read_bytes()
+              if len(ba)!=len(bb): raise SystemExit(f'{case}: byte size mismatch')
+              diff=sum(x!=y for x,y in zip(ba,bb)); total_diff+=diff; total_bytes+=len(ba)
+              rows.append({'case':case,'bytes':len(ba),'different_bytes':diff,'byte_exact':diff==0})
+          with (out/'CORPUS_UNORM8_EQUIVALENCE.csv').open('w',newline='',encoding='utf-8') as f:
+              wr=csv.DictWriter(f,fieldnames=rows[0].keys()); wr.writeheader(); wr.writerows(rows)
+          report={'protocol':'LAB25B_42_CASE_WARP_R8G8B8A8_UNORM','cases':len(rows),'exact_cases':sum(r['byte_exact'] for r in rows),'different_bytes':total_diff,'total_bytes':total_bytes,'pass':all(r['byte_exact'] for r in rows)}
+          (out/'CORPUS_UNORM8_SUMMARY.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps(report,indent=2))
+          if not report['pass']: raise SystemExit('LAB25 corpus UNORM8 drift detected')
+          '@ | python -
+
+      - name: Deterministic synthetic UNORM8 stress gate
+        shell: pwsh
+        run: |
+          @'
+          import json,subprocess
+          import numpy as np
+          from pathlib import Path
+          out=Path('lab_results/moe_ng_v02_lab25b'); td=out/'synthetic'; td.mkdir(exist_ok=True)
+          H=W=64; y,x=np.mgrid[0:H,0:W]; rng=np.random.default_rng(0x4C41423235)
+          imgs=[]
+          def rgba8(r,g,b,a=None):
+              if a is None: a=np.full((H,W),255,dtype=np.uint8)
+              return np.stack([r,g,b,a],axis=2).astype(np.uint8)
+          ramp=np.rint(np.linspace(0,255,W,dtype=np.float32)).astype(np.uint8)[None,:].repeat(H,0)
+          vramp=ramp.T
+          imgs.append(('ramps',rgba8(ramp,vramp,((ramp.astype(np.uint16)+vramp.astype(np.uint16))//2).astype(np.uint8))))
+          step=np.where(x>=W//2,255,0).astype(np.uint8); diag=np.where(x+y>=W-1,255,0).astype(np.uint8)
+          imgs.append(('steps',rgba8(step,diag,np.where((2*x+y)%5<2,240,15).astype(np.uint8))))
+          checker=np.where((x+y)&1,255,0).astype(np.uint8)
+          imgs.append(('checker',rgba8(checker,np.roll(checker,1,axis=1),np.roll(checker,1,axis=0))))
+          for i in range(5):
+              imgs.append((f'random_{i}',rng.integers(0,256,size=(H,W,4),dtype=np.uint8)))
+          exe=out/'warp_unorm8.exe'; ps22=out/'lab22.cso'; ps25=out/'lab25.cso'; vs=out/'fullscreen_vs.cso'
+          rows=[]
+          for name,u8 in imgs:
+              f32=(u8.astype(np.float32)/np.float32(255.0)); inp=td/(name+'.f32'); f32.tofile(inp)
+              a=td/(name+'_22.rgba8'); b=td/(name+'_25.rgba8')
+              base=[str(exe),str(inp),str(W),str(H),str(W*3//2),str(H*3//2)]
+              subprocess.run(base+[str(ps22),str(vs),str(a)],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
+              subprocess.run(base+[str(ps25),str(vs),str(b)],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
+              ba=a.read_bytes(); bb=b.read_bytes(); diff=sum(x!=y for x,y in zip(ba,bb))
+              rows.append({'probe':name,'different_bytes':diff,'byte_exact':diff==0})
+          report={'protocol':'LAB25B_SYNTHETIC_WARP_R8G8B8A8_UNORM','probes':rows,'pass':all(r['byte_exact'] for r in rows)}
+          (out/'SYNTHETIC_UNORM8_SUMMARY.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps(report,indent=2))
+          if not report['pass']: raise SystemExit('LAB25 synthetic UNORM8 drift detected')
+          '@ | python -
+
+      - name: Record admission summary
+        shell: pwsh
+        run: |
+          @(
+            'LAB25B_UNORM8_CORPUS_GATE=PASS',
+            'baseline=LAB22_HARDWARE_SELECTED',
+            'candidate=LAB25_PROVEN_SHAPE_CLAMP_REMOVAL',
+            'lab22_cso=148a26f453a49fa319ea7aa7a448ef30b01dece508fccc6bd21f4fdae10926b8',
+            'lab25_cso=ee882f82dd017c470a5003cd522f2cb5ec31ce4b31ae341ec75f3bb737642e72',
+            'lab25_instruction_delta=-4',
+            'lab25_cso_bytes_delta=-112',
+            'physical_gpu_executed=false'
+          ) | Set-Content 'lab_results\moe_ng_v02_lab25b\ADMISSION.txt'
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: moe-ng-v02-lab25b-unorm-corpus
+          path: lab_results/moe_ng_v02_lab25b
