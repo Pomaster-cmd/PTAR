@@ -1,0 +1,256 @@
+name: LAB27 GTX960M Compare Pack V3
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-native-detail-gtxpack-v2-safety
+
+permissions:
+  contents: read
+
+jobs:
+  build-audit-pack-v3:
+    if: contains(github.event.head_commit.message, '[run-lab27-gtx-pack-v3]')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile frozen shaders and verify codegen
+        id: compile
+        shell: pwsh
+        run: |
+          $root='lab_results\lab27_gtx_pack_v3'
+          $pack="$root\PTAR_LAB27_GTX960M_COMPARE_PACK_V3"
+          $sh="$pack\shaders"
+          New-Item -ItemType Directory -Force $sh | Out-Null
+          $fxc=Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if(-not $fxc){ throw 'x64 fxc.exe not found' }
+          Write-Host "FXC=$($fxc.FullName) version=$($fxc.VersionInfo.FileVersion)"
+
+          & $fxc.FullName /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$sh\lab25.cso" /Fc "$root\lab25.asm" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab25_proven_shape_ps.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & $fxc.FullName /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$sh\lab27.cso" /Fc "$root\lab27.asm" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab27_scalar_phase_mod_ps.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & $fxc.FullName /nologo /T vs_5_0 /E main /O3 /Ges /WX /Fo "$sh\lab_fullscreen_vs.cso" src\hlsl\moe_ng_v02\lab_fullscreen_vs.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & $fxc.FullName /nologo /T vs_5_0 /E main /O3 /Ges /WX /Fo "$root\lab_fullscreen_vs_repeat.cso" src\hlsl\moe_ng_v02\lab_fullscreen_vs.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+
+          Copy-Item runtime_autonomous\PTAR_NG_MOE_V01_WIN81_X64\shaders\ptar_k185_control_ps.cso "$sh\ptar_k185_control_ps.cso"
+          Copy-Item runtime_autonomous\PTAR_NG_MOE_V01_WIN81_X64\shaders\ptar_vs.cso "$sh\ptar_vs.cso"
+
+          $expected=@{
+            'lab25.cso'='ee882f82dd017c470a5003cd522f2cb5ec31ce4b31ae341ec75f3bb737642e72'
+            'lab27.cso'='48e3964198c6d1e4371201655519d8ccfc37fe22838b26f3ce4e93cd20d3db44'
+            'lab_fullscreen_vs.cso'='f5d7c0f9be164a924fbe821137fc7bb216c479abc5701411bd1a09346dd5078b'
+            'ptar_k185_control_ps.cso'='6bd926e85f21dd08788ff9d189c472800a5e0eb726091158ed1ecde3d06d8c16'
+            'ptar_vs.cso'='6328bbd87aac73b07d6112de593f781b2769381aae65fa9c2bcfa06fdc68585c'
+          }
+          $hashLines=@()
+          foreach($n in $expected.Keys){
+            $p=Join-Path $sh $n
+            $got=(Get-FileHash $p -Algorithm SHA256).Hash.ToLowerInvariant()
+            Write-Host "$n SHA256=$got"
+            if($got -ne $expected[$n]){ throw "$n hash mismatch expected=$($expected[$n]) got=$got" }
+            $hashLines += "$got  shaders/$n"
+            $bytes=[IO.File]::ReadAllBytes($p)
+            if($bytes.Length -lt 4 -or [Text.Encoding]::ASCII.GetString($bytes,0,4) -ne 'DXBC'){ throw "$n is not valid DXBC" }
+          }
+          $repeat=(Get-FileHash "$root\lab_fullscreen_vs_repeat.cso" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($repeat -ne $expected['lab_fullscreen_vs.cso']){ throw "fullscreen VS repeat hash mismatch $repeat" }
+          $hashLines | Sort-Object | Set-Content "$pack\HASHES.txt" -Encoding ascii
+          @(
+            "fxc_path=$($fxc.FullName)",
+            "fxc_file_version=$($fxc.VersionInfo.FileVersion)",
+            'flags=/O3 /Ges /WX',
+            'shader_model=5_0',
+            "fullscreen_vs_repeat_sha256=$repeat"
+          ) | Set-Content "$pack\TOOLCHAIN.txt" -Encoding ascii
+
+      - name: Audit LAB25 versus LAB27 DXBC contract
+        shell: pwsh
+        run: |
+          @'
+          import json,re
+          from collections import Counter
+          from pathlib import Path
+          root=Path('lab_results/lab27_gtx_pack_v3')
+          out={}
+          op_re=re.compile(r'^\s*([A-Za-z][A-Za-z0-9_]*)\b')
+          for name in ('lab25','lab27'):
+              lines=(root/f'{name}.asm').read_text(encoding='utf-8',errors='replace').splitlines()
+              ops=[]; udiv=[]
+              for raw in lines:
+                  s=raw.lstrip()
+                  if not s or s.startswith('//') or s.startswith('ps_5_0'): continue
+                  m=op_re.match(raw)
+                  if not m: continue
+                  op=m.group(1).lower()
+                  if op.startswith('dcl_') or op in {'def','defi','defb'}: continue
+                  ops.append(op)
+                  if op=='udiv': udiv.append(raw.strip())
+              c=Counter(ops)
+              cso=root/'PTAR_LAB27_GTX960M_COMPARE_PACK_V3'/'shaders'/f'{name}.cso'
+              out[name]={
+                  'instruction_total':len(ops),'cso_bytes':cso.stat().st_size,
+                  'gather4_ops':sum(v for k,v in c.items() if k.startswith('gather4')),
+                  'sample_l_ops':sum(v for k,v in c.items() if k.startswith('sample_l')),
+                  'uav_ops':sum(v for k,v in c.items() if k.startswith('store_uav') or k.startswith('atomic_')),
+                  'udiv_lines':udiv,
+              }
+          a,b=out['lab25'],out['lab27']
+          vector25=any(re.search(r'^udiv\s+null,\s*r\d+\.xy\s*,',x,re.I) for x in a['udiv_lines'])
+          scalar27=any(re.search(r'^udiv\s+null,\s*r\d+\.[xyzw]\s*,',x,re.I) for x in b['udiv_lines'])
+          no_vector27=not any(re.search(r'^udiv\s+null,\s*r\d+\.xy\s*,',x,re.I) for x in b['udiv_lines'])
+          texture_ok=all(x['gather4_ops']==1 and x['sample_l_ops']==4 and x['uav_ops']==0 for x in (a,b))
+          cost_ok=(a['instruction_total'],b['instruction_total'],a['cso_bytes'],b['cso_bytes'])==(62,62,2920,2908)
+          report={'protocol':'LAB27_GTX_PACK_V3_STATIC_DXBC_AUDIT','lab25':a,'lab27':b,
+                  'lab25_vector_remainder_udiv_xy':vector25,'lab27_scalar_remainder_udiv':scalar27,
+                  'lab27_no_vector_remainder_udiv_xy':no_vector27,'texture_contract_pass':texture_ok,
+                  'expected_cost_pass':cost_ok}
+          report['pass']=all((vector25,scalar27,no_vector27,texture_ok,cost_ok))
+          (root/'STATIC_DXBC_AUDIT.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps(report,indent=2))
+          if not report['pass']: raise SystemExit('static DXBC audit failed')
+          '@ | python -
+
+      - name: Build isolated Win81 x64 MT bench host
+        shell: pwsh
+        run: |
+          $root='lab_results\lab27_gtx_pack_v3'
+          $pack="$root\PTAR_LAB27_GTX960M_COMPARE_PACK_V3"
+          $src=Get-Content 'hardware_validation\ptar_moe_ng_v02_lab27_compare.cpp' -Raw
+          $old='static const char* kLabVsSha ="f2512c09f70c30aa6f4b06e6885f34acac23ee5e5e3b94486b0846159578fcf8";'
+          $new='static const char* kLabVsSha ="f5d7c0f9be164a924fbe821137fc7bb216c479abc5701411bd1a09346dd5078b";'
+          if(-not $src.Contains($old)){ throw 'stale bench hash marker not found' }
+          $src=$src.Replace($old,$new)
+          $tmp="$root\ptar_moe_ng_v02_lab27_compare_v3.cpp"
+          $src | Set-Content $tmp -Encoding utf8
+
+          $vswhere="${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vcvars=& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Auxiliary\Build\vcvars64.bat' | Select-Object -First 1
+          if(-not $vcvars){ throw 'vcvars64.bat not found' }
+          $inc='runtime_autonomous\PTAR_NG_MOE_V01_WIN81_X64\include'
+          $cmd="call `"$vcvars`" && cl /nologo /EHsc /O2 /MT /W4 /WX /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /DUNICODE /D_UNICODE /I `"$inc`" `"$tmp`" /Fe:`"$pack\ptar_lab27_gtx960m_compare.exe`" /Fo:`"$root\ptar_lab27_gtx960m_compare.obj`" /link /SUBSYSTEM:CONSOLE,6.03 d3d11.lib dxgi.lib bcrypt.lib"
+          cmd.exe /d /s /c $cmd
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          if(-not (Test-Path "$pack\ptar_lab27_gtx960m_compare.exe")){ throw 'bench EXE not produced' }
+          @'
+          Bench-local correction only: the previously recorded fullscreen VS hash was stale.
+          LAB25 and LAB27 algorithm sources are unchanged. main, SOURCE, and the canonical LAB27 branch are untouched.
+          V3 freezes the CI-reproduced fullscreen VS SHA-256 f5d7c0f9be164a924fbe821137fc7bb216c479abc5701411bd1a09346dd5078b.
+          '@ | Set-Content "$pack\BENCH_LOCAL_HASH_CORRECTION.txt" -Encoding ascii
+
+      - name: Audit PE and WARP smoke
+        shell: pwsh
+        run: |
+          $root='lab_results\lab27_gtx_pack_v3'
+          $pack="$root\PTAR_LAB27_GTX960M_COMPARE_PACK_V3"
+          $vswhere="${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vcvars=& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Auxiliary\Build\vcvars64.bat' | Select-Object -First 1
+          $cmd="call `"$vcvars`" && dumpbin /dependents `"$pack\ptar_lab27_gtx960m_compare.exe`" > `"$pack\IMPORTS.txt`" && dumpbin /headers `"$pack\ptar_lab27_gtx960m_compare.exe`" > `"$pack\PE_HEADERS.txt`" && dumpbin /imports `"$pack\ptar_lab27_gtx960m_compare.exe`" > `"$pack\PE_IMPORTS_FULL.txt`""
+          cmd.exe /d /s /c $cmd
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          $deps=Get-Content "$pack\IMPORTS.txt" -Raw
+          foreach($bad in @('D3DCOMPILER','VCRUNTIME','MSVCP','UCRTBASE','API-MS-WIN-CRT')){
+            if($deps -match [regex]::Escape($bad)){ throw "forbidden runtime dependency: $bad" }
+          }
+          $hdr=Get-Content "$pack\PE_HEADERS.txt" -Raw
+          if($hdr -notmatch '8664 machine \(x64\)'){ throw 'PE is not x64' }
+          if($hdr -notmatch '6\.03\s+subsystem version'){ throw 'PE subsystem is not 6.03' }
+
+          Push-Location $pack
+          try {
+            & .\ptar_lab27_gtx960m_compare.exe --warp-smoke | Tee-Object -FilePath WARP_SMOKE.txt
+            if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          } finally { Pop-Location }
+          $smoke=Get-Content "$pack\WARP_SMOKE.txt" -Raw
+          if($smoke -notmatch '\[PASS\] WARP smoke'){ throw 'WARP smoke marker missing' }
+          foreach($h in @(
+            'ee882f82dd017c470a5003cd522f2cb5ec31ce4b31ae341ec75f3bb737642e72',
+            '48e3964198c6d1e4371201655519d8ccfc37fe22838b26f3ce4e93cd20d3db44',
+            '6bd926e85f21dd08788ff9d189c472800a5e0eb726091158ed1ecde3d06d8c16',
+            '6328bbd87aac73b07d6112de593f781b2769381aae65fa9c2bcfa06fdc68585c',
+            'f5d7c0f9be164a924fbe821137fc7bb216c479abc5701411bd1a09346dd5078b'
+          )){ if($smoke -notmatch [regex]::Escape($h)){ throw "WARP hash verification missing $h" } }
+          Write-Host '[PASS] PE audit and WARP smoke'
+
+      - name: Finalize isolated hardware pack
+        shell: pwsh
+        run: |
+          $root='lab_results\lab27_gtx_pack_v3'
+          $pack="$root\PTAR_LAB27_GTX960M_COMPARE_PACK_V3"
+          Copy-Item "$root\STATIC_DXBC_AUDIT.json" "$pack\STATIC_DXBC_AUDIT.json"
+          $exeHash=(Get-FileHash "$pack\ptar_lab27_gtx960m_compare.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
+          Add-Content "$pack\HASHES.txt" "$exeHash  ptar_lab27_gtx960m_compare.exe" -Encoding ascii
+          @'
+          @echo off
+          setlocal EnableExtensions
+          cd /d "%~dp0"
+          if not exist "ptar_lab27_gtx960m_compare.exe" exit /b 10
+          echo [PTAR] LAB27 vs LAB25 vs K185 - GTX 960M - 600 balanced triads
+          ptar_lab27_gtx960m_compare.exe
+          set "RC=%ERRORLEVEL%"
+          echo.
+          if "%RC%"=="0" echo [PASS] Results are in .\results
+          if not "%RC%"=="0" echo [FAIL] Return code %RC%
+          pause
+          exit /b %RC%
+          '@ | Set-Content "$pack\RUN_LAB27_GTX960M_COMPARE.bat" -Encoding ascii
+          @'
+          PTAR LAB27 - GTX960M TARGETED HARDWARE COMPARE V3
+
+          Run only RUN_LAB27_GTX960M_COMPARE.bat on the Windows 8.1 + GTX 960M test machine.
+          It performs 60 warm-up triads then 600 measured triads using all six balanced permutations of LAB25/LAB27/K185.
+          Do not rerun historical LAB25/LAB26 suites or the already validated 42-case corpus.
+          Return only the generated results folder, preferably as ZIP.
+          LAB27 is promoted only if correctness remains intact and a reproducible paired hardware gain versus LAB25 is observed with K185 as the same-run P-state control.
+          '@ | Set-Content "$pack\README_FIRST.txt" -Encoding utf8
+          @(
+            'protocol=LAB27_GTX960M_SAME_RUN_BALANCED_COMPARE_V3',
+            "branch=$env:GITHUB_REF_NAME",
+            "commit=$env:GITHUB_SHA",
+            'base_canonical_lab_sha=7990dfc991bf172d706127594581590be759ee2c',
+            'target=Windows 8.1 x64 / D3D11 FL11_0',
+            'host_crt=/MT',
+            'pe_subsystem=6.03',
+            'runtime_hlsl_compiler=false',
+            'dimensions=1280x720 -> 1920x1080',
+            'warmup_triads=60',
+            'measured_triads=600',
+            'order_protocol=SIX_ROTATING_PERMUTATIONS_BALANCED',
+            'lab25_sha256=ee882f82dd017c470a5003cd522f2cb5ec31ce4b31ae341ec75f3bb737642e72',
+            'lab27_sha256=48e3964198c6d1e4371201655519d8ccfc37fe22838b26f3ce4e93cd20d3db44',
+            'k185_sha256=6bd926e85f21dd08788ff9d189c472800a5e0eb726091158ed1ecde3d06d8c16',
+            'lab_fullscreen_vs_sha256=f5d7c0f9be164a924fbe821137fc7bb216c479abc5701411bd1a09346dd5078b',
+            'texture_contract=1 GatherGreen + 4 SampleLevel + 0 UAV',
+            'software_dimension_gate=PASS_6_OF_6_BIT_EXACT',
+            'warp_smoke=PASS',
+            'physical_gtx960m_executed=false',
+            'main_modified=false',
+            'source_modified=false',
+            'canonical_lab_branch_modified=false'
+          ) | Set-Content "$pack\PROVENANCE.txt" -Encoding ascii
+          $manifest=Get-ChildItem $pack -Recurse -File | Sort-Object FullName | ForEach-Object {
+            $rel=$_.FullName.Substring((Resolve-Path $pack).Path.Length+1).Replace('\','/')
+            $h=(Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$h  $rel"
+          }
+          $manifest | Set-Content "$pack\MANIFEST_SHA256.txt" -Encoding ascii
+
+          foreach($f in @('ptar_lab27_gtx960m_compare.exe','RUN_LAB27_GTX960M_COMPARE.bat','README_FIRST.txt','PROVENANCE.txt','HASHES.txt','MANIFEST_SHA256.txt','STATIC_DXBC_AUDIT.json','IMPORTS.txt','PE_HEADERS.txt','PE_IMPORTS_FULL.txt','WARP_SMOKE.txt','TOOLCHAIN.txt','BENCH_LOCAL_HASH_CORRECTION.txt','shaders\lab25.cso','shaders\lab27.cso','shaders\lab_fullscreen_vs.cso','shaders\ptar_k185_control_ps.cso','shaders\ptar_vs.cso')){
+            if(-not (Test-Path (Join-Path $pack $f))){ throw "pack missing $f" }
+          }
+          $audit=Get-Content "$pack\STATIC_DXBC_AUDIT.json" -Raw | ConvertFrom-Json
+          if(-not $audit.pass){ throw 'STATIC_DXBC_AUDIT pass=false' }
+          Write-Host '[PASS] final V3 pack integrity'
+
+      - name: Upload V3 GTX960M compare pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_LAB27_GTX960M_COMPARE_PACK_V3
+          path: lab_results/lab27_gtx_pack_v3/PTAR_LAB27_GTX960M_COMPARE_PACK_V3
+          if-no-files-found: error
+          compression-level: 9
