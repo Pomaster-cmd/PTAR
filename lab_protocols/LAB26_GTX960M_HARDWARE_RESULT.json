@@ -1,0 +1,74 @@
+{
+  "protocol": "LAB26_GTX960M_HARDWARE_COMPARE",
+  "source_results_zip": "results_lab26_compare_948_1718.zip",
+  "source_results_zip_sha256": "42812999231c2a8f0f501e0143495d8a6608ad8ac08a8628efc4b8e823328004",
+  "adapter": "NVIDIA GeForce GTX 960M",
+  "lab26_full_parity": {
+    "cases": 42,
+    "failed_cases": 0,
+    "global_max_abs_lsb": 1,
+    "global_mismatch_fraction": 0.039443422527,
+    "gpu_png_persistence": "PASS_42_NONZERO"
+  },
+  "lab26_full_timing": {
+    "lab26_median_ms": 0.896240000,
+    "lab26_p95_ms": 0.915502400,
+    "k185_median_ms": 0.690176000,
+    "paired_samples": 512,
+    "paired_lab26_faster_count": 0,
+    "paired_k185_faster_count": 512
+  },
+  "same_run_compare": {
+    "samples": 600,
+    "order_protocol": "SIX_ROTATING_PERMUTATIONS_BALANCED",
+    "lab25_median_ms": 0.910704000,
+    "lab26_median_ms": 0.911616000,
+    "k185_median_ms": 0.702256000,
+    "paired_lab26_minus_lab25_mean_ms": 0.001006880,
+    "paired_lab26_minus_lab25_median_ms": 0.000480000,
+    "lab26_faster_count": 249,
+    "lab25_faster_count": 348,
+    "tie_count": 3
+  },
+  "pstate_analysis": {
+    "transition_triad": 181,
+    "transition_note": "triad 181 crosses the P-state transition and is excluded from regime statistics",
+    "pre_transition_samples": 181,
+    "pre_lab25_median_ms": 0.678080000,
+    "pre_lab26_median_ms": 0.678368000,
+    "pre_paired_delta_median_ms": 0.000288000,
+    "pre_lab26_faster_count": 74,
+    "pre_lab25_faster_count": 104,
+    "post_transition_samples": 418,
+    "post_lab25_median_ms": 0.912336000,
+    "post_lab26_median_ms": 0.913296000,
+    "post_paired_delta_median_ms": 0.000720000,
+    "post_lab26_faster_count": 175,
+    "post_lab25_faster_count": 243
+  },
+  "clean_compare_excluding_transition": {
+    "samples": 599,
+    "paired_lab26_minus_lab25_mean_ms": 0.000625949917,
+    "paired_lab26_minus_lab25_median_ms": 0.000480000,
+    "lab26_faster_count": 249,
+    "lab25_faster_count": 347,
+    "tie_count": 3,
+    "bootstrap_95pct_ci_median_ms": [0.000192000, 0.000768000],
+    "bootstrap_95pct_ci_mean_ms": [0.000352480, 0.000894720],
+    "sign_test_two_sided_p": 0.0000684618,
+    "wilcoxon_greater_p": 0.0000024438
+  },
+  "compiler_finding": {
+    "lab25_already_delays_three_directional_samples_until_after_phase0_branch": true,
+    "lab26_created_no_new_dynamic_fetch_structure": true,
+    "asm_difference_summary": "LAB25 and LAB26 both execute GatherGreen, compute phase, perform f0 SampleLevel, branch on phase 0, then execute fm1/f1/f2 SampleLevel for nonzero phases. LAB26 mainly changes scheduling/order of phase and f0 UV arithmetic.",
+    "interpretation": "The LAB26 source-level early-exit optimization was already performed by FXC for LAB25, explaining the absence of a hardware gain."
+  },
+  "decision": {
+    "lab26": "REJECT_FOR_PERFORMANCE",
+    "selected_v02_baseline": "LAB25",
+    "reason": "LAB26 preserves correctness but is slightly and consistently slower in the balanced same-run hardware comparison; the intended sample skipping was already present in LAB25 compiled DXBC."
+  },
+  "main_modified": false,
+  "source_modified": false
+}
