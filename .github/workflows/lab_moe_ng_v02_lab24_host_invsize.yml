@@ -1,0 +1,186 @@
+name: LAB PTAR-NG MoE v02 LAB24 Host Inverse Size
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-native-detail
+
+permissions:
+  contents: read
+
+jobs:
+  fxc-warp-equivalence:
+    if: contains(github.event.head_commit.message, '[run-lab24]')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install validator dependency
+        run: python -m pip install --disable-pip-version-check numpy
+
+      - name: Locate x64 FXC
+        id: fxc
+        shell: pwsh
+        run: |
+          $fxc = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue |
+                 Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } |
+                 Sort-Object FullName -Descending |
+                 Select-Object -First 1
+          if (-not $fxc) { throw 'x64 fxc.exe not found' }
+          "path=$($fxc.FullName)" >> $env:GITHUB_OUTPUT
+
+      - name: Compile LAB22 and LAB24 identically
+        shell: pwsh
+        run: |
+          $out='lab_results\moe_ng_v02_lab24'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          $fxc='${{ steps.fxc.outputs.path }}'
+          & $fxc /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$out\lab22.cso" /Fc "$out\lab22.asm" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab22_phase_fused_mc_ps.hlsl
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $fxc /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$out\lab24.cso" /Fc "$out\lab24.asm" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab24_host_invsize_ps.hlsl
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $fxc /nologo /T vs_5_0 /E main /O3 /Ges /WX /Fo "$out\fullscreen_vs.cso" src\hlsl\moe_ng_v02\lab_fullscreen_vs.hlsl
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Static DXBC zero-division and texture gate
+        shell: pwsh
+        run: |
+          @'
+          import csv, json, re
+          from collections import Counter
+          from pathlib import Path
+          p=Path('lab_results/moe_ng_v02_lab24'); rows=[]; hist={}
+          op_re=re.compile(r'^\s*([A-Za-z][A-Za-z0-9_]*)\b')
+          for name in ('lab22','lab24'):
+              ops=[]
+              for raw in (p/f'{name}.asm').read_text(encoding='utf-8',errors='replace').splitlines():
+                  s=raw.lstrip()
+                  if not s or s.startswith('//') or s.startswith('ps_5_0'): continue
+                  m=op_re.match(raw)
+                  if not m: continue
+                  op=m.group(1).lower()
+                  if op.startswith('dcl_') or op in {'def','defi','defb'}: continue
+                  ops.append(op)
+              c=Counter(ops); hist[name]=dict(sorted(c.items()))
+              rows.append({'shader':name,'instruction_total':len(ops),'div_ops':c.get('div',0),'mul_ops':c.get('mul',0),'mad_ops':c.get('mad',0),'gather4_ops':sum(v for k,v in c.items() if k.startswith('gather4')),'sample_ops':sum(v for k,v in c.items() if k.startswith('sample')),'uav_ops':sum(v for k,v in c.items() if k.startswith('store_uav') or k.startswith('atomic_')),'cso_bytes':(p/f'{name}.cso').stat().st_size})
+          with (p/'STATIC_SUMMARY.csv').open('w',newline='',encoding='utf-8') as f:
+              w=csv.DictWriter(f,fieldnames=rows[0].keys()); w.writeheader(); w.writerows(rows)
+          (p/'OPCODE_HISTOGRAM.json').write_text(json.dumps(hist,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          by={r['shader']:r for r in rows}; a=by['lab22']; b=by['lab24']
+          s={'protocol':'LAB24_HOST_INVSIZE_STATIC','lab22':a,'lab24':b,'delta_lab24_minus_lab22':{k:b[k]-a[k] for k in ('instruction_total','div_ops','mul_ops','mad_ops','gather4_ops','sample_ops','uav_ops','cso_bytes')},'texture_contract_pass':all(r['gather4_ops']==1 and r['sample_ops']==4 and r['uav_ops']==0 for r in rows),'zero_division_pass':b['div_ops']==0}
+          (p/'STATIC_DELTA.json').write_text(json.dumps(s,indent=2)+'\n',encoding='utf-8'); print(json.dumps(s,indent=2))
+          if not s['texture_contract_pass']: raise SystemExit('texture contract failure')
+          if not s['zero_division_pass']: raise SystemExit('LAB24 still contains division op')
+          '@ | python -
+
+      - name: Build inverse-size WARP harness
+        shell: pwsh
+        run: |
+          $out='lab_results\moe_ng_v02_lab24'
+          $src=Get-Content tools\lab_moe_ng_v02_warp_harness.cpp -Raw
+          $src=$src.Replace('constants.outputSize[0] = static_cast<float>(outW);','constants.outputSize[0] = 1.0f / static_cast<float>(inW);')
+          $src=$src.Replace('constants.outputSize[1] = static_cast<float>(outH);','constants.outputSize[1] = 1.0f / static_cast<float>(inH);')
+          if($src -match 'constants\.outputSize\[0\] = static_cast<float>\(outW\)'){ throw 'harness patch failed' }
+          Set-Content "$out\warp_harness_inv.cpp" $src -Encoding utf8
+          $vswhere="${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vcvars = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Auxiliary\Build\vcvars64.bat' | Select-Object -First 1
+          if (-not $vcvars) { throw 'vcvars64.bat not found' }
+          $cmd = "call `"$vcvars`" && cl /nologo /EHsc /O2 /std:c++17 $out\warp_harness_inv.cpp /Fe:$out\warp_harness_inv.exe d3d11.lib dxgi.lib"
+          cmd.exe /d /s /c $cmd
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Prepare independent LAB07 CPU reference
+        run: python tools/lab_moe_ng_v02_warp_validate.py --outdir lab_results/moe_ng_v02_lab24 --prepare
+
+      - name: Execute canonical input on WARP with shared inverse-size ABI
+        shell: pwsh
+        run: |
+          $out='lab_results\moe_ng_v02_lab24'
+          & "$out\warp_harness_inv.exe" "$out\input.f32" 24 24 36 36 "$out\lab22.cso" "$out\fullscreen_vs.cso" "$out\lab22_output.f32" *> "$out\WARP_LAB22.txt"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & "$out\warp_harness_inv.exe" "$out\input.f32" 24 24 36 36 "$out\lab24.cso" "$out\fullscreen_vs.cso" "$out\lab24_output.f32" *> "$out\WARP_LAB24.txt"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Validate LAB24 against independent CPU reference
+        shell: pwsh
+        run: |
+          $out='lab_results\moe_ng_v02_lab24'
+          python tools/lab_moe_ng_v02_warp_validate.py --outdir $out --gpu "$out\lab24_output.f32" --tol 0.000002
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item "$out\SUMMARY.json" "$out\LAB24_CPU_PARITY.json"
+
+      - name: Direct canonical LAB22 versus LAB24 equivalence gate
+        shell: pwsh
+        run: |
+          @'
+          import json, numpy as np
+          from pathlib import Path
+          p=Path('lab_results/moe_ng_v02_lab24'); a=np.fromfile(p/'lab22_output.f32',dtype=np.float32); b=np.fromfile(p/'lab24_output.f32',dtype=np.float32); d=np.abs(a-b)
+          s={'protocol':'LAB24_DIRECT_WARP_EQUIVALENCE_CANONICAL','values':int(a.size),'max_abs':float(d.max()),'mean_abs':float(d.mean()),'different_values':int(np.count_nonzero(d)),'values_over_2e-6':int(np.count_nonzero(d>np.float32(2e-6))),'pass':bool(float(d.max())<=2e-6)}
+          (p/'DIRECT_EQUIVALENCE_CANONICAL.json').write_text(json.dumps(s,indent=2)+'\n',encoding='utf-8'); print(json.dumps(s,indent=2))
+          if not s['pass']: raise SystemExit('canonical drift exceeds 2e-6')
+          '@ | python -
+
+      - name: Generate deterministic stress probes
+        shell: pwsh
+        run: |
+          @'
+          import numpy as np
+          from pathlib import Path
+          p=Path('lab_results/moe_ng_v02_lab24'); H=W=24; y,x=np.mgrid[0:H,0:W]; F=np.float32
+          def rgba(r,g,b,a=None):
+              if a is None: a=np.ones((H,W),dtype=np.float32)
+              return np.stack([r,g,b,a],axis=2).astype(np.float32)
+          const=np.full((H,W),F(.37),dtype=np.float32); rgba(const,const,const).tofile(p/'probe_constant.f32')
+          xf=x.astype(np.float32)/F(W-1); yf=y.astype(np.float32)/F(H-1); rgba(F(.05)+F(.85)*xf,F(.08)+F(.80)*yf,F(.10)+F(.40)*xf+F(.35)*yf).tofile(p/'probe_affine.f32')
+          step=(x>=12).astype(np.float32); diag=((x+y)>=23).astype(np.float32); rgba(step,diag,F(.25)+F(.70)*step).tofile(p/'probe_steps.f32')
+          checker=((x+y)&1).astype(np.float32); stripes=((2*x+y)%5<2).astype(np.float32); rng=np.random.default_rng(0x4C41423234); noise=rng.random((H,W),dtype=np.float32); rgba(F(.05)+F(.9)*checker,F(.05)+F(.8)*stripes,F(.05)+F(.75)*noise).tofile(p/'probe_hf_noise.f32')
+          '@ | python -
+
+      - name: Execute and compare stress probes
+        shell: pwsh
+        run: |
+          $out='lab_results\moe_ng_v02_lab24'
+          foreach($n in @('constant','affine','steps','hf_noise')) {
+            & "$out\warp_harness_inv.exe" "$out\probe_$n.f32" 24 24 36 36 "$out\lab22.cso" "$out\fullscreen_vs.cso" "$out\probe_${n}_lab22.f32" *> "$out\WARP_${n}_LAB22.txt"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            & "$out\warp_harness_inv.exe" "$out\probe_$n.f32" 24 24 36 36 "$out\lab24.cso" "$out\fullscreen_vs.cso" "$out\probe_${n}_lab24.f32" *> "$out\WARP_${n}_LAB24.txt"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          @'
+          import json, numpy as np
+          from pathlib import Path
+          p=Path('lab_results/moe_ng_v02_lab24'); rows=[]
+          for n in ('constant','affine','steps','hf_noise'):
+              a=np.fromfile(p/f'probe_{n}_lab22.f32',dtype=np.float32); b=np.fromfile(p/f'probe_{n}_lab24.f32',dtype=np.float32); d=np.abs(a-b)
+              rows.append({'probe':n,'max_abs':float(d.max()),'mean_abs':float(d.mean()),'different_values':int(np.count_nonzero(d)),'values_over_2e-6':int(np.count_nonzero(d>np.float32(2e-6))),'finite':bool(np.isfinite(b).all()),'pass':bool(np.isfinite(b).all() and float(d.max())<=2e-6)})
+          s={'protocol':'LAB24_DIRECT_WARP_EQUIVALENCE_STRESS','tolerance_abs':2e-6,'probes':rows,'pass':all(r['pass'] for r in rows)}
+          (p/'DIRECT_EQUIVALENCE_PROBES.json').write_text(json.dumps(s,indent=2)+'\n',encoding='utf-8'); print(json.dumps(s,indent=2))
+          if not s['pass']: raise SystemExit('stress-probe equivalence failure')
+          '@ | python -
+
+      - name: Emit hashes and provenance
+        shell: pwsh
+        run: |
+          $out='lab_results\moe_ng_v02_lab24'
+          Get-FileHash "$out\lab22.cso" -Algorithm SHA256 | Format-List | Out-File "$out\HASHES.txt"
+          Get-FileHash "$out\lab24.cso" -Algorithm SHA256 | Format-List | Out-File "$out\HASHES.txt" -Append
+          @(
+            "protocol=LAB24_HOST_INVSIZE",
+            "branch=$env:GITHUB_REF_NAME",
+            "commit=$env:GITHUB_SHA",
+            "baseline=src/hlsl/moe_ng_v02/ptar_moe_ng_v02_lab22_phase_fused_mc_ps.hlsl",
+            "candidate=src/hlsl/moe_ng_v02/ptar_moe_ng_v02_lab24_host_invsize_ps.hlsl",
+            "cb0_zw_semantics=RECIPROCAL_INPUT_SIZE",
+            "fxc=${{ steps.fxc.outputs.path }}",
+            "physical_gpu_executed=false"
+          ) | Set-Content "$out\PROVENANCE.txt"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: moe-ng-v02-lab24-host-invsize
+          path: lab_results/moe_ng_v02_lab24
