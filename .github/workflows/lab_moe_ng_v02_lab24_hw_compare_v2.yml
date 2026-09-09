@@ -1,0 +1,151 @@
+name: LAB PTAR-NG MoE v02 LAB24 One-Shot HW Compare Pack v2
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-lab24-hw-compare
+
+permissions:
+  contents: read
+
+jobs:
+  build-validate-package:
+    if: contains(github.event.head_commit.message, '[run-lab24-hw-pack2]')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install reference deps
+        run: python -m pip install --disable-pip-version-check numpy pillow
+
+      - name: Locate toolchain and reproduce exact shaders
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $fxc=Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Filter fxc.exe -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if(-not $fxc){ throw 'x64 FXC not found' }
+          $vswhere=Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs=(& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1)
+          if(-not $vs){ throw 'VC toolchain not found' }
+          "VCVARS=$(Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat')" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          $stage=Join-Path $env:RUNNER_TEMP 'lab24_hw2'; New-Item -ItemType Directory -Force $stage | Out-Null
+          $src22='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab22_phase_fused_mc_ps.hlsl'
+          $src24='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab24_host_invsize_ps.hlsl'
+          if((git hash-object -- $src24).Trim().ToLowerInvariant() -ne '823726cc9dbdf669815a4ce9f1cabb462f147a15'){ throw 'LAB24 source blob mismatch' }
+          $c22=Join-Path $stage 'ptar_moe_ng_v02_lab22_phase_fused_mc_ps.cso'; $c24=Join-Path $stage 'ptar_moe_ng_v02_lab24_host_invsize_ps.cso'; $asm24=Join-Path $stage 'lab24.asm'
+          & $fxc.FullName /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo $c22 $src22; if($LASTEXITCODE -ne 0){ throw 'LAB22 compile failed' }
+          & $fxc.FullName /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo $c24 /Fc $asm24 $src24; if($LASTEXITCODE -ne 0){ throw 'LAB24 compile failed' }
+          $h22=(Get-FileHash $c22 -Algorithm SHA256).Hash.ToLowerInvariant(); $h24=(Get-FileHash $c24 -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($h22 -ne '148a26f453a49fa319ea7aa7a448ef30b01dece508fccc6bd21f4fdae10926b8'){ throw "LAB22 hash $h22" }
+          if($h24 -ne 'fdf85502f95404d99ac308f5ed67faff4e0d326550ba8502f722279ab406a618'){ throw "LAB24 hash $h24" }
+          $asm=Get-Content $asm24 -Raw; if((([regex]::Matches($asm,'(?mi)^\s*gather4')).Count) -ne 1 -or (([regex]::Matches($asm,'(?mi)^\s*sample_l')).Count) -ne 4 -or (([regex]::Matches($asm,'(?mi)^\s*div\b')).Count) -ne 0){ throw 'LAB24 DXBC texture/div contract failed' }
+          if($asm -match '(?mi)^\s*(store_uav|atomic_)'){ throw 'LAB24 UAV op' }
+          "LAB22_CSO=$c22" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "LAB24_CSO=$c24" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host '[PASS] exact LAB22/LAB24 DXBC reproduced'
+
+      - name: Prepare isolated full runtime and sources
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $bundle=Join-Path $env:RUNNER_TEMP 'PTAR_NG_MOE_V02_LAB24_HW_COMPARE_WIN81_X64'
+          python tools/prepare_moe_ng_v02_runtime_bundle.py --root $env:GITHUB_WORKSPACE --v02-cso $env:LAB24_CSO --out $bundle
+          if($LASTEXITCODE -ne 0){ throw 'bundle prepare failed' }
+          "BUNDLE=$bundle" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          $old=Join-Path $bundle 'shaders\ptar_moe_ng_v02_mc_native_detail_ps.cso'; $new=Join-Path $bundle 'shaders\ptar_moe_ng_v02_lab24_host_invsize_ps.cso'; Move-Item $old $new
+          Copy-Item $env:LAB22_CSO (Join-Path $bundle 'shaders\ptar_moe_ng_v02_lab22_phase_fused_mc_ps.cso')
+          $hostPath=Join-Path $bundle 'source\ptar_moe_ng_v02_autonomous_validation.cpp'
+          $cmpPath=Join-Path $bundle 'source\moe_ng_v02_lab24_hw_compare.cpp'
+          python tools/prepare_moe_ng_v02_lab24_runtime_sources.py --full-validator $hostPath --comparator-template tools\moe_ng_v02_lab22_hw_compare.cpp --comparator-out $cmpPath
+          if($LASTEXITCODE -ne 0){ throw 'source transformer failed' }
+          @"
+          {
+            "variant":"PTAR_NG_MOE_V02_LAB24_HOST_INVSIZE",
+            "pack_commit":"$env:GITHUB_SHA",
+            "lab22_cso_sha256":"148a26f453a49fa319ea7aa7a448ef30b01dece508fccc6bd21f4fdae10926b8",
+            "lab24_source_blob":"823726cc9dbdf669815a4ce9f1cabb462f147a15",
+            "lab24_cso_sha256":"fdf85502f95404d99ac308f5ed67faff4e0d326550ba8502f722279ab406a618",
+            "lab24_software_run":34316635339,
+            "lab24_dimension_sweep_run":34316874238,
+            "software_equivalence":"bit_exact_LAB22_vs_LAB24_WARP_canonical_stress_and_6_dimensions",
+            "cb0_lab24":"xy=input_size;zw=reciprocal_input_size",
+            "hardware_executed":false
+          }
+          "@ | Set-Content (Join-Path $bundle 'SHADER_PROVENANCE.json') -Encoding utf8
+
+      - name: Build MT Win8.1 binaries
+        shell: pwsh
+        run: |
+          $cmd=@"
+          call "$env:VCVARS"
+          call "$env:BUNDLE\BUILD_HOST_ONCE_IN_DEV_ENV.bat"
+          if errorlevel 1 exit /b %errorlevel%
+          cl /nologo /EHsc /O2 /MT /W4 /WX /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /DUNICODE /D_UNICODE /I "$env:BUNDLE\include" "$env:BUNDLE\source\moe_ng_v02_lab24_hw_compare.cpp" /Fe:"$env:BUNDLE\bin\moe_ng_v02_lab24_hw_compare.exe" /link /SUBSYSTEM:CONSOLE,6.03 d3d11.lib dxgi.lib bcrypt.lib
+          exit /b %errorlevel%
+          "@
+          $bat=Join-Path $env:RUNNER_TEMP 'build_lab24_hw2.bat'; Set-Content $bat $cmd -Encoding ascii
+          cmd.exe /d /s /c "`"$bat`""; if($LASTEXITCODE -ne 0){ throw "build rc=$LASTEXITCODE" }
+
+      - name: Hard static audit
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $full=Join-Path $env:BUNDLE 'bin\ptar_moe_ng_v02_autonomous_validation.exe'; $cmp=Join-Path $env:BUNDLE 'bin\moe_ng_v02_lab24_hw_compare.exe'
+          if(-not (Test-Path $full) -or -not (Test-Path $cmp)){ throw 'missing exe' }
+          if((Get-ChildItem "$env:BUNDLE\corpus\input_lr" -Filter '*.png' -File).Count -ne 42 -or (Get-ChildItem "$env:BUNDLE\corpus\expected_moe_v02_float32" -Filter '*.png' -File).Count -ne 42){ throw 'corpus count mismatch' }
+          $fi=Get-Content "$env:BUNDLE\build_evidence\IMPORTS_VALIDATED.txt" -Raw; if($fi -match 'D3DCOMPILER|VCRUNTIME|MSVCP|UCRTBASE|API-MS-WIN-CRT'){ throw 'full validator forbidden import' }
+          $dump=Join-Path $env:BUNDLE 'build_evidence\LAB24_COMPARE_IMPORTS.txt'; cmd.exe /d /s /c "call `"$env:VCVARS`" && dumpbin /dependents `"$cmp`" > `"$dump`""; if($LASTEXITCODE -ne 0){ throw 'dumpbin failed' }
+          if((Get-Content $dump -Raw) -match 'D3DCOMPILER|VCRUNTIME|MSVCP|UCRTBASE|API-MS-WIN-CRT'){ throw 'comparator forbidden import' }
+          $checks=@{
+            'shaders\ptar_moe_ng_v02_lab22_phase_fused_mc_ps.cso'='148a26f453a49fa319ea7aa7a448ef30b01dece508fccc6bd21f4fdae10926b8';
+            'shaders\ptar_moe_ng_v02_lab24_host_invsize_ps.cso'='fdf85502f95404d99ac308f5ed67faff4e0d326550ba8502f722279ab406a618';
+            'shaders\ptar_k185_control_ps.cso'='6bd926e85f21dd08788ff9d189c472800a5e0eb726091158ed1ecde3d06d8c16';
+            'shaders\ptar_vs.cso'='6328bbd87aac73b07d6112de593f781b2769381aae65fa9c2bcfa06fdc68585c'
+          }
+          foreach($k in $checks.Keys){ $got=(Get-FileHash (Join-Path $env:BUNDLE $k) -Algorithm SHA256).Hash.ToLowerInvariant(); if($got -ne $checks[$k]){ throw "hash mismatch $k" } }
+          $hostText=Get-Content "$env:BUNDLE\source\ptar_moe_ng_v02_autonomous_validation.cpp" -Raw; if($hostText -notmatch 'c\.outputSize\[0\]=1\.0f/\(float\)inW'){ throw 'validator inverse ABI missing' }
+          $cmpText=Get-Content "$env:BUNDLE\source\moe_ng_v02_lab24_hw_compare.cpp" -Raw; if($cmpText -notmatch 'if\(ps==m_lab24\.Get\(\)\)' -or $cmpText -notmatch 'SAMPLE_TRIADS=600u'){ throw 'comparator protocol patch missing' }
+          @('LAB24_STATIC_AUDIT=PASS','full_parity_cases=42','same_run_triads=600','same_run_permutations=6','lab24_zero_div=YES','runtime_d3dcompiler_required=NO','dynamic_crt_required=NO','windows_subsystem_target=6.03','hardware_executed=false') | Set-Content "$env:BUNDLE\build_evidence\LAB24_STATIC_AUDIT.txt" -Encoding ascii
+          Write-Host '[PASS] static audit'
+
+      - name: Add one-click hardware launcher and package
+        shell: pwsh
+        run: |
+          @'
+          @echo off
+          setlocal EnableExtensions
+          for %%I in ("%~dp0.") do set "BUNDLE=%%~fI"
+          set "OUT=%BUNDLE%\results_lab24_compare_%RANDOM%_%RANDOM%"
+          mkdir "%OUT%" >nul 2>nul
+          echo [PTAR] 1/2 LAB24 full 42-case parity + K185 timing...
+          "%BUNDLE%\bin\ptar_moe_ng_v02_autonomous_validation.exe" --bundle-root "%BUNDLE%" --out "%OUT%\lab24_full"
+          if errorlevel 1 goto :fail
+          echo [PTAR] 2/2 LAB22/LAB24/K185 same-run balanced timing...
+          "%BUNDLE%\bin\moe_ng_v02_lab24_hw_compare.exe" --bundle-root "%BUNDLE%" --out "%OUT%\same_run_compare"
+          if errorlevel 1 goto :fail
+          echo.
+          echo [PTAR] PASS - Results: "%OUT%"
+          exit /b 0
+          :fail
+          set "RC=%ERRORLEVEL%"
+          echo [PTAR] FAIL rc=%RC% - Partial results: "%OUT%"
+          exit /b %RC%
+          '@ | Set-Content "$env:BUNDLE\RUN_LAB24_FULL_AND_COMPARE.bat" -Encoding ascii
+          @"
+          PTAR-NG MoE v02 LAB24 ONE-SHOT GTX HARDWARE PACK
+          pack_commit=$env:GITHUB_SHA
+          LAB22_DXBC_SHA256=148a26f453a49fa319ea7aa7a448ef30b01dece508fccc6bd21f4fdae10926b8
+          LAB24_DXBC_SHA256=fdf85502f95404d99ac308f5ed67faff4e0d326550ba8502f722279ab406a618
+          comparator_protocol=600_TRIADS_SIX_ROTATING_PERMUTATIONS
+          constants=LAB22_K185_NORMAL__LAB24_RECIPROCAL_INPUT
+          hardware_executed=false
+          "@ | Set-Content "$env:BUNDLE\LAB24_HW_COMPARE_PROVENANCE.txt" -Encoding ascii
+          $zip=Join-Path $env:RUNNER_TEMP 'PTAR_NG_MOE_V02_LAB24_ONE_SHOT_GTX_HW_COMPARE_WIN81_X64.zip'; Compress-Archive -Path "$env:BUNDLE\*" -DestinationPath $zip -CompressionLevel Optimal
+          $h=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant(); "PACK_ZIP=$zip" | Out-File $env:GITHUB_ENV -Append -Encoding utf8; Write-Host "PACK_ZIP_SHA256=$h"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-NG-MOE-V02-LAB24-ONE-SHOT-GTX-HW-COMPARE-WIN81-X64
+          path: ${{ env.PACK_ZIP }}
