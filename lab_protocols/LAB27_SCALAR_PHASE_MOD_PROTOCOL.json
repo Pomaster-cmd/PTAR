@@ -1,0 +1,9 @@
+{
+  "protocol": "LAB27_SCALAR_PHASE_MOD",
+  "baseline": "LAB25_HARDWARE_SELECTED",
+  "hypothesis": "Selecting the active x/y phase coordinate before modulo-by-3 may compile to a scalar udiv instead of LAB25's vector .xy udiv, preserving exact output while reducing phase arithmetic width.",
+  "selection_policy": "No parameter sweep. Candidate is admitted only if FXC emits scalar modulo, texture contract remains 1 Gather + 4 SampleLevel worst-case, CPU parity passes, and LAB25/LAB27 WARP outputs are bit-exact on canonical plus stress input.",
+  "hardware_policy": "No physical GPU test unless the software gate proves a genuinely different compiled scalar-modulo shape.",
+  "main_modified": false,
+  "source_modified": false
+}
