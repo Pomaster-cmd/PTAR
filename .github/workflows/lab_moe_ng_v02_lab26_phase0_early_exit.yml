@@ -1,0 +1,175 @@
+name: LAB PTAR-NG MoE v02 LAB26 Phase0 Early Exit
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-native-detail
+
+permissions:
+  contents: read
+
+jobs:
+  fxc-warp-dynamic-fetch-audit:
+    if: contains(github.event.head_commit.message, '[run-lab26]')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install numpy
+        run: python -m pip install --disable-pip-version-check numpy
+
+      - name: Locate x64 FXC
+        id: fxc
+        shell: pwsh
+        run: |
+          $fxc=Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if(-not $fxc){ throw 'x64 fxc.exe not found' }
+          "path=$($fxc.FullName)" >> $env:GITHUB_OUTPUT
+
+      - name: Compile hardware-selected LAB25 and LAB26 identically
+        shell: pwsh
+        run: |
+          $out='lab_results\moe_ng_v02_lab26'; New-Item -ItemType Directory -Force $out | Out-Null
+          $fxc='${{ steps.fxc.outputs.path }}'
+          & $fxc /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$out\lab25.cso" /Fc "$out\lab25.asm" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab25_proven_shape_ps.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & $fxc /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$out\lab26.cso" /Fc "$out\lab26.asm" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab26_phase0_early_exit_ps.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & $fxc /nologo /T vs_5_0 /E main /O3 /Ges /WX /Fo "$out\fullscreen_vs.cso" src\hlsl\moe_ng_v02\lab_fullscreen_vs.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+
+      - name: Static DXBC and branch-placement audit
+        shell: pwsh
+        run: |
+          @'
+          import json,re
+          from collections import Counter
+          from pathlib import Path
+          root=Path('lab_results/moe_ng_v02_lab26')
+          result={'protocol':'LAB26_PHASE0_EARLY_EXIT_STATIC_AUDIT'}
+          for name in ('lab25','lab26'):
+              lines=(root/f'{name}.asm').read_text(encoding='utf-8',errors='replace').splitlines()
+              ops=[]; indexed=[]
+              pat=re.compile(r'^\s*([A-Za-z][A-Za-z0-9_]*)\b')
+              for i,line in enumerate(lines):
+                  s=line.lstrip()
+                  if not s or s.startswith('//') or s.startswith('ps_5_0'): continue
+                  m=pat.match(line)
+                  if not m: continue
+                  op=m.group(1).lower()
+                  if op.startswith('dcl_') or op in {'def','defi','defb'}: continue
+                  ops.append(op); indexed.append((i,op,line.strip()))
+              c=Counter(ops)
+              samples=[x for x in indexed if x[1].startswith('sample_l')]
+              gathers=[x for x in indexed if x[1].startswith('gather4')]
+              branches=[x for x in indexed if x[1] in {'if_nz','if_z','else','endif'}]
+              result[name]={
+                'instruction_total':len(ops),
+                'cso_bytes':(root/f'{name}.cso').stat().st_size,
+                'sample_count':len(samples),'gather_count':len(gathers),
+                'sample_asm_lines':[x[0] for x in samples],
+                'branch_asm_lines':[x[0] for x in branches],
+                'opcode_histogram':dict(sorted(c.items()))
+              }
+          x=result['lab26']
+          # Require the intended compiled control-flow shape: one sample appears,
+          # then an actual branch, then the remaining three sample instructions.
+          if x['sample_count']!=4 or x['gather_count']!=1: raise SystemExit('LAB26 texture op count mismatch')
+          s=x['sample_asm_lines']; b=x['branch_asm_lines']
+          branch_between=any(s[0] < q < s[1] for q in b)
+          result['phase0_fetch_skip_compiled']=bool(branch_between)
+          result['static_admission_pass']=bool(branch_between)
+          (root/'STATIC_AUDIT.json').write_text(json.dumps(result,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps(result,indent=2))
+          if not branch_between:
+              raise SystemExit('FXC did not retain a branch between the first and second texture samples; no dynamic-fetch hypothesis remains')
+          '@ | python -
+
+      - name: Build WARP harness
+        shell: pwsh
+        run: |
+          $vswhere="${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vcvars=& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Auxiliary\Build\vcvars64.bat' | Select-Object -First 1
+          if(-not $vcvars){ throw 'vcvars64.bat not found' }
+          $out='lab_results\moe_ng_v02_lab26'
+          $cmd="call `"$vcvars`" && cl /nologo /EHsc /O2 /std:c++17 tools\lab_moe_ng_v02_warp_harness.cpp /Fe:$out\warp_harness.exe d3d11.lib dxgi.lib"
+          cmd.exe /d /s /c $cmd
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+
+      - name: Prepare canonical CPU reference and WARP input
+        run: python tools/lab_moe_ng_v02_warp_validate.py --outdir lab_results/moe_ng_v02_lab26 --prepare
+
+      - name: Canonical WARP LAB25 LAB26 and CPU parity
+        shell: pwsh
+        run: |
+          $out='lab_results\moe_ng_v02_lab26'
+          & "$out\warp_harness.exe" "$out\input.f32" 24 24 36 36 "$out\lab25.cso" "$out\fullscreen_vs.cso" "$out\lab25_output.f32" *> "$out\WARP_LAB25.txt"
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & "$out\warp_harness.exe" "$out\input.f32" 24 24 36 36 "$out\lab26.cso" "$out\fullscreen_vs.cso" "$out\lab26_output.f32" *> "$out\WARP_LAB26.txt"
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          python tools/lab_moe_ng_v02_warp_validate.py --outdir $out --gpu "$out\lab26_output.f32" --tol 0.000002
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          Copy-Item "$out\SUMMARY.json" "$out\LAB26_CPU_PARITY.json"
+
+      - name: Direct bit-equivalence plus deterministic stress probes
+        shell: pwsh
+        run: |
+          $out='lab_results\moe_ng_v02_lab26'
+          @'
+          import numpy as np
+          from pathlib import Path
+          p=Path('lab_results/moe_ng_v02_lab26')
+          H=W=24; y,x=np.mgrid[0:H,0:W]; F=np.float32
+          def rgba(r,g,b): return np.stack([r,g,b,np.ones((H,W),dtype=np.float32)],axis=2).astype(np.float32)
+          xf=x.astype(np.float32)/F(W-1); yf=y.astype(np.float32)/F(H-1)
+          rgba(F(.03)+F(.93)*xf,F(.04)+F(.91)*yf,F(.05)+F(.45)*xf+F(.35)*yf).tofile(p/'probe_affine.f32')
+          step=(x>=12).astype(np.float32); diag=((x+y)>=23).astype(np.float32)
+          rgba(step,diag,F(.15)+F(.8)*step).tofile(p/'probe_steps.f32')
+          checker=((x+y)&1).astype(np.float32); stripes=((2*x+y)%5<2).astype(np.float32)
+          rng=np.random.default_rng(260925); noise=rng.random((H,W),dtype=np.float32)
+          rgba(F(.03)+F(.94)*checker,F(.05)+F(.88)*stripes,F(.02)+F(.95)*noise).tofile(p/'probe_hf.f32')
+          '@ | python -
+          foreach($n in @('affine','steps','hf')){
+            & "$out\warp_harness.exe" "$out\probe_$n.f32" 24 24 36 36 "$out\lab25.cso" "$out\fullscreen_vs.cso" "$out\probe_${n}_25.f32" *> "$out\WARP_${n}_25.txt"
+            if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+            & "$out\warp_harness.exe" "$out\probe_$n.f32" 24 24 36 36 "$out\lab26.cso" "$out\fullscreen_vs.cso" "$out\probe_${n}_26.f32" *> "$out\WARP_${n}_26.txt"
+            if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          }
+          @'
+          import json,numpy as np
+          from pathlib import Path
+          p=Path('lab_results/moe_ng_v02_lab26'); rows=[]
+          pairs=[('canonical','lab25_output.f32','lab26_output.f32')]+[(n,f'probe_{n}_25.f32',f'probe_{n}_26.f32') for n in ('affine','steps','hf')]
+          for n,a0,b0 in pairs:
+              a=np.fromfile(p/a0,dtype=np.float32); b=np.fromfile(p/b0,dtype=np.float32)
+              d=np.abs(a-b)
+              rows.append({'probe':n,'values':int(a.size),'max_abs':float(d.max()),'mean_abs':float(d.mean()),'different_values':int(np.count_nonzero(d)),'bit_exact':bool(np.array_equal(a,b))})
+          s={'protocol':'LAB26_DIRECT_WARP_EQUIVALENCE','probes':rows,'pass':all(r['bit_exact'] for r in rows)}
+          (p/'DIRECT_EQUIVALENCE.json').write_text(json.dumps(s,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps(s,indent=2))
+          if not s['pass']: raise SystemExit('LAB26 is not bit-exact to LAB25 on WARP probes')
+          '@ | python -
+
+      - name: Emit hashes and provenance
+        shell: pwsh
+        run: |
+          $out='lab_results\moe_ng_v02_lab26'
+          Get-FileHash "$out\lab25.cso" -Algorithm SHA256 | Format-List | Out-File "$out\HASHES.txt"
+          Get-FileHash "$out\lab26.cso" -Algorithm SHA256 | Format-List | Out-File "$out\HASHES.txt" -Append
+          @(
+            "protocol=LAB26_PHASE0_EARLY_EXIT",
+            "branch=$env:GITHUB_REF_NAME",
+            "commit=$env:GITHUB_SHA",
+            "baseline=LAB25_HARDWARE_SELECTED",
+            "physical_gpu_executed=false"
+          ) | Set-Content "$out\PROVENANCE.txt"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: moe-ng-v02-lab26-phase0-early-exit
+          path: lab_results/moe_ng_v02_lab26
