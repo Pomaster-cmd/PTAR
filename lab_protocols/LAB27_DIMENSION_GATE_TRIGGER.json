@@ -1,0 +1,8 @@
+{
+  "protocol": "LAB27_WARP_DIMENSION_EQUIVALENCE",
+  "purpose": "Stress LAB25/LAB27 exact equivalence over square and widescreen exact-x1.5 dimensions before any hardware request.",
+  "dimensions": ["24x24", "64x64", "192x192", "320x180", "640x360", "1280x720"],
+  "baseline": "LAB25_HARDWARE_SELECTED",
+  "candidate": "LAB27_SCALAR_PHASE_MOD",
+  "hardware_executed": false
+}
