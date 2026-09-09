@@ -1,0 +1,1 @@
+LAB28 isolated UV-axis codegen/WARP gate trigger. No production promotion implied.
