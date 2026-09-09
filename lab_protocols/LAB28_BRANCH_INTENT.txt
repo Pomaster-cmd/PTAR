@@ -1,0 +1,1 @@
+LAB28 branch intent: explore UV-space directional sample addressing from hardware-selected LAB27 without modifying main, SOURCE, or the canonical LAB27 branch.
