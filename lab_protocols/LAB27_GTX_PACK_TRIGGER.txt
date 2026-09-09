@@ -1,0 +1,2 @@
+LAB27 GTX960M compare pack CI trigger.
+No physical GPU result is implied by this file.
