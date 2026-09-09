@@ -1,0 +1,94 @@
+name: LAB PTAR-NG MoE v02 LAB24 Dimension Sweep
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-native-detail
+
+permissions:
+  contents: read
+
+jobs:
+  warp-dimension-equivalence:
+    if: contains(github.event.head_commit.message, '[run-lab24-dims]')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --disable-pip-version-check numpy
+
+      - name: Compile exact LAB22/LAB24 shaders
+        shell: pwsh
+        run: |
+          $out='lab_results\moe_ng_v02_lab24_dims'; New-Item -ItemType Directory -Force $out | Out-Null
+          $fxc=Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Filter fxc.exe -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if(-not $fxc){ throw 'x64 FXC not found' }
+          & $fxc.FullName /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$out\lab22.cso" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab22_phase_fused_mc_ps.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & $fxc.FullName /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$out\lab24.cso" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab24_host_invsize_ps.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & $fxc.FullName /nologo /T vs_5_0 /E main /O3 /Ges /WX /Fo "$out\fullscreen_vs.cso" src\hlsl\moe_ng_v02\lab_fullscreen_vs.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          $h22=(Get-FileHash "$out\lab22.cso" -Algorithm SHA256).Hash.ToLowerInvariant(); if($h22 -ne '148a26f453a49fa319ea7aa7a448ef30b01dece508fccc6bd21f4fdae10926b8'){ throw "LAB22 hash mismatch $h22" }
+          $h24=(Get-FileHash "$out\lab24.cso" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "LAB24_HASH=$h24" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Build inverse-size WARP harness
+        shell: pwsh
+        run: |
+          $out='lab_results\moe_ng_v02_lab24_dims'
+          $src=Get-Content tools\lab_moe_ng_v02_warp_harness.cpp -Raw
+          $src=$src.Replace('constants.outputSize[0] = static_cast<float>(outW);','constants.outputSize[0] = 1.0f / static_cast<float>(inW);')
+          $src=$src.Replace('constants.outputSize[1] = static_cast<float>(outH);','constants.outputSize[1] = 1.0f / static_cast<float>(inH);')
+          Set-Content "$out\warp_harness_inv.cpp" $src -Encoding utf8
+          $vswhere="${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vcvars=& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Auxiliary\Build\vcvars64.bat' | Select-Object -First 1
+          $cmd="call `"$vcvars`" && cl /nologo /EHsc /O2 /std:c++17 $out\warp_harness_inv.cpp /Fe:$out\warp_harness_inv.exe d3d11.lib dxgi.lib"
+          cmd.exe /d /s /c $cmd
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+
+      - name: Run deterministic multi-dimension WARP equivalence sweep
+        shell: pwsh
+        run: |
+          @'
+          import json, subprocess, time
+          from pathlib import Path
+          import numpy as np
+          root=Path('lab_results/moe_ng_v02_lab24_dims')
+          dims=[(24,24),(64,64),(192,192),(320,180),(640,360),(1280,720)]
+          rows=[]
+          for W,H in dims:
+              OW,OH=W*3//2,H*3//2
+              y,x=np.mgrid[0:H,0:W]
+              xf=x.astype(np.float32)/np.float32(max(1,W-1)); yf=y.astype(np.float32)/np.float32(max(1,H-1))
+              rng=np.random.default_rng(0x24150000 + W*17 + H*31)
+              noise=rng.random((H,W),dtype=np.float32)
+              r=np.clip(np.float32(.08)+np.float32(.72)*xf+np.float32(.20)*noise,0,1)
+              g=np.clip(np.float32(.06)+np.float32(.70)*yf+np.float32(.24)*(((3*x+5*y)%17)<7),0,1).astype(np.float32)
+              b=np.clip(np.float32(.05)+np.float32(.45)*noise+np.float32(.45)*(((x+y)&1)),0,1).astype(np.float32)
+              a=np.ones((H,W),dtype=np.float32)
+              inp=np.stack([r,g,b,a],axis=2).astype(np.float32)
+              ip=root/'input.f32'; o22=root/'lab22_out.f32'; o24=root/'lab24_out.f32'; inp.tofile(ip)
+              exe=str(root/'warp_harness_inv.exe'); vs=str(root/'fullscreen_vs.cso')
+              t=time.time(); subprocess.run([exe,str(ip),str(W),str(H),str(OW),str(OH),str(root/'lab22.cso'),vs,str(o22)],check=True); t22=time.time()-t
+              t=time.time(); subprocess.run([exe,str(ip),str(W),str(H),str(OW),str(OH),str(root/'lab24.cso'),vs,str(o24)],check=True); t24=time.time()-t
+              aa=np.fromfile(o22,dtype=np.float32); bb=np.fromfile(o24,dtype=np.float32); d=np.abs(aa-bb)
+              row={'input':f'{W}x{H}','output':f'{OW}x{OH}','values':int(aa.size),'max_abs':float(d.max()),'mean_abs':float(d.mean()),'different_values':int(np.count_nonzero(d)),'lab22_warp_wall_s':t22,'lab24_warp_wall_s':t24,'pass':bool(float(d.max())==0.0)}
+              print(row); rows.append(row)
+              for p in (ip,o22,o24): p.unlink(missing_ok=True)
+          s={'protocol':'LAB24_WARP_DIMENSION_SWEEP_BIT_EXACT','lab24_cso_sha256':'%s','dimensions':rows,'pass':all(r['pass'] for r in rows)}
+          s['lab24_cso_sha256'] = __import__('os').environ['LAB24_HASH']
+          (root/'DIMENSION_SWEEP.json').write_text(json.dumps(s,indent=2)+'\n',encoding='utf-8')
+          if not s['pass']: raise SystemExit('LAB24 differs from LAB22 on at least one dimension')
+          '@ | python -
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: moe-ng-v02-lab24-dimension-sweep
+          path: |
+            lab_results/moe_ng_v02_lab24_dims/DIMENSION_SWEEP.json
+            lab_results/moe_ng_v02_lab24_dims/lab22.cso
+            lab_results/moe_ng_v02_lab24_dims/lab24.cso
