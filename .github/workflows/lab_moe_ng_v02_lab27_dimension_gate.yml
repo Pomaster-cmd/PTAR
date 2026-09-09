@@ -1,0 +1,110 @@
+name: LAB PTAR-NG MoE v02 LAB27 Dimension Equivalence
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-native-detail
+
+permissions:
+  contents: read
+
+jobs:
+  warp-dimension-equivalence:
+    if: contains(github.event.head_commit.message, '[run-lab27-dim]')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --disable-pip-version-check numpy
+
+      - name: Locate x64 FXC
+        id: fxc
+        shell: pwsh
+        run: |
+          $fxc=Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if(-not $fxc){ throw 'x64 fxc.exe not found' }
+          "path=$($fxc.FullName)" >> $env:GITHUB_OUTPUT
+
+      - name: Compile exact LAB25 and LAB27
+        shell: pwsh
+        run: |
+          $out='lab_results\moe_ng_v02_lab27_dim'; New-Item -ItemType Directory -Force $out | Out-Null
+          $fxc='${{ steps.fxc.outputs.path }}'
+          & $fxc /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$out\lab25.cso" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab25_proven_shape_ps.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & $fxc /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$out\lab27.cso" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab27_scalar_phase_mod_ps.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & $fxc /nologo /T vs_5_0 /E main /O3 /Ges /WX /Fo "$out\fullscreen_vs.cso" src\hlsl\moe_ng_v02\lab_fullscreen_vs.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+
+      - name: Build WARP harness
+        shell: pwsh
+        run: |
+          $vswhere="${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vcvars=& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Auxiliary\Build\vcvars64.bat' | Select-Object -First 1
+          if(-not $vcvars){ throw 'vcvars64.bat not found' }
+          $out='lab_results\moe_ng_v02_lab27_dim'
+          $cmd="call `"$vcvars`" && cl /nologo /EHsc /O2 /std:c++17 tools\lab_moe_ng_v02_warp_harness.cpp /Fe:$out\warp_harness.exe d3d11.lib dxgi.lib"
+          cmd.exe /d /s /c $cmd
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+
+      - name: Generate deterministic inputs
+        shell: pwsh
+        run: |
+          @'
+          import numpy as np, json
+          from pathlib import Path
+          p=Path('lab_results/moe_ng_v02_lab27_dim')
+          dims=[(24,24),(64,64),(192,192),(320,180),(640,360),(1280,720)]
+          rows=[]
+          for W,H in dims:
+              y,x=np.mgrid[0:H,0:W]
+              xf=x.astype(np.float32)/np.float32(max(W-1,1)); yf=y.astype(np.float32)/np.float32(max(H-1,1))
+              checker=((x+y)&1).astype(np.float32)
+              wave=(np.sin(x.astype(np.float32)*np.float32(.173))+np.cos(y.astype(np.float32)*np.float32(.137)))*np.float32(.25)+np.float32(.5)
+              rng=np.random.default_rng(270000+W*3+H); noise=rng.random((H,W),dtype=np.float32)
+              img=np.stack([
+                np.clip(np.float32(.05)+np.float32(.65)*xf+np.float32(.25)*checker,0,1),
+                np.clip(np.float32(.04)+np.float32(.66)*yf+np.float32(.25)*wave,0,1),
+                np.clip(np.float32(.1)+np.float32(.45)*noise+np.float32(.35)*(xf*yf),0,1),
+                np.ones((H,W),np.float32)
+              ],axis=2).astype(np.float32)
+              fn=p/f'in_{W}x{H}.f32'; img.tofile(fn)
+              rows.append({'w':W,'h':H,'ow':W*3//2,'oh':H*3//2,'input':str(fn)})
+          (p/'DIMS.json').write_text(json.dumps(rows,indent=2)+'\n')
+          '@ | python -
+
+      - name: WARP dimension sweep LAB25 vs LAB27
+        shell: pwsh
+        run: |
+          $out='lab_results\moe_ng_v02_lab27_dim'
+          $dims=@(@(24,24),@(64,64),@(192,192),@(320,180),@(640,360),@(1280,720))
+          foreach($d in $dims){
+            $w=$d[0];$h=$d[1];$ow=[int]($w*3/2);$oh=[int]($h*3/2)
+            & "$out\warp_harness.exe" "$out\in_${w}x${h}.f32" $w $h $ow $oh "$out\lab25.cso" "$out\fullscreen_vs.cso" "$out\out25_${w}x${h}.f32" *> "$out\WARP25_${w}x${h}.txt"
+            if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+            & "$out\warp_harness.exe" "$out\in_${w}x${h}.f32" $w $h $ow $oh "$out\lab27.cso" "$out\fullscreen_vs.cso" "$out\out27_${w}x${h}.f32" *> "$out\WARP27_${w}x${h}.txt"
+            if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          }
+          @'
+          import numpy as np,json,hashlib
+          from pathlib import Path
+          p=Path('lab_results/moe_ng_v02_lab27_dim'); rows=[]
+          for W,H in [(24,24),(64,64),(192,192),(320,180),(640,360),(1280,720)]:
+              a=np.fromfile(p/f'out25_{W}x{H}.f32',np.float32); b=np.fromfile(p/f'out27_{W}x{H}.f32',np.float32)
+              d=np.abs(a-b)
+              rows.append({'input':f'{W}x{H}','output':f'{W*3//2}x{H*3//2}','values':int(a.size),'different_values':int(np.count_nonzero(d)),'max_abs':float(d.max()) if d.size else 0.0,'bit_exact':bool(np.array_equal(a,b))})
+          result={'protocol':'LAB27_WARP_DIMENSION_EQUIVALENCE','cases':rows,'pass':all(r['bit_exact'] for r in rows)}
+          (p/'DIMENSION_EQUIVALENCE.json').write_text(json.dumps(result,indent=2)+'\n')
+          print(json.dumps(result,indent=2))
+          if not result['pass']: raise SystemExit('LAB27 dimension equivalence failed')
+          '@ | python -
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: moe-ng-v02-lab27-dimension-equivalence
+          path: lab_results/moe_ng_v02_lab27_dim
