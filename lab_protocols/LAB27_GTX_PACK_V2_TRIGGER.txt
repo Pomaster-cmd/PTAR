@@ -1,0 +1,3 @@
+LAB27 GTX960M compare pack V2 CI trigger.
+No physical GPU result is implied by this file.
+The canonical lab branch, main, and SOURCE remain untouched by this safety-branch pack build.
