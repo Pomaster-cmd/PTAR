@@ -1,0 +1,31 @@
+{
+  "protocol": "LAB38A_RUN2_RESULT_INTEGRITY",
+  "source_results_zip_filename": "results(20260910-200143).zip",
+  "source_results_zip_sha256": "b48a09c8178e6cde0256898c6cb745f8b926be2a15690f155101e9c02d0dc1fa",
+  "zip_crc_pass": true,
+  "files": {
+    "LAB38A_COMPARE_RAW.csv": {
+      "sha256": "f2980a05a01bb216f85c4dffb0e42f21e8e4dfccd4259a502986a455691dc941",
+      "bytes": 44387,
+      "rows": 600
+    },
+    "BLOCKS_60.csv": {
+      "sha256": "41185c5136946b08d0b0c918bafeb0e6a15ad91c267ed0fd02b50a715959ccdb",
+      "bytes": 702,
+      "blocks": 10
+    },
+    "LAB38A_COMPARE_SUMMARY.json": {
+      "sha256": "2fbaa8180e56002d1b12f5bbdd11d2ecd53d7d85f474c1fe6b8e7211b16accf9",
+      "bytes": 1004
+    }
+  },
+  "expected_shader_hashes": {
+    "lab37b": "cd92ead859b9e7e210b96b1b811c95f91b1eba3c18c64a7cfa83e0a004c5a0b5",
+    "lab38a": "d60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3",
+    "k185": "6bd926e85f21dd08788ff9d189c472800a5e0eb726091158ed1ecde3d06d8c16"
+  },
+  "protocol_valid": true,
+  "adapter_valid": true,
+  "resolution_valid": true,
+  "balanced_six_permutations_100_each": true
+}
