@@ -1,0 +1,64 @@
+name: LAB39A Codegen Gate
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-lab39-svpos-fma
+
+permissions:
+  contents: read
+
+jobs:
+  codegen:
+    if: contains(github.event.head_commit.message, '[run-lab39a-codegen]')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Locate x64 FXC
+        id: fxc
+        shell: pwsh
+        run: |
+          $fxc=Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if(-not $fxc){ throw 'x64 FXC not found' }
+          "path=$($fxc.FullName)" >> $env:GITHUB_OUTPUT
+      - name: Compile and audit LAB38A LAB39A
+        shell: pwsh
+        run: |
+          $out='lab_results\lab39a_codegen'; New-Item -ItemType Directory -Force $out | Out-Null
+          $fxc='${{ steps.fxc.outputs.path }}'
+          & $fxc /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$out\lab38a.cso" /Fc "$out\lab38a.asm" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab38a_branchless_phase0_ps.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & $fxc /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$out\lab39a.cso" /Fc "$out\lab39a.asm" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab39a_svpos_fma_ps.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          @'
+          import hashlib,json,re
+          from collections import Counter
+          from pathlib import Path
+          out=Path('lab_results/lab39a_codegen'); pat=re.compile(r'^\s*([A-Za-z][A-Za-z0-9_]*)\b')
+          def audit(n):
+              ops=[]
+              for raw in (out/f'{n}.asm').read_text(encoding='utf-8',errors='replace').splitlines():
+                  s=raw.lstrip(); m=pat.match(raw)
+                  if not s or s.startswith('//') or s.startswith('ps_5_0') or not m: continue
+                  op=m.group(1).lower()
+                  if op.startswith('dcl_') or op in {'def','defi','defb'}: continue
+                  ops.append(op)
+              c=Counter(ops); p=out/f'{n}.cso'
+              return {'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'instructions':len(ops),'bytes':p.stat().st_size,'div':c.get('div',0),'udiv':c.get('udiv',0),'gather4':sum(v for k,v in c.items() if k.startswith('gather4')),'sample_l':sum(v for k,v in c.items() if k.startswith('sample_l')),'uav':sum(v for k,v in c.items() if k.startswith('store_uav') or k.startswith('atomic_')),'round_ni':c.get('round_ni',0),'mad':c.get('mad',0),'mul':c.get('mul',0),'movc':c.get('movc',0),'ret':c.get('ret',0),'op_counts':dict(sorted(c.items()))}
+          a=audit('lab38a'); b=audit('lab39a')
+          expected38='d60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3'
+          if a['sha256']!=expected38: raise SystemExit('LAB38A hash mismatch')
+          contract=all(x['gather4']==1 and x['sample_l']==4 and x['uav']==0 and x['div']==0 and x['udiv']==0 for x in (a,b))
+          candidate_shape=(b['instructions']<=48 and b['ret']==1)
+          r={'protocol':'LAB39A_CODEGEN_GATE','lab38a':a,'lab39a':b,'instruction_delta':b['instructions']-a['instructions'],'byte_delta':b['bytes']-a['bytes'],'texture_contract_pass':contract,'candidate_shape_pass':candidate_shape,'pass':bool(contract and candidate_shape)}
+          (out/'CODEGEN_AUDIT.json').write_text(json.dumps(r,indent=2)+'\n',encoding='utf-8'); print(json.dumps(r,indent=2))
+          if not r['pass']: raise SystemExit('codegen gate failed')
+          '@ | python -
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lab39a-codegen-gate
+          path: lab_results/lab39a_codegen
