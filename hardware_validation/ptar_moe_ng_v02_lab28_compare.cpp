@@ -31,7 +31,7 @@ static const char* kLab27Sha="48e3964198c6d1e4371201655519d8ccfc37fe22838b26f3ce
 static const char* kLab28Sha="fb77c785fd79891c321a4abf5d517367a7d873574c04046fe6c44b45a0df9a77";
 static const char* kK185Sha ="6bd926e85f21dd08788ff9d189c472800a5e0eb726091158ed1ecde3d06d8c16";
 static const char* kK185VsSha="6328bbd87aac73b07d6112de593f781b2769381aae65fa9c2bcfa06fdc68585c";
-static const char* kLabVsSha ="f2512c09f70c30aa6f4b06e6885f34acac23ee5e5e3b94486b0846159578fcf8";
+static const char* kLabVsSha ="f5d7c0f9be164a924fbe821137fc7bb216c479abc5701411bd1a09346dd5078b";
 
 static std::wstring Join(const std::wstring&a,const std::wstring&b){if(a.empty())return b;if(a.back()==L'\\'||a.back()==L'/')return a+b;return a+L"\\"+b;}
 static bool EnsureDir(const std::wstring&p){DWORD a=GetFileAttributesW(p.c_str());if(a!=INVALID_FILE_ATTRIBUTES&&(a&FILE_ATTRIBUTE_DIRECTORY))return true;if(CreateDirectoryW(p.c_str(),0))return true;return GetLastError()==ERROR_ALREADY_EXISTS;}
