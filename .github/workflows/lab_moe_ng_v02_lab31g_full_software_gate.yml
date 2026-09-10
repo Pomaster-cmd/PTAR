@@ -1,0 +1,220 @@
+name: LAB31G Full Software Gate
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-lab31-codegen-sweep
+
+permissions:
+  contents: read
+
+jobs:
+  full-gate:
+    if: contains(github.event.head_commit.message, '[run-lab31g-full]')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --disable-pip-version-check numpy pillow
+
+      - name: Compile frozen LAB30C and LAB31G
+        shell: pwsh
+        run: |
+          $out='lab_results\lab31g_full'; New-Item -ItemType Directory -Force $out | Out-Null
+          $fxc=Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if(-not $fxc){ throw 'x64 FXC not found' }
+          & $fxc.FullName /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$out\lab30c.cso" /Fc "$out\lab30c.asm" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab30c_movc_frac_ps.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & $fxc.FullName /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$out\lab31g.cso" /Fc "$out\lab31g.asm" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab31g_host_inv_half_mad_ps.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & $fxc.FullName /nologo /T vs_5_0 /E main /O3 /Ges /WX /Fo "$out\fullscreen_vs.cso" src\hlsl\moe_ng_v02\lab_fullscreen_vs.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          $h30=(Get-FileHash "$out\lab30c.cso" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $h31=(Get-FileHash "$out\lab31g.cso" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($h30 -ne 'be967e9bdb56cad2f1b90e9d7e553a0316140577329e900f4caa02d337aabb8a'){ throw "LAB30C hash mismatch $h30" }
+          if($h31 -ne 'ead1e18944b392ef23562d9a45a9429d5bdee77ae914e313b415c3143c39aed1'){ throw "LAB31G hash mismatch $h31" }
+          @("LAB30C=$h30","LAB31G=$h31") | Set-Content "$out\HASHES.txt" -Encoding ascii
+
+      - name: Strict DXBC audit
+        shell: pwsh
+        run: |
+          @'
+          import json,re
+          from collections import Counter
+          from pathlib import Path
+          p=Path('lab_results/lab31g_full'); rows={}; op_re=re.compile(r'^\s*([A-Za-z][A-Za-z0-9_]*)\b')
+          for n in ['lab30c','lab31g']:
+              ops=[]
+              for raw in (p/f'{n}.asm').read_text(encoding='utf-8',errors='replace').splitlines():
+                  s=raw.lstrip()
+                  if not s or s.startswith('//') or s.startswith('ps_5_0'): continue
+                  m=op_re.match(raw)
+                  if not m: continue
+                  op=m.group(1).lower()
+                  if op.startswith('dcl_') or op in {'def','defi','defb'}: continue
+                  ops.append(op)
+              c=Counter(ops); rows[n]={'instruction_total':len(ops),'cso_bytes':(p/f'{n}.cso').stat().st_size,'div_ops':c.get('div',0),'gather4_ops':sum(v for k,v in c.items() if k.startswith('gather4')),'sample_l_ops':sum(v for k,v in c.items() if k.startswith('sample_l')),'uav_ops':sum(v for k,v in c.items() if k.startswith('store_uav') or k.startswith('atomic_')),'op_counts':dict(sorted(c.items()))}
+          contract=all(r['gather4_ops']==1 and r['sample_l_ops']==4 and r['uav_ops']==0 for r in rows.values())
+          expected=rows['lab30c']['instruction_total']==55 and rows['lab30c']['cso_bytes']==2632 and rows['lab30c']['div_ops']==3 and rows['lab31g']['instruction_total']==53 and rows['lab31g']['cso_bytes']==2568 and rows['lab31g']['div_ops']==0
+          out={'protocol':'LAB31G_FULL_DXBC_AUDIT','lab30c':rows['lab30c'],'lab31g':rows['lab31g'],'texture_contract_pass':contract,'expected_codegen_pass':expected,'pass':bool(contract and expected)}
+          (p/'DXBC_AUDIT.json').write_text(json.dumps(out,indent=2)+'\n',encoding='utf-8'); print(json.dumps(out,indent=2))
+          if not out['pass']: raise SystemExit('DXBC audit failed')
+          '@ | python -
+
+      - name: Generate legacy and LAB31G ABI harness sources
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          p=Path('lab_results/lab31g_full')
+          for source,outbase in [('tools/lab_moe_ng_v02_warp_harness.cpp','float'),('tools/lab_moe_ng_v02_warp_harness_unorm8.cpp','unorm8')]:
+              s=Path(source).read_text(encoding='utf-8')
+              (p/f'warp_{outbase}_legacy.cpp').write_text(s,encoding='utf-8')
+              t=s.replace('constants.inputSize[0] = static_cast<float>(inW);','constants.inputSize[0] = 1.0f / static_cast<float>(inW);').replace('constants.inputSize[1] = static_cast<float>(inH);','constants.inputSize[1] = 1.0f / static_cast<float>(inH);').replace('constants.outputSize[0] = static_cast<float>(outW);','constants.outputSize[0] = 0.5f / static_cast<float>(inW);').replace('constants.outputSize[1] = static_cast<float>(outH);','constants.outputSize[1] = 0.5f / static_cast<float>(inH);')
+              if t==s: raise SystemExit(f'ABI patch failed for {source}')
+              (p/f'warp_{outbase}_lab31g.cpp').write_text(t,encoding='utf-8')
+          '@ | python -
+
+      - name: Build float and UNORM8 WARP harness variants
+        shell: pwsh
+        run: |
+          $out='lab_results\lab31g_full'; $vswhere="${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vcvars=& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Auxiliary\Build\vcvars64.bat' | Select-Object -First 1
+          if(-not $vcvars){ throw 'vcvars64.bat not found' }
+          foreach($n in @('float_legacy','float_lab31g','unorm8_legacy','unorm8_lab31g')){
+            $cmd="call `"$vcvars`" && cl /nologo /EHsc /O2 /std:c++17 $out\warp_$n.cpp /Fe:$out\warp_$n.exe d3d11.lib dxgi.lib"
+            cmd.exe /d /s /c $cmd
+            if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          }
+
+      - name: CPU parity and canonical float equivalence
+        shell: pwsh
+        run: |
+          $out='lab_results\lab31g_full'
+          python tools/lab_moe_ng_v02_warp_validate.py --outdir $out --prepare
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & "$out\warp_float_legacy.exe" "$out\input.f32" 24 24 36 36 "$out\lab30c.cso" "$out\fullscreen_vs.cso" "$out\lab30c_output.f32" *> "$out\WARP_LAB30C.txt"
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & "$out\warp_float_lab31g.exe" "$out\input.f32" 24 24 36 36 "$out\lab31g.cso" "$out\fullscreen_vs.cso" "$out\lab31g_output.f32" *> "$out\WARP_LAB31G.txt"
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          python tools/lab_moe_ng_v02_warp_validate.py --outdir $out --gpu "$out\lab31g_output.f32" --tol 0.000002
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          Copy-Item "$out\SUMMARY.json" "$out\LAB31G_CPU_PARITY.json"
+          @'
+          import json,numpy as np
+          from pathlib import Path
+          p=Path('lab_results/lab31g_full'); a=np.fromfile(p/'lab30c_output.f32',np.float32); b=np.fromfile(p/'lab31g_output.f32',np.float32); d=np.abs(a-b)
+          out={'probe':'canonical','values':int(a.size),'different_values':int(np.count_nonzero(d)),'max_abs':float(d.max()) if d.size else 0.0,'bit_exact':bool(np.array_equal(a,b))}
+          (p/'CANONICAL_FLOAT.json').write_text(json.dumps(out,indent=2)+'\n',encoding='utf-8'); print(json.dumps(out,indent=2))
+          if not out['bit_exact']: raise SystemExit('canonical float drift')
+          '@ | python -
+
+      - name: High-frequency float equivalence
+        shell: pwsh
+        run: |
+          $out='lab_results\lab31g_full'
+          @'
+          import numpy as np
+          from pathlib import Path
+          p=Path('lab_results/lab31g_full'); H=W=24; y,x=np.mgrid[0:H,0:W]; F=np.float32
+          checker=((x+y)&1).astype(np.float32); stripes=((2*x+y)%5<2).astype(np.float32); rng=np.random.default_rng(3131); noise=rng.random((H,W),dtype=np.float32)
+          img=np.stack([F(.03)+F(.94)*checker,F(.05)+F(.88)*stripes,F(.02)+F(.95)*noise,np.ones((H,W),np.float32)],2).astype(np.float32); img.tofile(p/'probe_hf.f32')
+          '@ | python -
+          & "$out\warp_float_legacy.exe" "$out\probe_hf.f32" 24 24 36 36 "$out\lab30c.cso" "$out\fullscreen_vs.cso" "$out\hf30.f32" *> "$out\WARP_HF30.txt"
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & "$out\warp_float_lab31g.exe" "$out\probe_hf.f32" 24 24 36 36 "$out\lab31g.cso" "$out\fullscreen_vs.cso" "$out\hf31.f32" *> "$out\WARP_HF31.txt"
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          @'
+          import json,numpy as np
+          from pathlib import Path
+          p=Path('lab_results/lab31g_full'); a=np.fromfile(p/'hf30.f32',np.float32); b=np.fromfile(p/'hf31.f32',np.float32); d=np.abs(a-b)
+          out={'probe':'high_frequency','values':int(a.size),'different_values':int(np.count_nonzero(d)),'max_abs':float(d.max()) if d.size else 0.0,'bit_exact':bool(np.array_equal(a,b))}
+          (p/'HIGH_FREQUENCY_FLOAT.json').write_text(json.dumps(out,indent=2)+'\n',encoding='utf-8'); print(json.dumps(out,indent=2))
+          if not out['bit_exact']: raise SystemExit('HF float drift')
+          '@ | python -
+
+      - name: Prepare canonical 42-case corpus
+        shell: pwsh
+        run: |
+          @'
+          import csv
+          import numpy as np
+          from pathlib import Path
+          from PIL import Image
+          src=Path('runtime_autonomous/PTAR_NG_MOE_V01_WIN81_X64/corpus/input_lr'); out=Path('lab_results/lab31g_full'); inp=out/'inputs_f32'; inp.mkdir(parents=True,exist_ok=True)
+          files=sorted(src.glob('*.png'))
+          if len(files)!=42: raise SystemExit(f'expected 42 corpus PNGs, got {len(files)}')
+          rows=[]
+          for q in files:
+              im=Image.open(q).convert('RGBA'); w,h=im.size; a=np.asarray(im,dtype=np.float32)/np.float32(255.0); fp=inp/(q.stem+'.f32'); a.tofile(fp); rows.append({'case':q.stem,'input':str(fp),'inW':w,'inH':h,'outW':w*3//2,'outH':h*3//2})
+          with (out/'CORPUS_MANIFEST.csv').open('w',newline='',encoding='utf-8') as f:
+              wr=csv.DictWriter(f,fieldnames=rows[0].keys()); wr.writeheader(); wr.writerows(rows)
+          '@ | python -
+
+      - name: 42-case R8G8B8A8 UNORM equivalence
+        shell: pwsh
+        run: |
+          @'
+          import csv,json,subprocess
+          from pathlib import Path
+          out=Path('lab_results/lab31g_full'); vs=out/'fullscreen_vs.cso'; rows=[]; total_diff=0; total_bytes=0; od=out/'corpus_outputs'; od.mkdir(exist_ok=True)
+          with (out/'CORPUS_MANIFEST.csv').open(newline='',encoding='utf-8') as f: manifest=list(csv.DictReader(f))
+          for r in manifest:
+              case=r['case']; a=od/(case+'_30.rgba8'); b=od/(case+'_31.rgba8'); args=[r['input'],r['inW'],r['inH'],r['outW'],r['outH']]
+              subprocess.run([str(out/'warp_unorm8_legacy.exe'),*args,str(out/'lab30c.cso'),str(vs),str(a)],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
+              subprocess.run([str(out/'warp_unorm8_lab31g.exe'),*args,str(out/'lab31g.cso'),str(vs),str(b)],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
+              ba=a.read_bytes(); bb=b.read_bytes()
+              if len(ba)!=len(bb): raise SystemExit(f'{case}: size mismatch')
+              diff=sum(x!=y for x,y in zip(ba,bb)); total_diff+=diff; total_bytes+=len(ba); rows.append({'case':case,'bytes':len(ba),'different_bytes':diff,'byte_exact':diff==0})
+          report={'protocol':'LAB31G_42_CASE_WARP_R8G8B8A8_UNORM','cases':len(rows),'exact_cases':sum(r['byte_exact'] for r in rows),'different_bytes':total_diff,'total_bytes':total_bytes,'pass':all(r['byte_exact'] for r in rows)}
+          (out/'CORPUS_UNORM8_SUMMARY.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8'); print(json.dumps(report,indent=2))
+          if not report['pass']: raise SystemExit('42-case UNORM8 drift')
+          '@ | python -
+
+      - name: Synthetic UNORM8 stress
+        shell: pwsh
+        run: |
+          @'
+          import json,subprocess
+          import numpy as np
+          from pathlib import Path
+          out=Path('lab_results/lab31g_full'); td=out/'synthetic'; td.mkdir(exist_ok=True); H=W=64; y,x=np.mgrid[0:H,0:W]; rng=np.random.default_rng(0x4C4142333147)
+          def rgba8(r,g,b,a=None):
+              if a is None:a=np.full((H,W),255,dtype=np.uint8)
+              return np.stack([r,g,b,a],axis=2).astype(np.uint8)
+          ramp=np.rint(np.linspace(0,255,W,dtype=np.float32)).astype(np.uint8)[None,:].repeat(H,0); vramp=ramp.T
+          imgs=[('ramps',rgba8(ramp,vramp,((ramp.astype(np.uint16)+vramp.astype(np.uint16))//2).astype(np.uint8)))]
+          step=np.where(x>=W//2,255,0).astype(np.uint8); diag=np.where(x+y>=W-1,255,0).astype(np.uint8); imgs.append(('steps',rgba8(step,diag,np.where((2*x+y)%5<2,240,15).astype(np.uint8))))
+          checker=np.where((x+y)&1,255,0).astype(np.uint8); imgs.append(('checker',rgba8(checker,np.roll(checker,1,1),np.roll(checker,1,0))))
+          for i in range(5):imgs.append((f'random_{i}',rng.integers(0,256,size=(H,W,4),dtype=np.uint8)))
+          vs=out/'fullscreen_vs.cso'; rows=[]
+          for name,u8 in imgs:
+              inp=td/(name+'.f32'); (u8.astype(np.float32)/np.float32(255.0)).tofile(inp); a=td/(name+'_30.rgba8'); b=td/(name+'_31.rgba8'); args=[str(inp),str(W),str(H),str(W*3//2),str(H*3//2)]
+              subprocess.run([str(out/'warp_unorm8_legacy.exe'),*args,str(out/'lab30c.cso'),str(vs),str(a)],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
+              subprocess.run([str(out/'warp_unorm8_lab31g.exe'),*args,str(out/'lab31g.cso'),str(vs),str(b)],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
+              ba=a.read_bytes();bb=b.read_bytes();diff=sum(x!=y for x,y in zip(ba,bb));rows.append({'probe':name,'different_bytes':diff,'byte_exact':diff==0})
+          report={'protocol':'LAB31G_SYNTHETIC_WARP_R8G8B8A8_UNORM','probes':rows,'pass':all(r['byte_exact'] for r in rows)}
+          (out/'SYNTHETIC_UNORM8_SUMMARY.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8'); print(json.dumps(report,indent=2))
+          if not report['pass']: raise SystemExit('synthetic UNORM8 drift')
+          '@ | python -
+
+      - name: Final admission
+        shell: pwsh
+        run: |
+          @'
+          import json
+          from pathlib import Path
+          p=Path('lab_results/lab31g_full'); cpu=json.loads((p/'LAB31G_CPU_PARITY.json').read_text()); ca=json.loads((p/'CANONICAL_FLOAT.json').read_text()); hf=json.loads((p/'HIGH_FREQUENCY_FLOAT.json').read_text()); co=json.loads((p/'CORPUS_UNORM8_SUMMARY.json').read_text()); sy=json.loads((p/'SYNTHETIC_UNORM8_SUMMARY.json').read_text()); dx=json.loads((p/'DXBC_AUDIT.json').read_text())
+          report={'protocol':'LAB31G_FULL_SOFTWARE_ADMISSION','lab31g_sha256':'ead1e18944b392ef23562d9a45a9429d5bdee77ae914e313b415c3143c39aed1','baseline_lab30c_sha256':'be967e9bdb56cad2f1b90e9d7e553a0316140577329e900f4caa02d337aabb8a','abi':'cb0.xy=invInputSize, cb0.zw=halfInvInputSize','cpu_parity':cpu,'canonical_float_bit_exact':ca['bit_exact'],'high_frequency_float_bit_exact':hf['bit_exact'],'corpus_unorm8_pass':co['pass'],'synthetic_unorm8_pass':sy['pass'],'dxbc_audit_pass':dx['pass'],'lab31g_instructions':53,'lab31g_cso_bytes':2568,'lab31g_div_ops':0,'baseline_instructions':55,'baseline_cso_bytes':2632,'baseline_div_ops':3}
+          report['pass']=bool(ca['bit_exact'] and hf['bit_exact'] and co['pass'] and sy['pass'] and dx['pass'])
+          (p/'ADMISSION.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8'); print(json.dumps(report,indent=2))
+          if not report['pass']: raise SystemExit('LAB31G admission failed')
+          '@ | python -
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lab31g-full-software-gate
+          path: lab_results/lab31g_full
