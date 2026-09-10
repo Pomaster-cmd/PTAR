@@ -1,0 +1,75 @@
+name: LAB40A Full Software Gate
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-lab40-schedule-pressure
+
+permissions:
+  contents: read
+
+jobs:
+  full-gate:
+    if: contains(github.event.head_commit.message, '[run-lab40a-full]')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --disable-pip-version-check numpy pillow
+      - name: Locate x64 FXC
+        id: fxc
+        shell: pwsh
+        run: |
+          $fxc=Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if(-not $fxc){ throw 'x64 FXC not found' }
+          "path=$($fxc.FullName)" >> $env:GITHUB_OUTPUT
+      - name: Compile frozen LAB38A and LAB40A
+        shell: pwsh
+        run: |
+          $out='lab_results\lab40a_full'; New-Item -ItemType Directory -Force $out | Out-Null
+          $fxc='${{ steps.fxc.outputs.path }}'
+          & $fxc /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$out\lab38a.cso" /Fc "$out\lab38a.asm" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab38a_branchless_phase0_ps.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & $fxc /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$out\lab40a.cso" /Fc "$out\lab40a.asm" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab40a_early_coeff_stream_accum_ps.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & $fxc /nologo /T vs_5_0 /E main /O3 /Ges /WX /Fo "$out\fullscreen_vs.cso" src\hlsl\moe_ng_v02\lab_fullscreen_vs.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          $hb=(Get-FileHash "$out\lab38a.cso" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $hc=(Get-FileHash "$out\lab40a.cso" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($hb -ne 'd60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3'){ throw "LAB38A hash mismatch $hb" }
+          if($hc -ne '9b6fa72a22216e7aafa0e24f33d0b83fc21bf0c2c346c96767c3dedce6ba1293'){ throw "LAB40A hash mismatch $hc" }
+          @("LAB38A=$hb","LAB40A=$hc") | Set-Content "$out\HASHES.txt" -Encoding ascii
+      - name: Generate shared ABI harness sources
+        run: python tools/moe_ng_v02_prepare_shared_abi_harnesses.py --outdir lab_results/lab40a_full
+      - name: Build shared WARP harnesses
+        shell: pwsh
+        run: |
+          $out='lab_results\lab40a_full'
+          $vswhere="${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vcvars=& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Auxiliary\Build\vcvars64.bat' | Select-Object -First 1
+          if(-not $vcvars){ throw 'vcvars64.bat not found' }
+          foreach($n in @('float_shared','unorm8_shared')){
+            $cmd="call `"$vcvars`" && cl /nologo /EHsc /O2 /std:c++17 $out\warp_$n.cpp /Fe:$out\warp_$n.exe d3d11.lib dxgi.lib"
+            cmd.exe /d /s /c $cmd
+            if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          }
+      - name: Run full shared-ABI software admission
+        shell: pwsh
+        run: |
+          python tools/moe_ng_v02_shared_abi_full_gate.py `
+            --outdir lab_results/lab40a_full `
+            --baseline lab38a `
+            --candidate lab40a `
+            --baseline-sha d60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3 `
+            --candidate-sha 9b6fa72a22216e7aafa0e24f33d0b83fc21bf0c2c346c96767c3dedce6ba1293 `
+            --baseline-instructions 49 `
+            --candidate-instructions 49 `
+            --baseline-bytes 2528 `
+            --candidate-bytes 2528
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lab40a-full-software-gate
+          path: lab_results/lab40a_full
