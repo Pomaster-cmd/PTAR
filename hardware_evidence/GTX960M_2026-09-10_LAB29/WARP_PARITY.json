@@ -1,0 +1,12 @@
+{
+  "protocol": "LAB29_MULTIRES_WARP_PARITY",
+  "cases": [
+    {"input":"24x24","output":"36x36","values":5184,"different_values":0,"max_abs":0.0,"bit_exact":true},
+    {"input":"64x64","output":"96x96","values":36864,"different_values":0,"max_abs":0.0,"bit_exact":true},
+    {"input":"192x192","output":"288x288","values":331776,"different_values":0,"max_abs":0.0,"bit_exact":true},
+    {"input":"320x180","output":"480x270","values":518400,"different_values":0,"max_abs":0.0,"bit_exact":true},
+    {"input":"640x360","output":"960x540","values":2073600,"different_values":0,"max_abs":0.0,"bit_exact":true},
+    {"input":"1280x720","output":"1920x1080","values":8294400,"different_values":0,"max_abs":0.0,"bit_exact":true}
+  ],
+  "pass": true
+}
