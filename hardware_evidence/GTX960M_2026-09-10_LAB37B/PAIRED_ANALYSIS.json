@@ -1,0 +1,105 @@
+{
+  "protocol": "PTAR_BALANCED_TRIAD_RESULT_ANALYSIS_V02",
+  "reference": "LAB36B",
+  "candidate": "LAB37B",
+  "control": "K185",
+  "software_correctness": "pass",
+  "protocol_validation": {
+    "valid": true,
+    "rows": 600,
+    "triad_sequence": "0..599 contiguous unique",
+    "permutation_counts": {
+      "K185>LAB36B>LAB37B": 100,
+      "K185>LAB37B>LAB36B": 100,
+      "LAB36B>K185>LAB37B": 100,
+      "LAB36B>LAB37B>K185": 100,
+      "LAB37B>K185>LAB36B": 100,
+      "LAB37B>LAB36B>K185": 100
+    },
+    "all_measures_positive_finite": true,
+    "paired_delta_column_exact": true,
+    "winner_column_exact": true,
+    "blocks_60_recomputed_exact": true
+  },
+  "overall": {
+    "triads": 600,
+    "reference_median_ms": 0.737024,
+    "candidate_median_ms": 0.718400,
+    "control_median_ms": 0.695888,
+    "paired_reference_minus_candidate_median_ms": 0.015088,
+    "paired_speedup_median_percent": 2.159627182328,
+    "bootstrap_median_speedup_ci95_percent": [2.041531094146, 2.256160073020],
+    "bootstrap_method": "100000 paired-row resamples; median of (reference-candidate)/reference*100; percentile 2.5/97.5; PCG64 seed 20260910",
+    "candidate_wins": 599,
+    "reference_wins": 1,
+    "ties": 0,
+    "two_sided_sign_test_p": 2.8967236778536667e-178
+  },
+  "pstate": {
+    "detected": true,
+    "detector": "largest adjacent K185 timing jump",
+    "dominant_control_split_index": 177,
+    "mixed_transition_triads": [],
+    "stable_ranges": [[0,176],[177,599]],
+    "control_pre_median_ms": 0.494720,
+    "control_post_median_ms": 0.698240,
+    "control_relative_jump_percent": 41.138421733506,
+    "boundary_adjacent_jump_ms": 0.204416,
+    "boundary_adjacent_jump_percent": 41.346278317152
+  },
+  "permutation_median_speedup_percent": {
+    "K185>LAB36B>LAB37B": 2.028980992899,
+    "K185>LAB37B>LAB36B": 2.165749444999,
+    "LAB36B>K185>LAB37B": 2.265353482005,
+    "LAB36B>LAB37B>K185": 2.364577419372,
+    "LAB37B>K185>LAB36B": 2.159627182328,
+    "LAB37B>LAB36B>K185": 2.070005176005
+  },
+  "permutation_bootstrap_ci95_percent": {
+    "K185>LAB36B>LAB37B": [1.923005320410,2.256489232196],
+    "K185>LAB37B>LAB36B": [1.846133631167,2.354158582331],
+    "LAB36B>K185>LAB37B": [1.895343060744,2.497144417961],
+    "LAB36B>LAB37B>K185": [2.126113272784,2.694677757676],
+    "LAB37B>K185>LAB36B": [1.874238998087,2.451872198648],
+    "LAB37B>LAB36B>K185": [1.831424718065,2.353197042192]
+  },
+  "stable_segments": [
+    {
+      "first_triad": 0, "last_triad": 176, "triads": 177,
+      "reference_median_ms": 0.487008,
+      "candidate_median_ms": 0.479488,
+      "control_median_ms": 0.494720,
+      "paired_reference_minus_candidate_median_ms": 0.007712,
+      "paired_speedup_median_percent": 1.575781352164,
+      "bootstrap_median_speedup_ci95_percent": [1.543026706231,1.625909657117],
+      "candidate_wins": 177, "reference_wins": 0, "ties": 0
+    },
+    {
+      "first_triad": 177, "last_triad": 599, "triads": 423,
+      "reference_median_ms": 0.739904,
+      "candidate_median_ms": 0.720704,
+      "control_median_ms": 0.698240,
+      "paired_reference_minus_candidate_median_ms": 0.019008,
+      "paired_speedup_median_percent": 2.574829638575,
+      "bootstrap_median_speedup_ci95_percent": [2.473314241083,2.686579975108],
+      "candidate_wins": 422, "reference_wins": 1, "ties": 0
+    }
+  ],
+  "verdict": {
+    "decision": "PROMOTE_CANDIDATE",
+    "promote": true,
+    "reasons": [
+      "overall_bootstrap_95pct_lower_bound_positive=true",
+      "all_six_permutation_medians_positive=true",
+      "all_six_permutation_bootstrap_95pct_lower_bounds_positive=true",
+      "all_stable_pstate_segments_positive=true",
+      "all_stable_pstate_bootstrap_95pct_lower_bounds_positive=true",
+      "candidate_wins_599_of_600=true",
+      "software_bit_exact_and_contract_pass=true"
+    ]
+  },
+  "source_results_zip_sha256": "fe9b904bc1c1376fe7ab1f4b6f5ad42b79a3f3feac335abac51ce43849f5cde4",
+  "source_csv_sha256": "761967d2f0d5fc263536df339f16299a4482c4ac748048f0f4538ce3946e8310",
+  "source_blocks_sha256": "79cdf3c6e74ea0c83e4ec0ca24f660e6b10ab2e8906170d94da0a6967dcfd05f",
+  "source_summary_sha256": "d3b929a6e9d2abf10c0937951ce555afef16b7651d8bc4e1c414e40360bb4bd6"
+}
