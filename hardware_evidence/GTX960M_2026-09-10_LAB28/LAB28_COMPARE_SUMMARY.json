@@ -1,0 +1,32 @@
+{
+  "protocol": "LAB28_GTX960M_SAME_RUN_BALANCED_COMPARE",
+  "adapter": "NVIDIA GeForce GTX 960M",
+  "input": "1280x720",
+  "output": "1920x1080",
+  "samples": 600,
+  "warmup_triads": 60,
+  "order_protocol": "SIX_ROTATING_PERMUTATIONS_BALANCED",
+  "lab27_median_ms": 0.845504,
+  "lab28_median_ms": 0.811472,
+  "k185_median_ms": 0.697984,
+  "paired_lab27_minus_lab28_median_ms": 0.037872,
+  "paired_speedup_median_percent": 4.457590131,
+  "lab28_faster_count": 600,
+  "lab27_faster_count": 0,
+  "ties": 0,
+  "first_half": {
+    "lab27_median_ms": 0.609744,
+    "lab28_median_ms": 0.564768,
+    "k185_median_ms": 0.498336
+  },
+  "second_half": {
+    "lab27_median_ms": 0.848224,
+    "lab28_median_ms": 0.814064,
+    "k185_median_ms": 0.70032
+  },
+  "hashes": {
+    "lab27": "48e3964198c6d1e4371201655519d8ccfc37fe22838b26f3ce4e93cd20d3db44",
+    "lab28": "fb77c785fd79891c321a4abf5d517367a7d873574c04046fe6c44b45a0df9a77",
+    "k185": "6bd926e85f21dd08788ff9d189c472800a5e0eb726091158ed1ecde3d06d8c16"
+  }
+}
