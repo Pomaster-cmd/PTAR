@@ -1,0 +1,95 @@
+{
+  "protocol": "PTAR_BALANCED_TRIAD_RESULT_ANALYSIS_V03",
+  "reference": "LAB37B",
+  "candidate": "LAB38A",
+  "control": "K185",
+  "software_correctness": "pass",
+  "protocol_validation": {
+    "valid": true,
+    "rows": 600,
+    "triad_sequence": "0..599 contiguous unique",
+    "permutation_counts": {
+      "K185>LAB37B>LAB38A": 100,
+      "K185>LAB38A>LAB37B": 100,
+      "LAB37B>K185>LAB38A": 100,
+      "LAB37B>LAB38A>K185": 100,
+      "LAB38A>K185>LAB37B": 100,
+      "LAB38A>LAB37B>K185": 100
+    },
+    "all_measures_positive_finite": true,
+    "paired_delta_column_exact": true,
+    "winner_column_exact": true,
+    "blocks_60_recomputed_exact": true,
+    "summary_recomputed_consistent": true,
+    "zip_crc_pass": true
+  },
+  "overall": {
+    "triads": 600,
+    "reference_median_ms": 0.727248,
+    "candidate_median_ms": 0.709568,
+    "control_median_ms": 0.704576,
+    "paired_reference_minus_candidate_median_ms": 0.017872000000000055,
+    "paired_speedup_median_percent": 1.7505721253073379,
+    "bootstrap_median_speedup_ci95_percent": [1.6339637436929826, 1.8542729315732713],
+    "bootstrap_method": "100000 paired-row resamples; median of (reference-candidate)/reference*100; percentile 2.5/97.5; PCG64 seed 20260910",
+    "candidate_wins": 596,
+    "reference_wins": 4,
+    "ties": 0,
+    "two_sided_sign_test_p": 2.5941174393286674e-171
+  },
+  "pstate": {
+    "detected": true,
+    "detector": "all adjacent K185 timing jumps >20% (strict multi-state segmentation)",
+    "split_indices": [152, 394, 552],
+    "stable_ranges": [[0,151],[152,393],[394,551],[553,599]],
+    "mixed_transition_triads_excluded_from_stable_state_interpretation": [552],
+    "jumps": [
+      {"split_index":152,"previous_triad":151,"next_triad":152,"previous_k185_ms":0.497216,"next_k185_ms":0.710304,"adjacent_jump_ms":0.21308800000000006,"adjacent_jump_percent":42.85622345218176},
+      {"split_index":394,"previous_triad":393,"next_triad":394,"previous_k185_ms":0.704288,"next_k185_ms":1.44464,"adjacent_jump_ms":0.7403519999999999,"adjacent_jump_percent":105.12063246853558},
+      {"split_index":552,"previous_triad":551,"next_triad":552,"previous_k185_ms":1.438272,"next_k185_ms":2.332448,"adjacent_jump_ms":0.8941759999999999,"adjacent_jump_percent":62.17015974725225}
+    ]
+  },
+  "permutation_median_speedup_percent": {
+    "K185>LAB37B>LAB38A": 1.9281795531948358,
+    "K185>LAB38A>LAB37B": 1.8183726851739703,
+    "LAB37B>K185>LAB38A": 1.7891525687831398,
+    "LAB37B>LAB38A>K185": 1.8067174998076236,
+    "LAB38A>K185>LAB37B": 1.6538372330618316,
+    "LAB38A>LAB37B>K185": 1.4989777954122774
+  },
+  "permutation_bootstrap_ci95_percent": {
+    "K185>LAB37B>LAB38A": [1.5805563384862227,2.205851771076474],
+    "K185>LAB38A>LAB37B": [1.5706574639412492,1.9878919029059738],
+    "LAB37B>K185>LAB38A": [1.5577802709933555,2.061535733286044],
+    "LAB37B>LAB38A>K185": [1.5206212988341763,2.069937461463937],
+    "LAB38A>K185>LAB37B": [1.486935938686797,1.865098521086592],
+    "LAB38A>LAB37B>K185": [1.3881312147617793,1.884388943237486]
+  },
+  "stable_segments": [
+    {"first_triad":0,"last_triad":151,"triads":152,"reference_median_ms":0.480704,"candidate_median_ms":0.474976,"control_median_ms":0.497472,"paired_reference_minus_candidate_median_ms":0.00561600000000001,"paired_speedup_median_percent":1.168673802140268,"bootstrap_median_speedup_ci95_percent":[1.122252790325954,1.244551427595952],"candidate_wins":152,"reference_wins":0,"ties":0},
+    {"first_triad":152,"last_triad":393,"triads":242,"reference_median_ms":0.726192,"candidate_median_ms":0.708336,"control_median_ms":0.7032,"paired_reference_minus_candidate_median_ms":0.017471999999999988,"paired_speedup_median_percent":2.403172701304256,"bootstrap_median_speedup_ci95_percent":[2.2095673681841568,2.5480807455036456],"candidate_wins":239,"reference_wins":3,"ties":0},
+    {"first_triad":394,"last_triad":551,"triads":158,"reference_median_ms":1.483632,"candidate_median_ms":1.452192,"control_median_ms":1.44072,"paired_reference_minus_candidate_median_ms":0.03083200000000008,"paired_speedup_median_percent":2.0762730951575517,"bootstrap_median_speedup_ci95_percent":[1.9720777260771047,2.1645587699170807],"candidate_wins":158,"reference_wins":0,"ties":0},
+    {"first_triad":553,"last_triad":599,"triads":47,"reference_median_ms":2.18944,"candidate_median_ms":2.166368,"control_median_ms":2.3304,"paired_reference_minus_candidate_median_ms":0.023168000000000077,"paired_speedup_median_percent":1.0601845072485026,"bootstrap_median_speedup_ci95_percent":[0.9753743565746388,1.145283184033159],"candidate_wins":47,"reference_wins":0,"ties":0}
+  ],
+  "notable_transition_triads": [
+    {"triad":552,"order":"LAB37B>LAB38A>K185","reference_ms":1.679936,"candidate_ms":2.169952,"control_ms":2.332448,"paired_delta_ms":-0.490016,"note":"mixed P-state transition: LAB37B begins/straddles the transition while LAB38A and K185 are in the slower state; excluded only from stable-state interpretation, retained in overall paired statistics"}
+  ],
+  "verdict": {
+    "decision": "PROMOTE_CANDIDATE",
+    "promote": true,
+    "reasons": [
+      "overall_bootstrap_95pct_lower_bound_positive=true",
+      "all_six_permutation_medians_positive=true",
+      "all_six_permutation_bootstrap_95pct_lower_bounds_positive=true",
+      "all_detected_stable_pstate_segments_positive=true",
+      "all_detected_stable_pstate_bootstrap_95pct_lower_bounds_positive=true",
+      "candidate_wins_596_of_600=true",
+      "software_bit_exact_and_contract_pass=true",
+      "candidate_instruction_count_49_vs_reference_52=true"
+    ]
+  },
+  "source_results_zip_sha256": "b48a09c8178e6cde0256898c6cb745f8b926be2a15690f155101e9c02d0dc1fa",
+  "source_csv_sha256": "f2980a05a01bb216f85c4dffb0e42f21e8e4dfccd4259a502986a455691dc941",
+  "source_blocks_sha256": "41185c5136946b08d0b0c918bafeb0e6a15ad91c267ed0fd02b50a715959ccdb",
+  "source_summary_sha256": "2fbaa8180e56002d1b12f5bbdd11d2ecd53d7d85f474c1fe6b8e7211b16accf9"
+}
