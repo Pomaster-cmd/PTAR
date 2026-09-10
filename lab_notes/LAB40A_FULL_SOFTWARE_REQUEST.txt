@@ -1,0 +1,1 @@
+LAB40A full software admission requested after codegen audit identified one unique 49-instruction / 2528-byte scheduling variant versus replicated LAB38A. Exact-output gate only; no hardware request unless software admission passes and the scheduling delta remains technically meaningful.
