@@ -1,0 +1,1 @@
+Next experimental baseline: LAB30C. Subsequent LAB31 exploration must remain isolated from main and SOURCE.
