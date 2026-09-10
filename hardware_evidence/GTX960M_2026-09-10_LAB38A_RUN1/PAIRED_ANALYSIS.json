@@ -1,0 +1,67 @@
+{
+  "protocol": "PTAR_BALANCED_TRIAD_RESULT_ANALYSIS_V03",
+  "reference": "LAB37B",
+  "candidate": "LAB38A",
+  "control": "K185",
+  "software_correctness": "pass",
+  "protocol_validation": {
+    "valid": true,
+    "rows": 600,
+    "triad_sequence": "0..599 contiguous unique",
+    "permutation_counts": {
+      "K185>LAB37B>LAB38A": 100,
+      "K185>LAB38A>LAB37B": 100,
+      "LAB37B>K185>LAB38A": 100,
+      "LAB37B>LAB38A>K185": 100,
+      "LAB38A>K185>LAB37B": 100,
+      "LAB38A>LAB37B>K185": 100
+    },
+    "all_measures_positive_finite": true,
+    "paired_delta_column_exact": true,
+    "winner_column_exact": true,
+    "blocks_60_recomputed_exact": true
+  },
+  "overall": {
+    "triads": 600,
+    "reference_median_ms": 0.721744,
+    "candidate_median_ms": 0.703744,
+    "control_median_ms": 0.699248,
+    "paired_reference_minus_candidate_median_ms": 0.017696,
+    "paired_speedup_median_percent": 1.877042562363167,
+    "bootstrap_median_speedup_ci95_percent": [1.7213419473153024, 1.9932824405180085],
+    "bootstrap_method": "100000 paired-row resamples; median of (reference-candidate)/reference*100; percentile 2.5/97.5; PCG64 seed 20260910",
+    "candidate_wins": 596,
+    "reference_wins": 4,
+    "ties": 0,
+    "two_sided_sign_test_p": 2.5941174393286674e-171
+  },
+  "permutations": {
+    "K185>LAB37B>LAB38A": {"median_speedup_percent":1.6870377036483917,"ci95_percent":[1.5312889017448756,2.0877217686969827],"candidate_wins":100,"reference_wins":0},
+    "K185>LAB38A>LAB37B": {"median_speedup_percent":2.0795863885849553,"ci95_percent":[1.7589446332200702,2.482239150903024],"candidate_wins":99,"reference_wins":1},
+    "LAB37B>K185>LAB38A": {"median_speedup_percent":1.8664157892718631,"ci95_percent":[1.5422755475715095,2.2231078141479816],"candidate_wins":99,"reference_wins":1},
+    "LAB37B>LAB38A>K185": {"median_speedup_percent":1.8883814840613518,"ci95_percent":[1.5227409336806303,2.2156478534467983],"candidate_wins":98,"reference_wins":2},
+    "LAB38A>K185>LAB37B": {"median_speedup_percent":1.6518609856622257,"ci95_percent":[1.364176845746405,2.021845745629841],"candidate_wins":100,"reference_wins":0},
+    "LAB38A>LAB37B>K185": {"median_speedup_percent":1.9250633449253125,"ci95_percent":[1.5793995717615092,2.154230408991574],"candidate_wins":100,"reference_wins":0}
+  },
+  "pstate": {
+    "detector": "all adjacent K185 timing jumps >20% (strict multi-state segmentation)",
+    "split_indices": [162,404,562],
+    "stable_segments": [
+      {"first_triad":0,"last_triad":161,"triads":162,"control_median_ms":0.494688,"reference_median_ms":0.479152,"candidate_median_ms":0.474016,"median_speedup_percent":1.079255887217606,"ci95_percent":[0.9935013329419272,1.1687704534829346],"candidate_wins":159,"reference_wins":3},
+      {"first_triad":162,"last_triad":403,"triads":242,"control_median_ms":0.698432,"reference_median_ms":0.720832,"candidate_median_ms":0.702624,"median_speedup_percent":2.544872197375122,"ci95_percent":[2.414935349294768,2.6745320677725513],"candidate_wins":241,"reference_wins":1},
+      {"first_triad":404,"last_triad":561,"triads":158,"control_median_ms":1.440976,"reference_median_ms":1.485856,"candidate_median_ms":1.45456,"median_speedup_percent":2.1708509003285688,"ci95_percent":[2.0351550511063534,2.280558214053676],"candidate_wins":158,"reference_wins":0},
+      {"first_triad":562,"last_triad":599,"triads":38,"control_median_ms":2.330064,"reference_median_ms":2.189248,"candidate_median_ms":2.16624,"median_speedup_percent":0.991227897975939,"ci95_percent":[0.8525676938513719,1.0828781712990354],"candidate_wins":38,"reference_wins":0}
+    ]
+  },
+  "notable_outliers": [{"triad":403,"reference_ms":0.724288,"candidate_ms":1.065248,"control_ms":0.6984,"paired_delta_ms":-0.34096,"note":"single candidate latency spike; robust gates remain positive"}],
+  "verdict": {
+    "decision": "RUN1_PROMOTION_GATE_PASS_REPLICATION_PENDING",
+    "single_run_gate_pass": true,
+    "final_hardware_baseline_promotion": false,
+    "replication_required": true
+  },
+  "source_results_zip_sha256": "70ebab6131fc7691c1abf8a460ba6b92c8ec4637c953cb0972aebe5fd89061bc",
+  "source_csv_sha256": "7f3b3b4d3ea61d9285e9068072dc9cf87a47f723cc48a2d45b419149473c8de3",
+  "source_blocks_sha256": "43c90d4094dfcdc66012739410e5178bc60eaba705de728ea597ece79db509ca",
+  "source_summary_sha256": "b69fbcac0dd8848d8386ba9188b6415844181cdfa883029fee370c4b4e1c9749"
+}
