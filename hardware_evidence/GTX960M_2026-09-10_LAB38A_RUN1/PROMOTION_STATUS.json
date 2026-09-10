@@ -1,0 +1,10 @@
+{
+  "protocol": "LAB38A_HARDWARE_PROMOTION_STATUS",
+  "run1_source_zip_sha256": "70ebab6131fc7691c1abf8a460ba6b92c8ec4637c953cb0972aebe5fd89061bc",
+  "run1_strict_gate_pass": true,
+  "independent_replication_required": true,
+  "independent_replication_completed": false,
+  "final_hardware_selected_baseline": "LAB37B",
+  "candidate": "LAB38A",
+  "status": "RUN1_PASS_REPLICATION_PENDING"
+}
