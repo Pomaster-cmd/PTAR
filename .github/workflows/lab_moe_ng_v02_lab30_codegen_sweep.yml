@@ -1,0 +1,172 @@
+name: LAB30 Codegen Sweep
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-lab30-codegen-sweep
+
+permissions:
+  contents: read
+
+jobs:
+  sweep:
+    if: contains(github.event.head_commit.message, '[run-lab30-sweep]')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --disable-pip-version-check numpy
+
+      - name: Compile LAB29 and LAB30 variants
+        shell: pwsh
+        run: |
+          $out='lab_results\lab30_sweep'; New-Item -ItemType Directory -Force $out | Out-Null
+          $fxc=Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if(-not $fxc){ throw 'x64 FXC not found' }
+          $srcs=@{
+            'lab29'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab29_doubled_mc_slope_ps.hlsl'
+            'lab30a'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab30a_movc_slope_ps.hlsl'
+            'lab30b'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab30b_frac_phase_ps.hlsl'
+            'lab30c'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab30c_movc_frac_ps.hlsl'
+          }
+          foreach($n in $srcs.Keys){
+            & $fxc.FullName /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$out\$n.cso" /Fc "$out\$n.asm" $srcs[$n]
+            if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          }
+          & $fxc.FullName /nologo /T vs_5_0 /E main /O3 /Ges /WX /Fo "$out\fullscreen_vs.cso" src\hlsl\moe_ng_v02\lab_fullscreen_vs.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          $h29=(Get-FileHash "$out\lab29.cso" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($h29 -ne '6a407b37938ec6a0bf89d13cf84fa4ae23c6f712a947fc6926bbfde9725028ed'){ throw "LAB29 baseline hash mismatch $h29" }
+          Get-ChildItem "$out\*.cso" | ForEach-Object { "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(),$_.Name } | Set-Content "$out\HASHES.txt" -Encoding ascii
+
+      - name: Static DXBC analysis
+        shell: pwsh
+        run: |
+          @'
+          import json,re
+          from collections import Counter
+          from pathlib import Path
+          root=Path('lab_results/lab30_sweep')
+          op_re=re.compile(r'^\s*([A-Za-z][A-Za-z0-9_]*)\b')
+          report={'protocol':'LAB30_CODEGEN_SWEEP','variants':{}}
+          for name in ('lab29','lab30a','lab30b','lab30c'):
+              lines=(root/f'{name}.asm').read_text(encoding='utf-8',errors='replace').splitlines(); ops=[]
+              for raw in lines:
+                  s=raw.lstrip()
+                  if not s or s.startswith('//') or s.startswith('ps_5_0'): continue
+                  m=op_re.match(raw)
+                  if not m: continue
+                  op=m.group(1).lower()
+                  if op.startswith('dcl_') or op in {'def','defi','defb'}: continue
+                  ops.append(op)
+              c=Counter(ops)
+              h=next(line.split()[0] for line in (root/'HASHES.txt').read_text().splitlines() if line.split()[-1]==f'{name}.cso')
+              text='\n'.join(lines).lower()
+              report['variants'][name]={
+                'sha256':h,'instructions':len(ops),'bytes':(root/f'{name}.cso').stat().st_size,
+                'div':c.get('div',0),'udiv':c.get('udiv',0),'frc':c.get('frc',0),
+                'mul':c.get('mul',0),'mad':c.get('mad',0),'movc':c.get('movc',0),'and':c.get('and',0),
+                'gather4':sum(v for k,v in c.items() if k.startswith('gather4')),
+                'sample_l':sum(v for k,v in c.items() if k.startswith('sample_l')),
+                'uav':sum(v for k,v in c.items() if k.startswith('store_uav') or k.startswith('atomic_')),
+                'phase0_sample_before_branch': None
+              }
+          for name,v in report['variants'].items():
+              v['texture_contract_pass']=v['gather4']==1 and v['sample_l']==4 and v['uav']==0
+          base=report['variants']['lab29']
+          for name,v in report['variants'].items():
+              v['instruction_delta_vs_lab29']=v['instructions']-base['instructions']
+              v['byte_delta_vs_lab29']=v['bytes']-base['bytes']
+          (root/'CODEGEN.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps(report,indent=2))
+          if not all(v['texture_contract_pass'] for v in report['variants'].values()): raise SystemExit('texture contract changed')
+          '@ | python -
+
+      - name: Build WARP harness
+        shell: pwsh
+        run: |
+          $out='lab_results\lab30_sweep'
+          $vswhere="${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vcvars=& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Auxiliary\Build\vcvars64.bat' | Select-Object -First 1
+          if(-not $vcvars){ throw 'vcvars64.bat not found' }
+          $cmd="call `"$vcvars`" && cl /nologo /EHsc /O2 /std:c++17 tools\lab_moe_ng_v02_warp_harness.cpp /Fe:$out\warp.exe d3d11.lib dxgi.lib"
+          cmd.exe /d /s /c $cmd
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+
+      - name: Exhaustive float32 phase-decode model
+        shell: pwsh
+        run: |
+          @'
+          import json,numpy as np
+          from pathlib import Path
+          n=np.arange(0,65536,dtype=np.uint32)
+          src=n.astype(np.float32)*np.float32(2.0/3.0)
+          frac=src-np.floor(src)
+          model=np.where(frac==np.float32(0.0),0,np.where(frac>np.float32(0.5),1,2)).astype(np.uint32)
+          ref=n%np.uint32(3)
+          bad=np.flatnonzero(model!=ref)
+          r={'protocol':'LAB30_FRAC_PHASE_CPU_FLOAT32_MODEL','range':'0..65535','mismatches':int(bad.size),'first_bad':int(bad[0]) if bad.size else None,'pass':bool(bad.size==0)}
+          Path('lab_results/lab30_sweep/PHASE_MODEL.json').write_text(json.dumps(r,indent=2)+'\n')
+          print(json.dumps(r,indent=2))
+          if not r['pass']: raise SystemExit('fractional phase model mismatch')
+          '@ | python -
+
+      - name: Multi-resolution WARP equivalence
+        shell: pwsh
+        run: |
+          @'
+          import json,subprocess,numpy as np
+          from pathlib import Path
+          root=Path('lab_results/lab30_sweep')
+          dims=[(24,24),(64,64),(192,192),(320,180),(640,360),(1280,720)]
+          variants=['lab30a','lab30b','lab30c']; result={'protocol':'LAB30_MULTIRES_WARP_EQUIVALENCE','variants':{n:[] for n in variants}}
+          exe=str(root/'warp.exe'); vs=str(root/'fullscreen_vs.cso')
+          for W,H in dims:
+              OW,OH=W*3//2,H*3//2; y,x=np.mgrid[0:H,0:W]
+              xf=x.astype(np.float32)/np.float32(max(W-1,1)); yf=y.astype(np.float32)/np.float32(max(H-1,1))
+              rng=np.random.default_rng(300000+W*13+H*17); noise=rng.random((H,W),dtype=np.float32); checker=((x+y)&1).astype(np.float32)
+              img=np.stack([np.clip(.04+.63*xf+.29*checker,0,1),np.clip(.03+.68*yf+.25*noise,0,1),np.clip(.07+.52*noise+.33*(xf*yf),0,1),np.ones((H,W),np.float32)],2).astype(np.float32)
+              inp=root/f'in_{W}x{H}.f32'; base=root/f'base_{W}x{H}.f32'; img.tofile(inp)
+              subprocess.run([exe,str(inp),str(W),str(H),str(OW),str(OH),str(root/'lab29.cso'),vs,str(base)],check=True,stdout=subprocess.DEVNULL)
+              a=np.fromfile(base,np.float32)
+              for n in variants:
+                  out=root/f'{n}_{W}x{H}.f32'
+                  subprocess.run([exe,str(inp),str(W),str(H),str(OW),str(OH),str(root/f'{n}.cso'),vs,str(out)],check=True,stdout=subprocess.DEVNULL)
+                  b=np.fromfile(out,np.float32); d=np.abs(a-b)
+                  result['variants'][n].append({'input':f'{W}x{H}','output':f'{OW}x{OH}','values':int(a.size),'different_values':int(np.count_nonzero(d)),'max_abs':float(d.max()) if d.size else 0.0,'bit_exact':bool(np.array_equal(a,b))})
+                  out.unlink(missing_ok=True)
+              inp.unlink(missing_ok=True); base.unlink(missing_ok=True)
+          result['pass_by_variant']={n:all(r['bit_exact'] for r in rows) for n,rows in result['variants'].items()}
+          (root/'WARP_EQUIVALENCE.json').write_text(json.dumps(result,indent=2)+'\n')
+          print(json.dumps(result,indent=2))
+          if not any(result['pass_by_variant'].values()): raise SystemExit('no LAB30 variant remains bit-exact')
+          '@ | python -
+
+      - name: Select software winner
+        shell: pwsh
+        run: |
+          @'
+          import json
+          from pathlib import Path
+          root=Path('lab_results/lab30_sweep')
+          code=json.loads((root/'CODEGEN.json').read_text())['variants']; eq=json.loads((root/'WARP_EQUIVALENCE.json').read_text())['pass_by_variant']
+          eligible=[]
+          for n in ('lab30a','lab30b','lab30c'):
+              if eq.get(n) and code[n]['texture_contract_pass']:
+                  eligible.append(n)
+          # Ranking prioritizes real instruction reduction, then removal of integer divide, then size.
+          eligible.sort(key=lambda n:(code[n]['instructions'],code[n]['udiv'],code[n]['bytes']))
+          winner=eligible[0] if eligible else None
+          r={'protocol':'LAB30_SWEEP_SELECTION','eligible':eligible,'winner':winner,'winner_codegen':code.get(winner) if winner else None,'baseline':code['lab29'],'pass':winner is not None}
+          (root/'SELECTION.json').write_text(json.dumps(r,indent=2)+'\n')
+          print(json.dumps(r,indent=2))
+          if not r['pass']: raise SystemExit('no eligible winner')
+          '@ | python -
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lab30-codegen-sweep
+          path: lab_results/lab30_sweep
