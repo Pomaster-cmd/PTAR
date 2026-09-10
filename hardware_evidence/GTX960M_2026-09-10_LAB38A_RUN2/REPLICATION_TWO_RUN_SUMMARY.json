@@ -1,0 +1,49 @@
+{
+  "protocol": "LAB38A_GTX960M_TWO_RUN_REPLICATION_SUMMARY",
+  "reference": "LAB37B",
+  "candidate": "LAB38A",
+  "control": "K185",
+  "adapter": "NVIDIA GeForce GTX 960M",
+  "resolution": "1280x720 -> 1920x1080",
+  "software_correctness": "PASS_BIT_EXACT",
+  "static_codegen": {
+    "LAB37B": {"instructions": 52, "bytes": 2532},
+    "LAB38A": {"instructions": 49, "bytes": 2528},
+    "texture_contract": "1 Gather + 4 SampleLevel + 0 UAV",
+    "div_udiv": 0
+  },
+  "run1": {
+    "source_zip_sha256": "70ebab6131fc7691c1abf8a460ba6b92c8ec4637c953cb0972aebe5fd89061bc",
+    "paired_median_speedup_percent": 1.877042562363167,
+    "bootstrap_ci95_percent": [1.7213419473153024, 1.9932824405180085],
+    "candidate_wins": 596,
+    "reference_wins": 4,
+    "ties": 0,
+    "stable_segment_speedups_percent": [1.079255887217606,2.544872197375122,2.1708509003285688,0.991227897975939]
+  },
+  "run2": {
+    "source_zip_sha256": "b48a09c8178e6cde0256898c6cb745f8b926be2a15690f155101e9c02d0dc1fa",
+    "paired_median_speedup_percent": 1.7505721253073379,
+    "bootstrap_ci95_percent": [1.6339637436929826, 1.8542729315732713],
+    "candidate_wins": 596,
+    "reference_wins": 4,
+    "ties": 0,
+    "mixed_transition_triads_excluded_from_stable_state_interpretation": [552],
+    "stable_segment_speedups_percent": [1.168673802140268,2.403172701304256,2.0762730951575517,1.0601845072485026]
+  },
+  "replication": {
+    "measured_triads_total": 1200,
+    "candidate_wins_total": 1192,
+    "reference_wins_total": 8,
+    "ties_total": 0,
+    "overall_median_speedup_range_percent": [1.7505721253073379,1.877042562363167],
+    "conservative_minimum_overall_bootstrap_95_lower_bound_percent": 1.6339637436929826,
+    "all_six_permutation_lower_bounds_positive_in_both_runs": true,
+    "all_stable_pstate_segment_lower_bounds_positive_in_both_runs": true,
+    "strict_promotion_rule_satisfied_independently_twice": true
+  },
+  "final_verdict": "PROMOTE_LAB38A_AS_REPLICATED_HARDWARE_SELECTED_BASELINE",
+  "previous_baseline": "LAB37B",
+  "new_baseline": "LAB38A",
+  "new_baseline_shader_sha256": "d60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3"
+}
