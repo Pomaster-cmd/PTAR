@@ -1,0 +1,7 @@
+Authoritative physical-result source archive SHA-256:
+91a560797b54619b8e52b802d530022ace177b1c26aa70036325a6ec4b0d281e  results(7).zip
+
+Authoritative full raw CSV SHA-256:
+c239d1984d70a47ca2444ab6d475558d6d3d76ba671752d734d40f2537ba02a4  LAB30C_COMPARE_RAW.csv
+
+The repository file results/LAB30C_COMPARE_RAW.csv currently contains triads 0..59 as an archival sample only. The complete 600-triad result was independently parsed for LAB30C_GTX960M_ANALYSIS.json. Summary and all 10 block medians are archived separately. Do not treat the 60-row sample as the complete run.
