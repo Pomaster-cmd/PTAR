@@ -1,0 +1,84 @@
+name: LAB34 Phase Control Sweep
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-lab34-phase-control-sweep
+
+permissions:
+  contents: read
+
+jobs:
+  codegen-sweep:
+    if: contains(github.event.head_commit.message, '[run-lab34]')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Locate x64 FXC
+        id: fxc
+        shell: pwsh
+        run: |
+          $fxc=Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if(-not $fxc){ throw 'x64 FXC not found' }
+          "path=$($fxc.FullName)" >> $env:GITHUB_OUTPUT
+
+      - name: Compile LAB31G baseline and LAB34 candidates
+        shell: pwsh
+        run: |
+          $out='lab_results\lab34_codegen'; New-Item -ItemType Directory -Force $out | Out-Null
+          $fxc='${{ steps.fxc.outputs.path }}'
+          $map=@{
+            'lab31g'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab31g_host_inv_half_mad_ps.hlsl'
+            'lab34a'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab34a_phase_nonzero_block_ps.hlsl'
+            'lab34b'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab34b_phase_linear_coeff_ps.hlsl'
+            'lab34c'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab34c_nonzero_linear_coeff_ps.hlsl'
+          }
+          foreach($n in $map.Keys){
+            & $fxc /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$out\$n.cso" /Fc "$out\$n.asm" $map[$n]
+            if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          }
+          $h=(Get-FileHash "$out\lab31g.cso" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($h -ne 'ead1e18944b392ef23562d9a45a9429d5bdee77ae914e313b415c3143c39aed1'){ throw "LAB31G baseline hash mismatch $h" }
+
+      - name: Audit DXBC and rank candidates
+        shell: pwsh
+        run: |
+          @'
+          import hashlib,json,re
+          from collections import Counter
+          from pathlib import Path
+          p=Path('lab_results/lab34_codegen'); names=['lab31g','lab34a','lab34b','lab34c']; rows={}; op_re=re.compile(r'^\s*([A-Za-z][A-Za-z0-9_]*)\b')
+          for n in names:
+              ops=[]
+              for raw in (p/f'{n}.asm').read_text(encoding='utf-8',errors='replace').splitlines():
+                  s=raw.lstrip()
+                  if not s or s.startswith('//') or s.startswith('ps_5_0'): continue
+                  m=op_re.match(raw)
+                  if not m: continue
+                  op=m.group(1).lower()
+                  if op.startswith('dcl_') or op in {'def','defi','defb'}: continue
+                  ops.append(op)
+              c=Counter(ops); cso=p/f'{n}.cso'
+              rows[n]={
+                'sha256':hashlib.sha256(cso.read_bytes()).hexdigest(),'instructions':len(ops),'bytes':cso.stat().st_size,
+                'eq':c.get('eq',0),'ne':c.get('ne',0),'if':c.get('if_nz',0)+c.get('if_z',0),'lt':c.get('lt',0),'movc':c.get('movc',0),'mad':c.get('mad',0),'mul':c.get('mul',0),'add':c.get('add',0),'ret':c.get('ret',0),'frc':c.get('frc',0),
+                'div':c.get('div',0),'udiv':c.get('udiv',0),
+                'gather4':sum(v for k,v in c.items() if k.startswith('gather4')),'sample_l':sum(v for k,v in c.items() if k.startswith('sample_l')),'uav':sum(v for k,v in c.items() if k.startswith('store_uav') or k.startswith('atomic_')),
+                'op_counts':dict(sorted(c.items()))
+              }
+          base=rows['lab31g']; admitted=[]
+          for n in names[1:]:
+              r=rows[n]; r['texture_contract_pass']=r['gather4']==1 and r['sample_l']==4 and r['uav']==0
+              r['instruction_delta_vs_lab31g']=r['instructions']-base['instructions']; r['byte_delta_vs_lab31g']=r['bytes']-base['bytes']
+              if r['texture_contract_pass'] and r['instructions'] < base['instructions']: admitted.append(n)
+          ranking=sorted(names[1:],key=lambda n:(rows[n]['instructions'],rows[n]['bytes']))
+          out={'protocol':'LAB34_PHASE_CONTROL_CODEGEN_SWEEP','baseline':base,'candidates':{n:rows[n] for n in names[1:]},'ranking':ranking,'strict_instruction_reduction_candidates':admitted,'pass':True}
+          (p/'CODEGEN_SWEEP.json').write_text(json.dumps(out,indent=2)+'\n',encoding='utf-8'); print(json.dumps(out,indent=2))
+          '@ | python -
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lab34-phase-control-codegen-sweep
+          path: lab_results/lab34_codegen
