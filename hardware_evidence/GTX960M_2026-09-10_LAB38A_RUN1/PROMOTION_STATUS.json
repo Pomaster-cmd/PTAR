@@ -2,9 +2,12 @@
   "protocol": "LAB38A_HARDWARE_PROMOTION_STATUS",
   "run1_source_zip_sha256": "70ebab6131fc7691c1abf8a460ba6b92c8ec4637c953cb0972aebe5fd89061bc",
   "run1_strict_gate_pass": true,
+  "run2_source_zip_sha256": "b48a09c8178e6cde0256898c6cb745f8b926be2a15690f155101e9c02d0dc1fa",
+  "run2_strict_gate_pass": true,
   "independent_replication_required": true,
-  "independent_replication_completed": false,
-  "final_hardware_selected_baseline": "LAB37B",
-  "candidate": "LAB38A",
-  "status": "RUN1_PASS_REPLICATION_PENDING"
+  "independent_replication_completed": true,
+  "previous_hardware_selected_baseline": "LAB37B",
+  "final_hardware_selected_baseline": "LAB38A",
+  "candidate_shader_sha256": "d60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3",
+  "status": "REPLICATION_CONFIRMED_PROMOTED"
 }
