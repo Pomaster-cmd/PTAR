@@ -1,0 +1,19 @@
+{
+  "protocol": "LAB38A_CODEGEN_GATE",
+  "baseline": "LAB37B",
+  "candidate": "LAB38A",
+  "lab37b": {
+    "sha256": "cd92ead859b9e7e210b96b1b811c95f91b1eba3c18c64a7cfa83e0a004c5a0b5",
+    "instructions": 52, "bytes": 2532, "div": 0, "udiv": 0, "gather4": 1, "sample_l": 4, "uav": 0,
+    "op_counts": {"add":8,"and":3,"endif":1,"eq":1,"frc":1,"gather4_indexable":1,"ge":3,"if_nz":1,"mad":7,"max":2,"min":4,"mov":1,"movc":2,"mul":8,"ret":2,"round_ne":1,"round_ni":2,"sample_l_indexable":4}
+  },
+  "lab38a": {
+    "sha256": "d60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3",
+    "instructions": 49, "bytes": 2528, "div": 0, "udiv": 0, "gather4": 1, "sample_l": 4, "uav": 0,
+    "op_counts": {"add":8,"and":3,"eq":1,"frc":1,"gather4_indexable":1,"ge":3,"mad":7,"max":2,"min":4,"movc":3,"mul":8,"ret":1,"round_ne":1,"round_ni":2,"sample_l_indexable":4}
+  },
+  "instruction_delta": -3,
+  "byte_delta": -4,
+  "texture_contract_pass": true,
+  "pass": true
+}
