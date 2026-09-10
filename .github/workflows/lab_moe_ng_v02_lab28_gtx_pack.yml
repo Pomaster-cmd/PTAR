@@ -47,7 +47,7 @@ jobs:
             'lab28.cso'='fb77c785fd79891c321a4abf5d517367a7d873574c04046fe6c44b45a0df9a77'
             'ptar_k185_control_ps.cso'='6bd926e85f21dd08788ff9d189c472800a5e0eb726091158ed1ecde3d06d8c16'
             'ptar_vs.cso'='6328bbd87aac73b07d6112de593f781b2769381aae65fa9c2bcfa06fdc68585c'
-            'lab_fullscreen_vs.cso'='f2512c09f70c30aa6f4b06e6885f34acac23ee5e5e3b94486b0846159578fcf8'
+            'lab_fullscreen_vs.cso'='f5d7c0f9be164a924fbe821137fc7bb216c479abc5701411bd1a09346dd5078b'
           }
           $hashLines=@()
           foreach($n in $expected.Keys){
