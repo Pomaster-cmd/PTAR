@@ -1,0 +1,26 @@
+{
+  "protocol": "LAB38A_FULL_SOFTWARE_ADMISSION",
+  "candidate_sha256": "d60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3",
+  "baseline_sha256": "cd92ead859b9e7e210b96b1b811c95f91b1eba3c18c64a7cfa83e0a004c5a0b5",
+  "shared_abi": "cb0.xy=invInputSize; cb0.zw=halfInvInputSize",
+  "cpu_parity": {
+    "protocol": "LAB07_ALWAYS_ON_MC_D3D11_WARP_RUNTIME_PARITY",
+    "driver_requested": "D3D_DRIVER_TYPE_WARP",
+    "physical_gpu_executed": false,
+    "d3d11_subtexel_fractional_bits": 8,
+    "tolerance_abs": 2e-06,
+    "vs_d3d11_filter_reference": {"max_abs":1.1920928955078125e-07,"mean_abs":3.5053946412233472e-09,"pixels_over_tolerance":0},
+    "vs_ideal_float_reference": {"max_abs":0.0006319284439086914,"mean_abs":4.858193642576225e-05,"pixels_over_tolerance":742},
+    "pass": true
+  },
+  "canonical_float_bit_exact": true,
+  "multires_float_pass": true,
+  "corpus_unorm8_pass": true,
+  "synthetic_unorm8_pass": true,
+  "dxbc_audit_pass": true,
+  "candidate_instructions": 49,
+  "candidate_cso_bytes": 2528,
+  "baseline_instructions": 52,
+  "baseline_cso_bytes": 2532,
+  "pass": true
+}
