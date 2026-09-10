@@ -1,0 +1,41 @@
+{
+  "protocol": "LAB39_SVPOS_MAPPING_FAMILY_AUDIT",
+  "baseline": {
+    "name": "LAB38A",
+    "sha256": "d60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3",
+    "instructions": 49,
+    "bytes": 2528
+  },
+  "candidates": {
+    "LAB39A_direct_svpos_mad": {
+      "sha256": "4632826b25ec63d7fa5bf615ec83d2b81a47f53a0fc24ac52ed0004d78b92c1a",
+      "instructions": 50,
+      "bytes": 2624,
+      "instruction_delta": 1,
+      "byte_delta": 96,
+      "texture_contract_pass": true,
+      "decision": "REJECT_CODEGEN"
+    },
+    "LAB39B_half_offset_submul": {
+      "sha256": "06e82a60583d193280227f439894161770fd5647782597a392cf28e43b417fa4",
+      "instructions": 51,
+      "bytes": 2644,
+      "instruction_delta": 2,
+      "byte_delta": 116,
+      "texture_contract_pass": true,
+      "decision": "REJECT_CODEGEN"
+    },
+    "LAB39C_packed_svpos_mad": {
+      "sha256": "4632826b25ec63d7fa5bf615ec83d2b81a47f53a0fc24ac52ed0004d78b92c1a",
+      "instructions": 50,
+      "bytes": 2624,
+      "instruction_delta": 1,
+      "byte_delta": 96,
+      "texture_contract_pass": true,
+      "decision": "REJECT_CODEGEN"
+    }
+  },
+  "conclusion": "Do not pursue direct SV_Position mapping rewrites from LAB38A. FXC duplicates/reformats the arithmetic and increases both static instruction count and bytecode size. Keep LAB38A mapping shape and target another operation family.",
+  "hardware_test_required": false,
+  "pass": true
+}
