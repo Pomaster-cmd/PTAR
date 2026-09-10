@@ -1,0 +1,191 @@
+name: LAB30C Full Software Gate
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-lab30-codegen-sweep
+
+permissions:
+  contents: read
+
+jobs:
+  full-gate:
+    if: contains(github.event.head_commit.message, '[run-lab30c-full]')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --disable-pip-version-check numpy pillow
+
+      - name: Compile frozen LAB29 and LAB30C
+        shell: pwsh
+        run: |
+          $out='lab_results\lab30c_full'; New-Item -ItemType Directory -Force $out | Out-Null
+          $fxc=Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if(-not $fxc){ throw 'x64 FXC not found' }
+          & $fxc.FullName /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$out\lab29.cso" /Fc "$out\lab29.asm" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab29_doubled_mc_slope_ps.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & $fxc.FullName /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$out\lab30c.cso" /Fc "$out\lab30c.asm" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab30c_movc_frac_ps.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & $fxc.FullName /nologo /T vs_5_0 /E main /O3 /Ges /WX /Fo "$out\fullscreen_vs.cso" src\hlsl\moe_ng_v02\lab_fullscreen_vs.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          $h29=(Get-FileHash "$out\lab29.cso" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $h30=(Get-FileHash "$out\lab30c.cso" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($h29 -ne '6a407b37938ec6a0bf89d13cf84fa4ae23c6f712a947fc6926bbfde9725028ed'){ throw "LAB29 hash mismatch $h29" }
+          if($h30 -ne 'be967e9bdb56cad2f1b90e9d7e553a0316140577329e900f4caa02d337aabb8a'){ throw "LAB30C hash mismatch $h30" }
+          @("LAB29=$h29","LAB30C=$h30") | Set-Content "$out\HASHES.txt" -Encoding ascii
+
+      - name: Strict DXBC audit
+        shell: pwsh
+        run: |
+          @'
+          import json,re
+          from collections import Counter
+          from pathlib import Path
+          p=Path('lab_results/lab30c_full'); op_re=re.compile(r'^\s*([A-Za-z][A-Za-z0-9_]*)\b'); out={}
+          for name in ('lab29','lab30c'):
+              ops=[]
+              for raw in (p/f'{name}.asm').read_text(encoding='utf-8',errors='replace').splitlines():
+                  s=raw.lstrip()
+                  if not s or s.startswith('//') or s.startswith('ps_5_0'): continue
+                  m=op_re.match(raw)
+                  if not m: continue
+                  op=m.group(1).lower()
+                  if op.startswith('dcl_') or op in {'def','defi','defb'}: continue
+                  ops.append(op)
+              c=Counter(ops)
+              out[name]={'instructions':len(ops),'bytes':(p/f'{name}.cso').stat().st_size,'div':c.get('div',0),'udiv':c.get('udiv',0),'frc':c.get('frc',0),'mul':c.get('mul',0),'gather4':sum(v for k,v in c.items() if k.startswith('gather4')),'sample_l':sum(v for k,v in c.items() if k.startswith('sample_l')),'uav':sum(v for k,v in c.items() if k.startswith('store_uav') or k.startswith('atomic_'))}
+          a,b=out['lab29'],out['lab30c']
+          contract=all(v['gather4']==1 and v['sample_l']==4 and v['uav']==0 for v in out.values())
+          exact=(a['instructions']==57 and a['bytes']==2732 and b['instructions']==55 and b['bytes']==2632 and b['udiv']==0)
+          r={'protocol':'LAB30C_STRICT_DXBC_AUDIT','lab29':a,'lab30c':b,'texture_contract_pass':contract,'expected_codegen_pass':exact,'instruction_delta':b['instructions']-a['instructions'],'byte_delta':b['bytes']-a['bytes'],'pass':bool(contract and exact)}
+          (p/'DXBC_AUDIT.json').write_text(json.dumps(r,indent=2)+'\n'); print(json.dumps(r,indent=2))
+          if not r['pass']: raise SystemExit('DXBC gate failed')
+          '@ | python -
+
+      - name: Build float and UNORM8 WARP harnesses
+        shell: pwsh
+        run: |
+          $out='lab_results\lab30c_full'
+          $vswhere="${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vcvars=& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Auxiliary\Build\vcvars64.bat' | Select-Object -First 1
+          if(-not $vcvars){ throw 'vcvars64.bat not found' }
+          $cmd="call `"$vcvars`" && cl /nologo /EHsc /O2 /std:c++17 tools\lab_moe_ng_v02_warp_harness.cpp /Fe:$out\warp_float.exe d3d11.lib dxgi.lib && cl /nologo /EHsc /O2 /std:c++17 tools\lab_moe_ng_v02_warp_harness_unorm8.cpp /Fe:$out\warp_unorm8.exe d3d11.lib dxgi.lib"
+          cmd.exe /d /s /c $cmd
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+
+      - name: CPU parity and float probes
+        shell: pwsh
+        run: |
+          $out='lab_results\lab30c_full'
+          python tools/lab_moe_ng_v02_warp_validate.py --outdir $out --prepare
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & "$out\warp_float.exe" "$out\input.f32" 24 24 36 36 "$out\lab29.cso" "$out\fullscreen_vs.cso" "$out\base.f32" *> "$out\WARP_BASE.txt"
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & "$out\warp_float.exe" "$out\input.f32" 24 24 36 36 "$out\lab30c.cso" "$out\fullscreen_vs.cso" "$out\cand.f32" *> "$out\WARP_CAND.txt"
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          python tools/lab_moe_ng_v02_warp_validate.py --outdir $out --gpu "$out\cand.f32" --tol 0.000002
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          Copy-Item "$out\SUMMARY.json" "$out\LAB30C_CPU_PARITY.json"
+          @'
+          import json,numpy as np,subprocess
+          from pathlib import Path
+          p=Path('lab_results/lab30c_full'); H=W=24; y,x=np.mgrid[0:H,0:W]; F=np.float32
+          probes=[]
+          probes.append(('canonical',p/'input.f32'))
+          checker=((x+y)&1).astype(np.float32); stripes=((2*x+y)%5<2).astype(np.float32); rng=np.random.default_rng(303030); noise=rng.random((H,W),dtype=np.float32)
+          hf=np.stack([F(.03)+F(.94)*checker,F(.05)+F(.88)*stripes,F(.02)+F(.95)*noise,np.ones((H,W),np.float32)],2).astype(np.float32); hf.tofile(p/'hf.f32'); probes.append(('high_frequency',p/'hf.f32'))
+          ramp=np.stack([x.astype(np.float32)/F(W-1),y.astype(np.float32)/F(H-1),((x+y)%7).astype(np.float32)/F(6),np.ones((H,W),np.float32)],2); ramp.tofile(p/'ramp.f32'); probes.append(('ramp',p/'ramp.f32'))
+          exe=str(p/'warp_float.exe'); vs=str(p/'fullscreen_vs.cso'); rows=[]
+          for name,inp in probes:
+              a=p/f'{name}_29.f32'; b=p/f'{name}_30c.f32'
+              subprocess.run([exe,str(inp),str(W),str(H),'36','36',str(p/'lab29.cso'),vs,str(a)],check=True,stdout=subprocess.DEVNULL)
+              subprocess.run([exe,str(inp),str(W),str(H),'36','36',str(p/'lab30c.cso'),vs,str(b)],check=True,stdout=subprocess.DEVNULL)
+              aa=np.fromfile(a,np.float32); bb=np.fromfile(b,np.float32); d=np.abs(aa-bb)
+              rows.append({'probe':name,'values':int(aa.size),'different_values':int(np.count_nonzero(d)),'max_abs':float(d.max()) if d.size else 0.0,'bit_exact':bool(np.array_equal(aa,bb))})
+          r={'protocol':'LAB30C_FLOAT_EQUIVALENCE','probes':rows,'pass':all(x['bit_exact'] for x in rows)}
+          (p/'FLOAT_EQUIVALENCE.json').write_text(json.dumps(r,indent=2)+'\n'); print(json.dumps(r,indent=2))
+          if not r['pass']: raise SystemExit('float equivalence failed')
+          '@ | python -
+
+      - name: Prepare canonical 42-case corpus
+        shell: pwsh
+        run: |
+          @'
+          import csv,numpy as np
+          from pathlib import Path
+          from PIL import Image
+          src=Path('runtime_autonomous/PTAR_NG_MOE_V01_WIN81_X64/corpus/input_lr'); out=Path('lab_results/lab30c_full'); inp=out/'inputs_f32'; inp.mkdir(exist_ok=True)
+          files=sorted(src.glob('*.png'))
+          if len(files)!=42: raise SystemExit(f'expected 42 corpus PNGs, got {len(files)}')
+          rows=[]
+          for p in files:
+              im=Image.open(p).convert('RGBA'); w,h=im.size; a=np.asarray(im,dtype=np.float32)/np.float32(255.0); q=inp/(p.stem+'.f32'); a.tofile(q)
+              rows.append({'case':p.stem,'input':str(q),'inW':w,'inH':h,'outW':w*3//2,'outH':h*3//2})
+          with (out/'CORPUS_MANIFEST.csv').open('w',newline='',encoding='utf-8') as f:
+              wr=csv.DictWriter(f,fieldnames=rows[0].keys()); wr.writeheader(); wr.writerows(rows)
+          '@ | python -
+
+      - name: 42-case UNORM8 equivalence
+        shell: pwsh
+        run: |
+          @'
+          import csv,json,subprocess
+          from pathlib import Path
+          out=Path('lab_results/lab30c_full'); exe=out/'warp_unorm8.exe'; vs=out/'fullscreen_vs.cso'; od=out/'corpus_outputs'; od.mkdir(exist_ok=True); rows=[]; total=diffs=0
+          with (out/'CORPUS_MANIFEST.csv').open(newline='',encoding='utf-8') as f: manifest=list(csv.DictReader(f))
+          for r in manifest:
+              a=od/(r['case']+'_29.rgba8'); b=od/(r['case']+'_30c.rgba8'); base=[str(exe),r['input'],r['inW'],r['inH'],r['outW'],r['outH']]
+              subprocess.run(base+[str(out/'lab29.cso'),str(vs),str(a)],check=True,stdout=subprocess.DEVNULL)
+              subprocess.run(base+[str(out/'lab30c.cso'),str(vs),str(b)],check=True,stdout=subprocess.DEVNULL)
+              ba=a.read_bytes(); bb=b.read_bytes()
+              if len(ba)!=len(bb): raise SystemExit('size mismatch')
+              d=sum(x!=y for x,y in zip(ba,bb)); total+=len(ba); diffs+=d; rows.append({'case':r['case'],'bytes':len(ba),'different_bytes':d,'byte_exact':d==0})
+          q={'protocol':'LAB30C_42_CASE_WARP_R8G8B8A8_UNORM','cases':len(rows),'exact_cases':sum(x['byte_exact'] for x in rows),'different_bytes':diffs,'total_bytes':total,'pass':all(x['byte_exact'] for x in rows)}
+          (out/'CORPUS_UNORM8_SUMMARY.json').write_text(json.dumps(q,indent=2)+'\n'); print(json.dumps(q,indent=2))
+          if not q['pass']: raise SystemExit('corpus drift')
+          '@ | python -
+
+      - name: Synthetic UNORM8 stress
+        shell: pwsh
+        run: |
+          @'
+          import json,subprocess,numpy as np
+          from pathlib import Path
+          out=Path('lab_results/lab30c_full'); td=out/'synthetic'; td.mkdir(exist_ok=True); H=W=64; y,x=np.mgrid[0:H,0:W]; rng=np.random.default_rng(0x4C41423330)
+          def rgba8(r,g,b,a=None):
+              if a is None:a=np.full((H,W),255,dtype=np.uint8)
+              return np.stack([r,g,b,a],2).astype(np.uint8)
+          ramp=np.rint(np.linspace(0,255,W,dtype=np.float32)).astype(np.uint8)[None,:].repeat(H,0); vr=ramp.T
+          imgs=[('ramps',rgba8(ramp,vr,((ramp.astype(np.uint16)+vr.astype(np.uint16))//2).astype(np.uint8)))]
+          step=np.where(x>=32,255,0).astype(np.uint8); diag=np.where(x+y>=63,255,0).astype(np.uint8); imgs.append(('steps',rgba8(step,diag,np.where((2*x+y)%5<2,240,15).astype(np.uint8))))
+          check=np.where((x+y)&1,255,0).astype(np.uint8); imgs.append(('checker',rgba8(check,np.roll(check,1,1),np.roll(check,1,0))))
+          for i in range(6): imgs.append((f'random_{i}',rng.integers(0,256,size=(H,W,4),dtype=np.uint8)))
+          exe=out/'warp_unorm8.exe'; vs=out/'fullscreen_vs.cso'; rows=[]
+          for name,u8 in imgs:
+              inp=td/(name+'.f32'); (u8.astype(np.float32)/np.float32(255.0)).tofile(inp); a=td/(name+'_29.rgba8'); b=td/(name+'_30c.rgba8'); base=[str(exe),str(inp),'64','64','96','96']
+              subprocess.run(base+[str(out/'lab29.cso'),str(vs),str(a)],check=True,stdout=subprocess.DEVNULL)
+              subprocess.run(base+[str(out/'lab30c.cso'),str(vs),str(b)],check=True,stdout=subprocess.DEVNULL)
+              ba=a.read_bytes();bb=b.read_bytes();d=sum(x!=y for x,y in zip(ba,bb));rows.append({'probe':name,'different_bytes':d,'byte_exact':d==0})
+          q={'protocol':'LAB30C_SYNTHETIC_UNORM8','probes':rows,'pass':all(x['byte_exact'] for x in rows)}; (out/'SYNTHETIC_UNORM8_SUMMARY.json').write_text(json.dumps(q,indent=2)+'\n');print(json.dumps(q,indent=2))
+          if not q['pass']:raise SystemExit('synthetic drift')
+          '@ | python -
+
+      - name: Final admission
+        shell: pwsh
+        run: |
+          @'
+          import json
+          from pathlib import Path
+          p=Path('lab_results/lab30c_full'); cpu=json.loads((p/'LAB30C_CPU_PARITY.json').read_text()); dx=json.loads((p/'DXBC_AUDIT.json').read_text()); fl=json.loads((p/'FLOAT_EQUIVALENCE.json').read_text()); co=json.loads((p/'CORPUS_UNORM8_SUMMARY.json').read_text()); sy=json.loads((p/'SYNTHETIC_UNORM8_SUMMARY.json').read_text())
+          q={'protocol':'LAB30C_FULL_SOFTWARE_ADMISSION','baseline_lab29_sha256':'6a407b37938ec6a0bf89d13cf84fa4ae23c6f712a947fc6926bbfde9725028ed','lab30c_sha256':'be967e9bdb56cad2f1b90e9d7e553a0316140577329e900f4caa02d337aabb8a','dxbc_audit_pass':dx['pass'],'cpu_parity':cpu,'float_equivalence_pass':fl['pass'],'corpus_unorm8_pass':co['pass'],'synthetic_unorm8_pass':sy['pass'],'lab29_instructions':57,'lab30c_instructions':55,'lab29_bytes':2732,'lab30c_bytes':2632,'lab30c_udiv':0}; q['pass']=bool(dx['pass'] and fl['pass'] and co['pass'] and sy['pass']); (p/'ADMISSION.json').write_text(json.dumps(q,indent=2)+'\n'); print(json.dumps(q,indent=2))
+          if not q['pass']: raise SystemExit('LAB30C software admission failed')
+          '@ | python -
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lab30c-full-software-gate
+          path: lab_results/lab30c_full
