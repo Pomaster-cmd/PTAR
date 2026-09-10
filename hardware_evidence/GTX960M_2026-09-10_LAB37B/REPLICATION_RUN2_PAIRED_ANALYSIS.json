@@ -1,0 +1,123 @@
+{
+  "protocol": "PTAR_BALANCED_TRIAD_RESULT_ANALYSIS_V02_REPLICATION",
+  "reference": "LAB36B",
+  "candidate": "LAB37B",
+  "control": "K185",
+  "software_correctness": "pass (same frozen shader hashes as admitted candidate)",
+  "protocol_validation": {
+    "valid": true,
+    "rows": 600,
+    "triad_sequence": "0..599 contiguous unique",
+    "permutation_counts": {
+      "K185>LAB36B>LAB37B": 100,
+      "K185>LAB37B>LAB36B": 100,
+      "LAB36B>K185>LAB37B": 100,
+      "LAB36B>LAB37B>K185": 100,
+      "LAB37B>K185>LAB36B": 100,
+      "LAB37B>LAB36B>K185": 100
+    },
+    "all_measures_positive_finite": true,
+    "paired_delta_column_exact": true,
+    "winner_column_exact": true,
+    "blocks_60_recomputed_exact": true,
+    "summary_recomputed_exact": true
+  },
+  "overall": {
+    "triads": 600,
+    "reference_median_ms": 0.740336,
+    "candidate_median_ms": 0.721312,
+    "control_median_ms": 0.698976,
+    "paired_reference_minus_candidate_median_ms": 0.015808,
+    "paired_speedup_median_percent": 2.213099876574,
+    "bootstrap_median_speedup_ci95_percent": [2.132355979147, 2.348839803903],
+    "bootstrap_method": "100000 paired-row resamples; median of (reference-candidate)/reference*100; percentile 2.5/97.5; PCG64 seed 20260910",
+    "candidate_wins": 598,
+    "reference_wins": 2,
+    "ties": 0,
+    "two_sided_sign_test_p": 8.690219231958302e-176
+  },
+  "pstate": {
+    "detected": true,
+    "detector": "largest adjacent K185 timing jump plus cross-variant state classification",
+    "dominant_control_split_index": 159,
+    "mixed_transition_triads": [159],
+    "stable_ranges": [[0,158],[160,599]],
+    "control_pre_median_ms": 0.497888,
+    "control_post_median_ms": 0.700640,
+    "control_relative_jump_percent": 40.722411466033,
+    "boundary_adjacent_jump_ms": 0.216864,
+    "boundary_adjacent_jump_percent": 43.306281551537,
+    "mixed_triad_interpretation": "triad 159 order LAB37B>K185>LAB36B: LAB37B remains in fast state while K185 and LAB36B are already in slow state, so transition occurred inside the triad and triad 159 is excluded from stable-state inference"
+  },
+  "permutation_median_speedup_percent": {
+    "K185>LAB36B>LAB37B": 2.343601708729,
+    "K185>LAB37B>LAB36B": 2.309697068442,
+    "LAB36B>K185>LAB37B": 2.301696660217,
+    "LAB36B>LAB37B>K185": 2.108060071398,
+    "LAB37B>K185>LAB36B": 2.188585943342,
+    "LAB37B>LAB36B>K185": 2.181083397628
+  },
+  "permutation_bootstrap_ci95_percent": {
+    "K185>LAB36B>LAB37B": [2.086553323029, 2.588475511150],
+    "K185>LAB37B>LAB36B": [2.031995450821, 2.526895500484],
+    "LAB36B>K185>LAB37B": [2.055606277247, 2.557552024084],
+    "LAB36B>LAB37B>K185": [1.942760284243, 2.426232509637],
+    "LAB37B>K185>LAB36B": [2.010066908994, 2.581126222638],
+    "LAB37B>LAB36B>K185": [1.906487232574, 2.437072870524]
+  },
+  "permutation_wins_losses_ties": {
+    "K185>LAB36B>LAB37B": [100,0,0],
+    "K185>LAB37B>LAB36B": [100,0,0],
+    "LAB36B>K185>LAB37B": [99,1,0],
+    "LAB36B>LAB37B>K185": [99,1,0],
+    "LAB37B>K185>LAB36B": [100,0,0],
+    "LAB37B>LAB36B>K185": [100,0,0]
+  },
+  "stable_segments": [
+    {
+      "first_triad": 0,
+      "last_triad": 158,
+      "triads": 159,
+      "reference_median_ms": 0.489184,
+      "candidate_median_ms": 0.481152,
+      "control_median_ms": 0.497888,
+      "paired_reference_minus_candidate_median_ms": 0.007840,
+      "paired_speedup_median_percent": 1.603403141361,
+      "bootstrap_median_speedup_ci95_percent": [1.541691268123, 1.687708510499],
+      "candidate_wins": 159,
+      "reference_wins": 0,
+      "ties": 0
+    },
+    {
+      "first_triad": 160,
+      "last_triad": 599,
+      "triads": 440,
+      "reference_median_ms": 0.742416,
+      "candidate_median_ms": 0.723312,
+      "control_median_ms": 0.700640,
+      "paired_reference_minus_candidate_median_ms": 0.019264,
+      "paired_speedup_median_percent": 2.597064589053,
+      "bootstrap_median_speedup_ci95_percent": [2.499784872214, 2.676518365644],
+      "candidate_wins": 438,
+      "reference_wins": 2,
+      "ties": 0
+    }
+  ],
+  "verdict": {
+    "decision": "REPLICATION_PASS_KEEP_LAB37B_SELECTED",
+    "promote": true,
+    "reasons": [
+      "overall_bootstrap_95pct_lower_bound_positive=true",
+      "all_six_permutation_medians_positive=true",
+      "all_six_permutation_bootstrap_95pct_lower_bounds_positive=true",
+      "all_stable_pstate_segments_positive=true",
+      "all_stable_pstate_bootstrap_95pct_lower_bounds_positive=true",
+      "candidate_wins_598_of_600=true",
+      "independent_second_run_reproduces_first_run=true"
+    ]
+  },
+  "source_results_zip_sha256": "8fbf66e496658ce2cc0626f9c9e8120e97d52fa3176fc8992302306b0367b632",
+  "source_csv_sha256": "bf2ef4703b48493ea12be40b78981ee5d486ef49ce01a20fc6e6e9e6fdad0489",
+  "source_blocks_sha256": "dd7a8e36ea4ea483f0c5948298fd4a5a4479343aa0985e11686c69b2399c4ed0",
+  "source_summary_sha256": "b1d961d7cbdac40bae87a4e7b74f82aeadf6dbfead448eed14b6e4ba7d510482"
+}
