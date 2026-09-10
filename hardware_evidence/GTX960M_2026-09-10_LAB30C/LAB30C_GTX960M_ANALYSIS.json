@@ -1,0 +1,100 @@
+{
+  "protocol": "LAB30C_GTX960M_RESULT_ANALYSIS",
+  "source_archive_sha256": "91a560797b54619b8e52b802d530022ace177b1c26aa70036325a6ec4b0d281e",
+  "source_files_sha256": {
+    "BLOCKS_60.csv": "666f56631867635b1c36ab412504880840029bcfe2cb368844774373b0777a08",
+    "LAB30C_COMPARE_RAW.csv": "c239d1984d70a47ca2444ab6d475558d6d3d76ba671752d734d40f2537ba02a4",
+    "LAB30C_COMPARE_SUMMARY.json": "5779fc8367f7ec31b44bc823486e9c919a8b3099e78ca80bbd5b24b86a25a3ba"
+  },
+  "adapter": "NVIDIA GeForce GTX 960M",
+  "dimensions": {
+    "input": "1280x720",
+    "output": "1920x1080"
+  },
+  "samples": 600,
+  "warmup_triads": 60,
+  "permutation_counts": {
+    "K185/LAB29/LAB30C": 100,
+    "K185/LAB30C/LAB29": 100,
+    "LAB29/K185/LAB30C": 100,
+    "LAB29/LAB30C/K185": 100,
+    "LAB30C/K185/LAB29": 100,
+    "LAB30C/LAB29/K185": 100
+  },
+  "overall": {
+    "lab29_median_ms": 0.797744,
+    "lab30c_median_ms": 0.775328,
+    "k185_median_ms": 0.698768,
+    "paired_delta_median_ms": 0.022544,
+    "paired_speedup_median_percent": 3.134030909875924,
+    "lab30c_wins": 600,
+    "lab29_wins": 0,
+    "ties": 0,
+    "delta_min_ms": 0.000928,
+    "delta_p05_ms": 0.0141104,
+    "delta_p95_ms": 0.0313616,
+    "delta_max_ms": 0.040256,
+    "bootstrap_95ci_paired_delta_median_ms": [0.022208, 0.02288],
+    "bootstrap_95ci_paired_speedup_median_percent": [3.016791194665374, 3.2428717253479085],
+    "two_sided_sign_test_p_approx": "4.82e-181"
+  },
+  "pstate": {
+    "detected_transition_triad": 154,
+    "basis": "K185 robust two-segment L1 change point; triad 154 excluded from stable-state comparison",
+    "fast_state_0_153": {
+      "n": 154,
+      "lab29_median_ms": 0.538608,
+      "lab30c_median_ms": 0.516272,
+      "k185_median_ms": 0.497648,
+      "paired_delta_median_ms": 0.022512,
+      "paired_speedup_median_pct": 4.183642252426175,
+      "wins": 154,
+      "losses": 0,
+      "ties": 0,
+      "delta_p05": 0.0193136,
+      "delta_p95": 0.0256
+    },
+    "transition_154": {
+      "n": 1,
+      "lab29_median_ms": 0.80304,
+      "lab30c_median_ms": 0.77952,
+      "k185_median_ms": 0.720448,
+      "paired_delta_median_ms": 0.02352,
+      "paired_speedup_median_pct": 2.9288702928870274,
+      "wins": 1,
+      "losses": 0,
+      "ties": 0
+    },
+    "slow_state_155_599": {
+      "n": 445,
+      "lab29_median_ms": 0.799648,
+      "lab30c_median_ms": 0.777184,
+      "k185_median_ms": 0.700544,
+      "paired_delta_median_ms": 0.02256,
+      "paired_speedup_median_pct": 2.8234168128888193,
+      "wins": 445,
+      "losses": 0,
+      "ties": 0,
+      "delta_p05": 0.0133632,
+      "delta_p95": 0.0324928
+    },
+    "fast_bootstrap_95ci_delta_median_ms": [0.022192, 0.022816],
+    "fast_bootstrap_95ci_speedup_median_percent": [4.117123370992507, 4.238497206039721],
+    "slow_bootstrap_95ci_delta_median_ms": [0.022048, 0.023136],
+    "slow_bootstrap_95ci_speedup_median_percent": [2.763778897688187, 2.898666773431553]
+  },
+  "permutation_results": {
+    "K185/LAB29/LAB30C": {"n": 100, "paired_delta_median_ms": 0.023056, "paired_speedup_median_percent": 3.156247196565827, "lab30c_wins": 100},
+    "K185/LAB30C/LAB29": {"n": 100, "paired_delta_median_ms": 0.022256, "paired_speedup_median_percent": 3.0213725139694585, "lab30c_wins": 100},
+    "LAB29/K185/LAB30C": {"n": 100, "paired_delta_median_ms": 0.02224, "paired_speedup_median_percent": 3.2039669512245226, "lab30c_wins": 100},
+    "LAB29/LAB30C/K185": {"n": 100, "paired_delta_median_ms": 0.022528, "paired_speedup_median_percent": 3.1113787871278555, "lab30c_wins": 100},
+    "LAB30C/K185/LAB29": {"n": 100, "paired_delta_median_ms": 0.022016, "paired_speedup_median_percent": 2.928345311195754, "lab30c_wins": 100},
+    "LAB30C/LAB29/K185": {"n": 100, "paired_delta_median_ms": 0.022896, "paired_speedup_median_percent": 3.3953587451594975, "lab30c_wins": 100}
+  },
+  "all_10_blocks_positive_median_delta": true,
+  "selection": {
+    "decision": "SELECT_LAB30C_OVER_LAB29",
+    "reason": "600/600 paired wins; positive median delta in every balanced permutation and every 60-triad block; gain remains positive on both stable P-states; software equivalence already admitted.",
+    "production_modified": false
+  }
+}
