@@ -1,0 +1,91 @@
+name: LAB38 Codegen Sweep
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-lab38-post-lab37b-sweep
+
+permissions:
+  contents: read
+
+jobs:
+  codegen-sweep:
+    if: contains(github.event.head_commit.message, '[run-lab38-codegen]')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Locate x64 FXC
+        id: fxc
+        shell: pwsh
+        run: |
+          $fxc=Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if(-not $fxc){ throw 'x64 FXC not found' }
+          "path=$($fxc.FullName)" >> $env:GITHUB_OUTPUT
+
+      - name: Compile LAB37B and LAB38 candidates
+        shell: pwsh
+        run: |
+          $out='lab_results\lab38_codegen'; New-Item -ItemType Directory -Force $out | Out-Null
+          $fxc='${{ steps.fxc.outputs.path }}'
+          $src=@{
+            'lab37b'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab37b_diag_axis_round_coeff_ps.hlsl'
+            'lab38a'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab38a_phase_round_early_ps.hlsl'
+            'lab38b'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab38b_coeff_early_ps.hlsl'
+            'lab38c'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab38c_f2_recurrence_ps.hlsl'
+            'lab38d'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab38d_coeff_early_f2_recurrence_ps.hlsl'
+          }
+          foreach($n in $src.Keys){
+            & $fxc /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$out\$n.cso" /Fc "$out\$n.asm" $src[$n]
+            if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          }
+
+      - name: Audit DXBC codegen
+        shell: pwsh
+        run: |
+          @'
+          import hashlib,json,re
+          from collections import Counter
+          from pathlib import Path
+          root=Path('lab_results/lab38_codegen')
+          names=['lab37b','lab38a','lab38b','lab38c','lab38d']
+          pat=re.compile(r'^\s*([A-Za-z][A-Za-z0-9_]*)\b')
+          rows={}
+          for n in names:
+              ops=[]
+              for raw in (root/f'{n}.asm').read_text(encoding='utf-8',errors='replace').splitlines():
+                  s=raw.lstrip()
+                  if not s or s.startswith('//') or s.startswith('ps_5_0'): continue
+                  m=pat.match(raw)
+                  if not m: continue
+                  op=m.group(1).lower()
+                  if op.startswith('dcl_') or op in {'def','defi','defb'}: continue
+                  ops.append(op)
+              c=Counter(ops); b=(root/f'{n}.cso').read_bytes()
+              rows[n]={
+                'sha256':hashlib.sha256(b).hexdigest(),
+                'instructions':len(ops),'bytes':len(b),
+                'div':c.get('div',0),'udiv':c.get('udiv',0),
+                'add':c.get('add',0),'mul':c.get('mul',0),'mad':c.get('mad',0),
+                'mov':c.get('mov',0),'movc':c.get('movc',0),
+                'round_ne':c.get('round_ne',0),'round_ni':c.get('round_ni',0),
+                'gather4':sum(v for k,v in c.items() if k.startswith('gather4')),
+                'sample_l':sum(v for k,v in c.items() if k.startswith('sample_l')),
+                'uav':sum(v for k,v in c.items() if k.startswith('store_uav') or k.startswith('atomic_')),
+                'op_counts':dict(sorted(c.items()))
+              }
+          base=rows['lab37b']
+          for n in names[1:]:
+              rows[n]['instruction_delta']=rows[n]['instructions']-base['instructions']
+              rows[n]['byte_delta']=rows[n]['bytes']-base['bytes']
+              rows[n]['texture_contract_pass']=rows[n]['gather4']==1 and rows[n]['sample_l']==4 and rows[n]['uav']==0
+          r={'protocol':'LAB38_CODEGEN_SWEEP','baseline':'LAB37B','rows':rows,'pass':all(rows[n].get('texture_contract_pass',True) for n in names[1:]) and all(rows[n]['div']==0 and rows[n]['udiv']==0 for n in names)}
+          (root/'CODEGEN_SWEEP.json').write_text(json.dumps(r,indent=2)+'\n',encoding='utf-8'); print(json.dumps(r,indent=2))
+          if not r['pass']: raise SystemExit('codegen contract failed')
+          '@ | python -
+
+      - name: Upload codegen sweep
+        uses: actions/upload-artifact@v4
+        with:
+          name: lab38-codegen-sweep
+          path: lab_results/lab38_codegen
