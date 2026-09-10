@@ -1,0 +1,26 @@
+PTAR LAB29 GTX960M PACK PREFLIGHT
+
+GitHub Actions run: 34451550090
+Workflow conclusion: success
+Head commit: a515696c8a2a47d504cc406c55a6d8af413cb645
+Actions artifact digest: sha256:740469166d702a1e88babe79a0620c105710b9c5108a386593b18833ed5e31ff
+Clean repacked delivery ZIP SHA256: 5a9f2de083d1b53c83827722a110d33618315dcfbec410676a6050a7eb55b658
+
+Verified gates:
+- x64 FXC located and used
+- LAB28 SHA256 = fb77c785fd79891c321a4abf5d517367a7d873574c04046fe6c44b45a0df9a77
+- LAB29 SHA256 = 6a407b37938ec6a0bf89d13cf84fa4ae23c6f712a947fc6926bbfde9725028ed
+- LAB28 static cost = 59 instructions / 2788 bytes
+- LAB29 static cost = 57 instructions / 2732 bytes
+- Texture contract = 1 GatherGreen + 4 SampleLevel + 0 UAV
+- Win81 x64 comparator built with /MT
+- PE subsystem = 6.03
+- Runtime imports = d3d11.dll, dxgi.dll, bcrypt.dll, KERNEL32.dll
+- No D3DCompiler/VCRUNTIME/MSVCP/UCRT/API-MS-WIN-CRT dependency
+- WARP smoke = PASS for LAB28/LAB29/K185
+- Internal SHA256_MANIFEST verified after artifact download: 14/14 entries, 0 missing, 0 mismatches
+- All 5 CSO files begin with DXBC magic
+- Comparator EXE SHA256 = 89227763cbde031d7934a5998db6b47d5683c936e9bc3b688ef0884ab59d81e1
+
+Physical GTX 960M execution: NOT YET RUN.
+The only remaining admission step is RUN_LAB29_GTX960M_COMPARE.bat on Windows 8.1 + GTX 960M and return of the generated results directory.
