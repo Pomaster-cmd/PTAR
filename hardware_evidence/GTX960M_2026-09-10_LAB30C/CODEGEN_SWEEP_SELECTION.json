@@ -1,0 +1,48 @@
+{
+  "protocol": "LAB30_SWEEP_SELECTION",
+  "eligible": [
+    "lab30c",
+    "lab30a",
+    "lab30b"
+  ],
+  "winner": "lab30c",
+  "winner_codegen": {
+    "sha256": "be967e9bdb56cad2f1b90e9d7e553a0316140577329e900f4caa02d337aabb8a",
+    "instructions": 55,
+    "bytes": 2632,
+    "div": 3,
+    "udiv": 0,
+    "frc": 1,
+    "mul": 7,
+    "mad": 4,
+    "movc": 3,
+    "and": 2,
+    "gather4": 1,
+    "sample_l": 4,
+    "uav": 0,
+    "phase0_sample_before_branch": null,
+    "texture_contract_pass": true,
+    "instruction_delta_vs_lab29": -2,
+    "byte_delta_vs_lab29": -100
+  },
+  "baseline": {
+    "sha256": "6a407b37938ec6a0bf89d13cf84fa4ae23c6f712a947fc6926bbfde9725028ed",
+    "instructions": 57,
+    "bytes": 2732,
+    "div": 3,
+    "udiv": 1,
+    "frc": 0,
+    "mul": 9,
+    "mad": 4,
+    "movc": 4,
+    "and": 2,
+    "gather4": 1,
+    "sample_l": 4,
+    "uav": 0,
+    "phase0_sample_before_branch": null,
+    "texture_contract_pass": true,
+    "instruction_delta_vs_lab29": 0,
+    "byte_delta_vs_lab29": 0
+  },
+  "pass": true
+}
