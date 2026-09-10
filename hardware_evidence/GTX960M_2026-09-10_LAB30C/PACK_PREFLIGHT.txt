@@ -1,0 +1,35 @@
+PTAR LAB30C GTX960M COMPARE PACK PREFLIGHT
+Date: 2026-09-10
+Branch: lab/moe-ng-v02-lab30-codegen-sweep
+Pack workflow commit: 07fd3992cd772f483add4f82b9b1dc60b3e3f2af
+Workflow run: 34460921956
+Workflow result: SUCCESS
+Actions artifact id: 10145501050
+Actions artifact SHA-256: a196e1f27500d7824e15733673f3b1389df8e78808faf5f31ba8295219db28f1
+Clean verified delivery ZIP SHA-256: 625a9d184704c7ffc08a705fdfa5c5d908dd58761dd5a9e985d0fa7fedde48ff
+
+Independent post-download audit:
+- outer Actions ZIP CRC: PASS
+- internal SHA256_MANIFEST: 15/15 PASS
+- no unmanifested payload files besides SHA256_MANIFEST itself
+- comparator source archive copy matches build source byte-for-byte
+- accidental LAB28 markers in comparator source/EXE: NONE
+- LAB29 DXBC: 2732 bytes, SHA-256 6a407b37938ec6a0bf89d13cf84fa4ae23c6f712a947fc6926bbfde9725028ed
+- LAB30C DXBC: 2632 bytes, SHA-256 be967e9bdb56cad2f1b90e9d7e553a0316140577329e900f4caa02d337aabb8a
+- K185 control DXBC SHA-256: 6bd926e85f21dd08788ff9d189c472800a5e0eb726091158ed1ecde3d06d8c16
+- all 5 shader binaries have DXBC magic
+- static contract: 1 GatherGreen + 4 SampleLevel + 0 UAV
+- LAB30C codegen: 55 instructions / 2632 bytes / 0 UDIV
+- LAB29 codegen: 57 instructions / 2732 bytes / 1 UDIV
+- PE machine: x64 (0x8664)
+- PE OS version: 6.03
+- PE subsystem version: 6.03, Windows CUI
+- imports only d3d11.dll, dxgi.dll, bcrypt.dll, KERNEL32.dll
+- no D3DCompiler, VCRUNTIME, MSVCP, UCRTBASE, or API-MS-WIN-CRT runtime import
+- WARP smoke LAB29/LAB30C/K185: PASS
+- comparison protocol: 60 warmup triads + 600 measured triads, six rotating permutations; each measured permutation occurs exactly 100 times
+- timestamp region contains Draw only after pipeline setup; paired LAB29/LAB30C comparison is same-process and K185 is retained as P-state/drift control
+
+Physical GTX960M execution: PENDING.
+Promotion rule: promote LAB30C only if paired real-GPU gain versus LAB29 is reproducible across order permutations and stationary P-state regimes. Neutral or negative result keeps LAB29.
+Production refs were not modified by this experimental preflight.
