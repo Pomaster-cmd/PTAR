@@ -1,0 +1,29 @@
+{
+  "candidate": "LAB29_DOUBLED_MC_SLOPE",
+  "baseline": "LAB28_UV_AXIS",
+  "status": "HARDWARE_SELECTED_GTX960M",
+  "selected_on": "2026-09-10",
+  "software_equivalence": "BIT_EXACT_TO_LAB28",
+  "dxbc": {
+    "lab28_instructions": 59,
+    "lab29_instructions": 57,
+    "lab28_bytes": 2788,
+    "lab29_bytes": 2732,
+    "texture_contract": "1 GatherGreen + 4 SampleLevel + 0 UAV"
+  },
+  "hardware": {
+    "protocol": "LAB29_GTX960M_SAME_RUN_BALANCED_COMPARE",
+    "samples": 600,
+    "warmup_triads": 60,
+    "paired_speedup_median_percent": 2.104211041,
+    "paired_delta_median_ms": 0.017104,
+    "lab29_faster_count": 597,
+    "lab28_faster_count": 3,
+    "ties": 0,
+    "fast_pstate_speedup_median_percent": 4.565562613,
+    "slow_pstate_speedup_median_percent": 1.672280563,
+    "all_six_permutation_medians_positive": true
+  },
+  "decision": "PROMOTE_LAB29_AS_NEXT_EXPERIMENTAL_BASELINE",
+  "production_refs_modified": false
+}
