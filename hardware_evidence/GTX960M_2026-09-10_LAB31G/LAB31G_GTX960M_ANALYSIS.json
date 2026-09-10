@@ -1,0 +1,80 @@
+{
+  "protocol": "LAB31G_GTX960M_RESULT_ANALYSIS",
+  "source_archive_sha256": "2b0658e4d3b13e5ea98643257b2d7dbca890ddcbbe1916805afc06e58f8228b5",
+  "source_files_sha256": {
+    "BLOCKS_60.csv": "3040369e90e27da3d918fd604e3cc82516f07756c9022eb6b4a6a717965bc6c3",
+    "LAB31G_COMPARE_RAW.csv": "44a3d2120d10c73e78ba4571f69cbfdfeaad7e625a8681f33e7c569e1a0a1921",
+    "LAB31G_COMPARE_SUMMARY.json": "bda603197b7e96cb674c3446e4154aa34bd39e310faaaf1848fe50696b7ec3fd"
+  },
+  "adapter": "NVIDIA GeForce GTX 960M",
+  "dimensions": {"input": "1280x720", "output": "1920x1080"},
+  "samples": 600,
+  "warmup_triads": 60,
+  "permutation_counts": {
+    "K185/LAB30C/LAB31G": 100,
+    "K185/LAB31G/LAB30C": 100,
+    "LAB30C/K185/LAB31G": 100,
+    "LAB30C/LAB31G/K185": 100,
+    "LAB31G/K185/LAB30C": 100,
+    "LAB31G/LAB30C/K185": 100
+  },
+  "overall": {
+    "lab30c_median_ms": 0.772992,
+    "lab31g_median_ms": 0.753728,
+    "k185_median_ms": 0.695856,
+    "paired_delta_median_ms": 0.020416,
+    "paired_speedup_median_percent": 2.819340047024883,
+    "lab31g_wins": 600,
+    "lab30c_wins": 0,
+    "ties": 0,
+    "delta_min_ms": 0.002688,
+    "delta_p05_ms": 0.0108144,
+    "delta_p95_ms": 0.0282624,
+    "delta_max_ms": 0.035008,
+    "bootstrap_95ci_paired_delta_median_ms": [0.019888, 0.02072],
+    "bootstrap_95ci_paired_speedup_median_percent": [2.7272884637753396, 2.947611415683533],
+    "two_sided_sign_test_p_approx": "4.82e-181"
+  },
+  "pstate": {
+    "detected_transition_boundary": "between triad 148 and 149",
+    "basis": "K185 robust two-segment L1 change point; no transition-row exclusion required because triad 149 is already in the stable slow cluster",
+    "fast_state_0_148": {
+      "n": 149,
+      "lab30c_median_ms": 0.513632,
+      "lab31g_median_ms": 0.492512,
+      "k185_median_ms": 0.49456,
+      "paired_delta_median_ms": 0.021088,
+      "paired_speedup_median_pct": 4.099332376614464,
+      "wins": 149, "losses": 0, "ties": 0,
+      "delta_p05": 0.0172928, "delta_p95": 0.0251392
+    },
+    "slow_state_149_599": {
+      "n": 451,
+      "lab30c_median_ms": 0.77488,
+      "lab31g_median_ms": 0.755424,
+      "k185_median_ms": 0.697696,
+      "paired_delta_median_ms": 0.01952,
+      "paired_speedup_median_pct": 2.5201072386058985,
+      "wins": 451, "losses": 0, "ties": 0,
+      "delta_p05": 0.010048, "delta_p95": 0.0292
+    },
+    "fast_bootstrap_95ci_delta_median_ms": [0.020704, 0.021504],
+    "fast_bootstrap_95ci_speedup_median_percent": [4.036125817502335, 4.182485840542727],
+    "slow_bootstrap_95ci_delta_median_ms": [0.01872, 0.020224],
+    "slow_bootstrap_95ci_speedup_median_percent": [2.4133663366336635, 2.601144174177882]
+  },
+  "permutation_results": {
+    "K185/LAB30C/LAB31G": {"n": 100, "paired_delta_median_ms": 0.020416, "paired_speedup_median_percent": 2.9255177130799215, "lab31g_wins": 100},
+    "K185/LAB31G/LAB30C": {"n": 100, "paired_delta_median_ms": 0.020224, "paired_speedup_median_percent": 2.743443854006909, "lab31g_wins": 100},
+    "LAB30C/K185/LAB31G": {"n": 100, "paired_delta_median_ms": 0.020416, "paired_speedup_median_percent": 2.9514909414989923, "lab31g_wins": 100},
+    "LAB30C/LAB31G/K185": {"n": 100, "paired_delta_median_ms": 0.020464, "paired_speedup_median_percent": 2.8114967769734074, "lab31g_wins": 100},
+    "LAB31G/K185/LAB30C": {"n": 100, "paired_delta_median_ms": 0.020544, "paired_speedup_median_percent": 2.857190396992554, "lab31g_wins": 100},
+    "LAB31G/LAB30C/K185": {"n": 100, "paired_delta_median_ms": 0.02008, "paired_speedup_median_percent": 2.7219290830438956, "lab31g_wins": 100}
+  },
+  "all_10_blocks_positive_median_delta": true,
+  "selection": {
+    "decision": "SELECT_LAB31G_OVER_LAB30C",
+    "reason": "600/600 paired wins; positive median delta in every balanced permutation and every 60-triad block; gain remains positive on both K185-defined P-state regimes; corrected ABI-aware full software gate already passed bit-exact/corpus admission.",
+    "production_modified": false
+  }
+}

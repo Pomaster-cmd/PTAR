@@ -1,0 +1,9 @@
+Authoritative physical-result source archive SHA-256:
+2b0658e4d3b13e5ea98643257b2d7dbca890ddcbbe1916805afc06e58f8228b5  results(8).zip
+
+Authoritative physical-result files:
+3040369e90e27da3d918fd604e3cc82516f07756c9022eb6b4a6a717965bc6c3  BLOCKS_60.csv
+44a3d2120d10c73e78ba4571f69cbfdfeaad7e625a8681f33e7c569e1a0a1921  LAB31G_COMPARE_RAW.csv
+bda603197b7e96cb674c3446e4154aa34bd39e310faaaf1848fe50696b7ec3fd  LAB31G_COMPARE_SUMMARY.json
+
+The complete 600-triad CSV was parsed independently for LAB31G_GTX960M_ANALYSIS.json. Summary and all ten 60-triad block medians are archived in this evidence directory. The original ZIP hash above remains the authoritative byte-level identity for the user-returned run.

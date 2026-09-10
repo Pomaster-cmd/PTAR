@@ -1,0 +1,3 @@
+LAB31G selected over LAB30C on NVIDIA GeForce GTX 960M.
+600/600 paired wins; median paired speedup 2.819340047%; gain remains positive across all six permutations, all ten blocks, and both K185-defined P-state regimes.
+Corrected ABI-aware full software admission PASS. Production refs main/SOURCE unchanged.

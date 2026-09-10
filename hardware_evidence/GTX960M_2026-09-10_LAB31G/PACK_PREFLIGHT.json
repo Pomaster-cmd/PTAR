@@ -1,0 +1,21 @@
+{
+  "protocol": "LAB31G_GTX960M_PACK_PREFLIGHT",
+  "pack_workflow_run_id": 34472000872,
+  "pack_artifact_id": 10149918526,
+  "pack_artifact_api_digest_sha256": "0abc2cd9785b5cc9d38878b935a376e6eb4fa224a515b64ccc5a8ab980e0ba7d",
+  "pack_commit": "5026831a6dcbc6b71fc914ac677dea162bf47737",
+  "software_gate_run_id": 34471475982,
+  "software_gate_artifact_id": 10149713524,
+  "software_gate_artifact_api_digest_sha256": "5a0d7ebd6ea679d3d70d4ec217a00cae35c57c9135e0745b40a0cbeb47265586",
+  "lab30c_sha256": "be967e9bdb56cad2f1b90e9d7e553a0316140577329e900f4caa02d337aabb8a",
+  "lab31g_sha256": "ead1e18944b392ef23562d9a45a9429d5bdee77ae914e313b415c3143c39aed1",
+  "k185_sha256": "6bd926e85f21dd08788ff9d189c472800a5e0eb726091158ed1ecde3d06d8c16",
+  "lab30c_codegen": {"instructions":55,"cso_bytes":2632,"div_ops":3},
+  "lab31g_codegen": {"instructions":53,"cso_bytes":2568,"div_ops":0},
+  "texture_contract": "1 GatherGreen + 4 SampleLevel + 0 UAV",
+  "host": {"arch":"x64","crt":"/MT","subsystem":"6.03","runtime_d3dcompiler":false,"dynamic_crt":false},
+  "comparator_abi": {"lab31g":"cb0.xy=invInputSize; cb0.zw=halfInvInputSize","lab30c":"legacy input/output sizes","k185":"legacy input/output sizes"},
+  "warp_smoke": true,
+  "full_software_admission": true,
+  "pass": true
+}
