@@ -1,0 +1,37 @@
+{
+  "protocol": "LAB30C_FULL_SOFTWARE_ADMISSION",
+  "baseline_lab29_sha256": "6a407b37938ec6a0bf89d13cf84fa4ae23c6f712a947fc6926bbfde9725028ed",
+  "lab30c_sha256": "be967e9bdb56cad2f1b90e9d7e553a0316140577329e900f4caa02d337aabb8a",
+  "dxbc_audit_pass": true,
+  "cpu_parity": {
+    "protocol": "LAB07_ALWAYS_ON_MC_D3D11_WARP_RUNTIME_PARITY",
+    "driver_requested": "D3D_DRIVER_TYPE_WARP",
+    "physical_gpu_executed": false,
+    "d3d11_subtexel_fractional_bits": 8,
+    "tolerance_abs": 2e-06,
+    "vs_d3d11_filter_reference": {
+      "max_abs": 1.1920928955078125e-07,
+      "mean_abs": 3.5053946412233472e-09,
+      "per_channel_max_abs": [1.1920928955078125e-07,1.1920928955078125e-07,1.1920928955078125e-07,0.0],
+      "pixels_over_tolerance": 0,
+      "worst_pixel": {"x":34,"y":1,"channel":1,"expected":0.47684839367866516,"actual":0.4768485128879547}
+    },
+    "vs_ideal_float_reference": {
+      "max_abs": 0.0006319284439086914,
+      "mean_abs": 4.858193642576225e-05,
+      "per_channel_max_abs": [0.00041362643241882324,0.0006319284439086914,0.00047406554222106934,0.0],
+      "pixels_over_tolerance": 742,
+      "worst_pixel": {"x":20,"y":21,"channel":1,"expected":0.3957722783088684,"actual":0.3951403498649597}
+    },
+    "pass": true
+  },
+  "float_equivalence_pass": true,
+  "corpus_unorm8_pass": true,
+  "synthetic_unorm8_pass": true,
+  "lab29_instructions": 57,
+  "lab30c_instructions": 55,
+  "lab29_bytes": 2732,
+  "lab30c_bytes": 2632,
+  "lab30c_udiv": 0,
+  "pass": true
+}
