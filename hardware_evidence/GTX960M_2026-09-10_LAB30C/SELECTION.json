@@ -1,0 +1,20 @@
+{
+  "selected": "LAB30C",
+  "replaces": "LAB29",
+  "adapter": "NVIDIA GeForce GTX 960M",
+  "same_run_balanced_compare": true,
+  "samples": 600,
+  "warmup_triads": 60,
+  "lab30c_wins": 600,
+  "lab29_wins": 0,
+  "ties": 0,
+  "paired_delta_median_ms": 0.022544,
+  "paired_speedup_median_percent": 3.13403091,
+  "fast_state_speedup_median_percent": 4.183642252426175,
+  "slow_state_speedup_median_percent": 2.8234168128888193,
+  "all_six_permutations_positive": true,
+  "all_ten_blocks_positive": true,
+  "software_equivalence": "PASS",
+  "decision": "SELECT_LAB30C_OVER_LAB29",
+  "production_modified": false
+}
