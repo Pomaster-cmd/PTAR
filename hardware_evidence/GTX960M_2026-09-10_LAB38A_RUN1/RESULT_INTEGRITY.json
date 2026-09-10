@@ -1,0 +1,22 @@
+{
+  "protocol": "LAB38A_RESULT_INTEGRITY",
+  "source_results_zip": {
+    "sha256": "70ebab6131fc7691c1abf8a460ba6b92c8ec4637c953cb0972aebe5fd89061bc",
+    "bytes": 10535,
+    "entries": [
+      {"name":"results/BLOCKS_60.csv","size":702,"crc32":"65d9b777","sha256":"43c90d4094dfcdc66012739410e5178bc60eaba705de728ea597ece79db509ca"},
+      {"name":"results/LAB38A_COMPARE_RAW.csv","size":44387,"crc32":"09cfbac7","sha256":"7f3b3b4d3ea61d9285e9068072dc9cf87a47f723cc48a2d45b419149473c8de3"},
+      {"name":"results/LAB38A_COMPARE_SUMMARY.json","size":1004,"crc32":"a06e78ce","sha256":"b69fbcac0dd8848d8386ba9188b6415844181cdfa883029fee370c4b4e1c9749"}
+    ]
+  },
+  "protocol_validation": {
+    "rows": 600,
+    "triads_contiguous_unique": true,
+    "six_permutations_balanced_100_each": true,
+    "all_measures_positive_finite": true,
+    "delta_column_recomputed_exact": true,
+    "winner_column_recomputed_exact": true,
+    "blocks_60_recomputed_exact": true
+  },
+  "pass": true
+}
