@@ -1,0 +1,160 @@
+name: LAB37B GTX960M Compare Pack
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-lab37-coeff-diag-axis
+
+permissions:
+  contents: read
+
+jobs:
+  build-audit-pack:
+    if: contains(github.event.head_commit.message, '[run-lab37b-gtx-pack]')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Locate x64 FXC
+        id: fxc
+        shell: pwsh
+        run: |
+          $fxc=Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if(-not $fxc){ throw 'x64 fxc.exe not found' }
+          "path=$($fxc.FullName)" >> $env:GITHUB_OUTPUT
+
+      - name: Compile and freeze LAB36B LAB37B DXBC
+        shell: pwsh
+        run: |
+          $root='lab_results\lab37b_gtx_pack'; $pack="$root\PTAR_LAB37B_GTX960M_COMPARE_PACK"; $sh="$pack\shaders"
+          New-Item -ItemType Directory -Force $sh | Out-Null
+          $fxc='${{ steps.fxc.outputs.path }}'
+          & $fxc /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$sh\lab36b.cso" /Fc "$root\lab36b.asm" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab36b_diag_axis_movc_ps.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & $fxc /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$sh\lab37b.cso" /Fc "$root\lab37b.asm" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab37b_diag_axis_round_coeff_ps.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & $fxc /nologo /T vs_5_0 /E main /O3 /Ges /WX /Fo "$sh\lab_fullscreen_vs.cso" src\hlsl\moe_ng_v02\lab_fullscreen_vs.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          Copy-Item runtime_autonomous\PTAR_NG_MOE_V01_WIN81_X64\shaders\ptar_k185_control_ps.cso "$sh\ptar_k185_control_ps.cso"
+          Copy-Item runtime_autonomous\PTAR_NG_MOE_V01_WIN81_X64\shaders\ptar_vs.cso "$sh\ptar_vs.cso"
+          $expected=@{
+            'lab36b.cso'='21c7bb739779c9bf61fd4ee0d502f8a0304c9f9ac75f936128c09220c76c99c0'
+            'lab37b.cso'='cd92ead859b9e7e210b96b1b811c95f91b1eba3c18c64a7cfa83e0a004c5a0b5'
+            'ptar_k185_control_ps.cso'='6bd926e85f21dd08788ff9d189c472800a5e0eb726091158ed1ecde3d06d8c16'
+            'ptar_vs.cso'='6328bbd87aac73b07d6112de593f781b2769381aae65fa9c2bcfa06fdc68585c'
+            'lab_fullscreen_vs.cso'='f5d7c0f9be164a924fbe821137fc7bb216c479abc5701411bd1a09346dd5078b'
+          }
+          $lines=@()
+          foreach($n in $expected.Keys){
+            $p="$sh\$n"; if(-not(Test-Path $p)){throw "missing $n"}
+            $got=(Get-FileHash $p -Algorithm SHA256).Hash.ToLowerInvariant(); if($got -ne $expected[$n]){throw "$n hash mismatch $got"}
+            $bytes=[IO.File]::ReadAllBytes($p); if($bytes.Length -lt 4 -or [Text.Encoding]::ASCII.GetString($bytes,0,4) -ne 'DXBC'){throw "$n not DXBC"}
+            $lines += "$got  shaders/$n"
+          }
+          $lines | Set-Content "$pack\HASHES.txt" -Encoding ascii
+
+      - name: Static DXBC audit
+        shell: pwsh
+        run: |
+          @'
+          import json,re
+          from collections import Counter
+          from pathlib import Path
+          root=Path('lab_results/lab37b_gtx_pack'); pack=root/'PTAR_LAB37B_GTX960M_COMPARE_PACK'; pat=re.compile(r'^\s*([A-Za-z][A-Za-z0-9_]*)\b'); rows={}
+          for n in ('lab36b','lab37b'):
+              ops=[]
+              for raw in (root/f'{n}.asm').read_text(encoding='utf-8',errors='replace').splitlines():
+                  s=raw.lstrip(); m=pat.match(raw)
+                  if not s or s.startswith('//') or s.startswith('ps_5_0') or not m: continue
+                  op=m.group(1).lower()
+                  if op.startswith('dcl_') or op in {'def','defi','defb'}: continue
+                  ops.append(op)
+              c=Counter(ops)
+              rows[n]={'instructions':len(ops),'bytes':(pack/'shaders'/f'{n}.cso').stat().st_size,'div':c.get('div',0),'udiv':c.get('udiv',0),'lt':c.get('lt',0),'round_ne':c.get('round_ne',0),'mad':c.get('mad',0),'movc':c.get('movc',0),'gather4':sum(v for k,v in c.items() if k.startswith('gather4')),'sample_l':sum(v for k,v in c.items() if k.startswith('sample_l')),'uav':sum(v for k,v in c.items() if k.startswith('store_uav') or k.startswith('atomic_'))}
+          contract=all(v['gather4']==1 and v['sample_l']==4 and v['uav']==0 and v['div']==0 and v['udiv']==0 for v in rows.values())
+          expected=rows['lab36b']['instructions']==52 and rows['lab36b']['bytes']==2540 and rows['lab37b']['instructions']==52 and rows['lab37b']['bytes']==2532
+          r={'protocol':'LAB37B_GTX_PACK_STATIC_DXBC_AUDIT','lab36b':rows['lab36b'],'lab37b':rows['lab37b'],'texture_contract_pass':contract,'expected_codegen_pass':expected,'instruction_delta':0,'byte_delta':-8,'pass':bool(contract and expected)}
+          (root/'STATIC_DXBC_AUDIT.json').write_text(json.dumps(r,indent=2)+'\n',encoding='utf-8'); print(json.dumps(r,indent=2))
+          if not r['pass']: raise SystemExit('DXBC audit failed')
+          '@ | python -
+
+      - name: Generate shared-ABI comparator
+        run: python tools/lab37b_prepare_gtx_comparator.py
+
+      - name: Audit comparator source
+        shell: pwsh
+        run: |
+          @'
+          import json
+          from pathlib import Path
+          p=Path('lab_results/lab37b_gtx_pack/ptar_lab37b_compare.cpp'); s=p.read_text(encoding='utf-8')
+          required=['LAB36B','LAB37B','lab36b.cso','lab37b.cso','LAB37B_COMPARE_RAW.csv','LAB37B_COMPARE_SUMMARY.json','if(variant==2)','c.inputSize[0]=1.0f/(float)kInW','c.outputSize[0]=0.5f/(float)kInW','c.inputSize[0]=(float)kInW','c.outputSize[0]=(float)kOutW','kWarmupTriads=60u','kSamples=600u']
+          stale=['LAB28','lab28','LAB29','lab29','LAB31G','lab31g','LAB35A','lab35a']
+          missing=[x for x in required if x not in s]; residual=[x for x in stale if x in s]
+          r={'protocol':'LAB37B_COMPARATOR_SOURCE_AUDIT','missing':missing,'stale_tokens':residual,'shared_16_byte_abi':'if(variant==2)' in s and '1.0f/(float)kInW' in s and '0.5f/(float)kInW' in s,'k185_legacy_abi':'c.inputSize[0]=(float)kInW' in s and 'c.outputSize[0]=(float)kOutW' in s,'balanced_protocol':'kWarmupTriads=60u' in s and 'kSamples=600u' in s,'pass':not missing and not residual}
+          Path('lab_results/lab37b_gtx_pack/COMPARATOR_SOURCE_AUDIT.json').write_text(json.dumps(r,indent=2)+'\n',encoding='utf-8'); print(json.dumps(r,indent=2))
+          if not r['pass']: raise SystemExit('comparator source audit failed')
+          '@ | python -
+
+      - name: Build Win81 x64 MT comparison host
+        shell: pwsh
+        run: |
+          $root='lab_results\lab37b_gtx_pack'; $pack="$root\PTAR_LAB37B_GTX960M_COMPARE_PACK"
+          $vswhere="${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"; $vcvars=& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Auxiliary\Build\vcvars64.bat' | Select-Object -First 1
+          if(-not $vcvars){throw 'vcvars64.bat not found'}
+          $inc='runtime_autonomous\PTAR_NG_MOE_V01_WIN81_X64\include'; $src="$root\ptar_lab37b_compare.cpp"
+          $cmd="call `"$vcvars`" && cl /nologo /EHsc /O2 /MT /W4 /WX /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /DUNICODE /D_UNICODE /I `"$inc`" `"$src`" /Fe:`"$pack\ptar_lab37b_gtx960m_compare.exe`" /Fo:`"$root\ptar_lab37b_compare.obj`" /link /SUBSYSTEM:CONSOLE,6.03 d3d11.lib dxgi.lib bcrypt.lib"
+          cmd.exe /d /s /c $cmd; if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+
+      - name: Audit PE and WARP smoke
+        shell: pwsh
+        run: |
+          $root='lab_results\lab37b_gtx_pack'; $pack=(Resolve-Path "$root\PTAR_LAB37B_GTX960M_COMPARE_PACK").Path
+          $vswhere="${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"; $vcvars=& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Auxiliary\Build\vcvars64.bat' | Select-Object -First 1
+          $cmd="call `"$vcvars`" && dumpbin /dependents `"$pack\ptar_lab37b_gtx960m_compare.exe`" > `"$pack\IMPORTS.txt`" && dumpbin /headers `"$pack\ptar_lab37b_gtx960m_compare.exe`" > `"$pack\PE_HEADERS.txt`""; cmd.exe /d /s /c $cmd; if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          $imports=Get-Content "$pack\IMPORTS.txt" -Raw; foreach($bad in @('D3DCOMPILER','VCRUNTIME','MSVCP','UCRTBASE','API-MS-WIN-CRT')){if($imports -match [regex]::Escape($bad)){throw "forbidden import $bad"}}
+          $headers=Get-Content "$pack\PE_HEADERS.txt" -Raw; if($headers -notmatch '6\.03\s+subsystem version'){throw 'subsystem is not 6.03'}; if($headers -notmatch '8664\s+machine \(x64\)'){throw 'machine is not x64'}
+          Push-Location $pack
+          try { & .\ptar_lab37b_gtx960m_compare.exe --warp-smoke | Tee-Object -FilePath WARP_SMOKE.txt; if($LASTEXITCODE -ne 0){exit $LASTEXITCODE} } finally { Pop-Location }
+          $smoke=Get-Content "$pack\WARP_SMOKE.txt" -Raw; if($smoke -notmatch '\[PASS\] WARP smoke'){throw 'WARP PASS marker missing'}; if($smoke -notmatch 'LAB36B/LAB37B/K185'){throw 'WARP variant marker mismatch'}
+
+      - name: Finalize audited hardware pack
+        shell: pwsh
+        run: |
+          $root='lab_results\lab37b_gtx_pack'; $pack="$root\PTAR_LAB37B_GTX960M_COMPARE_PACK"
+          $exeHash=(Get-FileHash "$pack\ptar_lab37b_gtx960m_compare.exe" -Algorithm SHA256).Hash.ToLowerInvariant(); Add-Content "$pack\HASHES.txt" "$exeHash  ptar_lab37b_gtx960m_compare.exe" -Encoding ascii
+          @'
+          @echo off
+          setlocal EnableExtensions
+          cd /d "%~dp0"
+          if not exist "ptar_lab37b_gtx960m_compare.exe" (echo [FAIL] Executable absent.& exit /b 10)
+          echo [PTAR] LAB37B vs LAB36B vs K185 - GTX 960M - 600 triades equilibrees
+          ptar_lab37b_gtx960m_compare.exe
+          set "RC=%ERRORLEVEL%"
+          echo.
+          if not "%RC%"=="0" echo [FAIL] Code retour %RC%
+          if "%RC%"=="0" echo [PASS] Resultats dans le dossier results
+          pause
+          exit /b %RC%
+          '@ | Set-Content "$pack\RUN_LAB37B_GTX960M_COMPARE.bat" -Encoding ascii
+          @'
+          PTAR LAB37B - GTX960M TARGETED HARDWARE COMPARE
+
+          LAB36B is the hardware-selected baseline. LAB37B is fully software-admitted bit-exact against LAB36B and keeps the same 16-byte inverse+half-inverse ABI and identical texture issue order / phase-zero branch.
+
+          LAB37B replaces LAB36B's LT + vector MOVC phase coefficient selection with ROUND_NE + MAD using exact integer coefficients. Static DXBC remains 52 instructions, shrinks from 2540 to 2532 bytes, retains 1 GatherGreen + 4 SampleLevel + 0 UAV and 0 DIV/UDIV.
+
+          Run only RUN_LAB37B_GTX960M_COMPARE.bat on Windows 8.1 + GTX 960M. The protocol uses 60 warmup triads and 600 measured triads over all six balanced LAB36B/LAB37B/K185 permutations. Return only the generated results folder as ZIP.
+
+          Promotion remains strict: positive paired median, bootstrap 95% lower bound > 0, majority wins, all six permutation medians > 0, and all stable K185-defined P-state segment medians > 0. Otherwise keep LAB36B.
+          '@ | Set-Content "$pack\README_FIRST.txt" -Encoding utf8
+          Copy-Item "$root\STATIC_DXBC_AUDIT.json" "$pack\STATIC_DXBC_AUDIT.json"
+          Copy-Item "$root\COMPARATOR_SOURCE_AUDIT.json" "$pack\COMPARATOR_SOURCE_AUDIT.json"
+          Copy-Item "$root\ptar_lab37b_compare.cpp" "$pack\COMPARATOR_SOURCE.cpp"
+          @('protocol=LAB37B_GTX960M_SAME_RUN_BALANCED_COMPARE',"branch=$env:GITHUB_REF_NAME","commit=$env:GITHUB_SHA",'target=Windows 8.1 x64 / D3D11 FL11_0','host_crt=/MT','subsystem=6.03','warmup_triads=60','measured_triads=600','permutations=6x100') | Set-Content "$pack\PROVENANCE.txt" -Encoding ascii
+          $manifest=@(); Get-ChildItem $pack -Recurse -File | Where-Object {$_.Name -ne 'SHA256_MANIFEST.txt'} | Sort-Object FullName | ForEach-Object { $rel=$_.FullName.Substring((Resolve-Path $pack).Path.Length+1).Replace('\','/'); $h=(Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(); $manifest += "$h  $rel" }; $manifest | Set-Content "$pack\SHA256_MANIFEST.txt" -Encoding ascii
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ptar-lab37b-gtx960m-compare-pack
+          path: lab_results/lab37b_gtx_pack/PTAR_LAB37B_GTX960M_COMPARE_PACK
