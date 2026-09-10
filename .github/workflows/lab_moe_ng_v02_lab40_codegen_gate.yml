@@ -1,0 +1,90 @@
+name: LAB40 Scheduling and Register Pressure Codegen Gate
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-lab40-schedule-pressure
+
+permissions:
+  contents: read
+
+jobs:
+  codegen:
+    if: contains(github.event.head_commit.message, '[run-lab40]')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Locate x64 FXC
+        id: fxc
+        shell: pwsh
+        run: |
+          $fxc=Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if(-not $fxc){ throw 'x64 FXC not found' }
+          "path=$($fxc.FullName)" >> $env:GITHUB_OUTPUT
+
+      - name: Compile LAB38A and LAB40 candidates
+        shell: pwsh
+        run: |
+          $out='lab_results\lab40_codegen'; New-Item -ItemType Directory -Force $out | Out-Null
+          $fxc='${{ steps.fxc.outputs.path }}'
+          $map=@{
+            'lab38a'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab38a_branchless_phase0_ps.hlsl'
+            'lab40a'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab40a_early_coeff_stream_accum_ps.hlsl'
+            'lab40b'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab40b_explicit_accum_ps.hlsl'
+            'lab40c'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab40c_early_coeff_ps.hlsl'
+          }
+          foreach($n in $map.Keys){
+            & $fxc /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$out\$n.cso" /Fc "$out\$n.asm" $map[$n]
+            if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          }
+          $h=(Get-FileHash "$out\lab38a.cso" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($h -ne 'd60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3'){ throw "LAB38A baseline hash mismatch $h" }
+
+      - name: Audit DXBC scheduling shape
+        shell: pwsh
+        run: |
+          @'
+          import hashlib,json,re
+          from collections import Counter
+          from pathlib import Path
+          p=Path('lab_results/lab40_codegen'); names=['lab38a','lab40a','lab40b','lab40c']; rows={}; op_re=re.compile(r'^\s*([A-Za-z][A-Za-z0-9_]*)\b')
+          for n in names:
+              text=(p/f'{n}.asm').read_text(encoding='utf-8',errors='replace'); ops=[]; temps=None; tex=[]
+              for raw in text.splitlines():
+                  s=raw.lstrip()
+                  mt=re.match(r'\s*dcl_temps\s+(\d+)',raw,re.I)
+                  if mt: temps=int(mt.group(1))
+                  if not s or s.startswith('//') or s.startswith('ps_5_0'): continue
+                  m=op_re.match(raw)
+                  if not m: continue
+                  op=m.group(1).lower()
+                  if op.startswith('dcl_') or op in {'def','defi','defb'}: continue
+                  ops.append(op)
+                  if op.startswith('gather4') or op.startswith('sample_l'): tex.append(op)
+              c=Counter(ops); cso=p/f'{n}.cso'
+              rows[n]={
+                'sha256':hashlib.sha256(cso.read_bytes()).hexdigest(),'instructions':len(ops),'bytes':cso.stat().st_size,'temps':temps,
+                'div':c.get('div',0),'udiv':c.get('udiv',0),'mov':c.get('mov',0),'movc':c.get('movc',0),'mad':c.get('mad',0),'mul':c.get('mul',0),
+                'gather4':sum(v for k,v in c.items() if k.startswith('gather4')),
+                'sample_l':sum(v for k,v in c.items() if k.startswith('sample_l')),
+                'uav':sum(v for k,v in c.items() if k.startswith('store_uav') or k.startswith('atomic_')),
+                'texture_issue_sequence':tex,'op_counts':dict(sorted(c.items()))
+              }
+          base=rows['lab38a']; admitted=[]
+          for n in names[1:]:
+              r=rows[n]; r['instruction_delta']=r['instructions']-base['instructions']; r['byte_delta']=r['bytes']-base['bytes']; r['temp_delta']=(r['temps'] or 0)-(base['temps'] or 0)
+              r['texture_contract_pass']=r['gather4']==1 and r['sample_l']==4 and r['uav']==0 and r['div']==0 and r['udiv']==0
+              if r['texture_contract_pass'] and (r['instructions']<base['instructions'] or (r['instructions']==base['instructions'] and r['temps']<base['temps'])): admitted.append(n)
+          out={'protocol':'LAB40_SCHEDULING_REGISTER_PRESSURE_CODEGEN_GATE','baseline':base,'candidates':{n:rows[n] for n in names[1:]},'admitted_for_full_software':admitted,'pass':True}
+          (p/'CODEGEN_AUDIT.json').write_text(json.dumps(out,indent=2)+'\n',encoding='utf-8'); print(json.dumps(out,indent=2))
+          '@ | python -
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lab40-codegen-gate
+          path: lab_results/lab40_codegen
