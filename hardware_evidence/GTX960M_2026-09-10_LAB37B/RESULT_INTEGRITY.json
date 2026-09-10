@@ -1,0 +1,22 @@
+{
+  "protocol": "LAB37B_RESULT_INTEGRITY_AUDIT",
+  "source_results_zip_sha256": "fe9b904bc1c1376fe7ab1f4b6f5ad42b79a3f3feac335abac51ce43849f5cde4",
+  "files": {
+    "LAB37B_COMPARE_SUMMARY.json": "d3b929a6e9d2abf10c0937951ce555afef16b7651d8bc4e1c414e40360bb4bd6",
+    "LAB37B_COMPARE_RAW.csv": "761967d2f0d5fc263536df339f16299a4482c4ac748048f0f4538ce3946e8310",
+    "BLOCKS_60.csv": "79cdf3c6e74ea0c83e4ec0ca24f660e6b10ab2e8906170d94da0a6967dcfd05f"
+  },
+  "checks": {
+    "zip_readable": true,
+    "expected_files_present": true,
+    "raw_rows": 600,
+    "triads_contiguous_unique_0_599": true,
+    "six_permutations_exactly_100_each": true,
+    "all_measurements_positive_finite": true,
+    "paired_delta_recomputed_exact": true,
+    "winner_flag_recomputed_exact": true,
+    "summary_medians_recomputed_match": true,
+    "blocks_recomputed_match": true
+  },
+  "pass": true
+}
