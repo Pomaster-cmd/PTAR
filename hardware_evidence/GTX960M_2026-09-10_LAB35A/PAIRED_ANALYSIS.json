@@ -1,0 +1,83 @@
+{
+  "protocol": "PTAR_BALANCED_TRIAD_RESULT_ANALYSIS_V01",
+  "reference": "LAB31G",
+  "candidate": "LAB35A",
+  "control": "K185",
+  "software_correctness": "pass",
+  "protocol_validation": {
+    "valid": true,
+    "permutation_counts": {
+      "K185>LAB31G>LAB35A": 100,
+      "K185>LAB35A>LAB31G": 100,
+      "LAB31G>K185>LAB35A": 100,
+      "LAB31G>LAB35A>K185": 100,
+      "LAB35A>K185>LAB31G": 100,
+      "LAB35A>LAB31G>K185": 100
+    }
+  },
+  "overall": {
+    "triads": 600,
+    "reference_median_ms": 0.753104,
+    "candidate_median_ms": 0.75328,
+    "control_median_ms": 0.69592,
+    "paired_reference_minus_candidate_median_ms": 0.000064,
+    "paired_speedup_median_percent": 0.009583335285,
+    "bootstrap_median_speedup_ci95_percent": [-0.070972320795, 0.087560059980],
+    "candidate_wins": 303,
+    "reference_wins": 296,
+    "ties": 1,
+    "two_sided_sign_test_p": 0.806362575967
+  },
+  "pstate": {
+    "detected": true,
+    "dominant_control_split_index": 152,
+    "mixed_transition_triads": [151],
+    "stable_ranges": [[0,150],[152,599]],
+    "control_pre_median_ms": 0.497808,
+    "control_post_median_ms": 0.697744,
+    "control_relative_jump_percent": 40.1632758011
+  },
+  "permutation_median_speedup_percent": {
+    "K185>LAB31G>LAB35A": 0.013711737198,
+    "K185>LAB35A>LAB31G": 0.078535887423,
+    "LAB31G>K185>LAB35A": 0.027478844859,
+    "LAB31G>LAB35A>K185": -0.018345518566,
+    "LAB35A>K185>LAB31G": 0.031982103799,
+    "LAB35A>LAB31G>K185": -0.021276365860
+  },
+  "stable_segments": [
+    {
+      "first_triad": 0,
+      "last_triad": 150,
+      "triads": 151,
+      "control_median_ms": 0.497824,
+      "paired_speedup_median_percent": -0.070972320795,
+      "bootstrap_median_speedup_ci95_percent": [-0.173789907312,0.090556274256],
+      "candidate_wins": 71,
+      "reference_wins": 79,
+      "ties": 1
+    },
+    {
+      "first_triad": 152,
+      "last_triad": 599,
+      "triads": 448,
+      "control_median_ms": 0.697744,
+      "paired_speedup_median_percent": 0.029609653084,
+      "bootstrap_median_speedup_ci95_percent": [-0.059499389438,0.124829113831],
+      "candidate_wins": 232,
+      "reference_wins": 216,
+      "ties": 0
+    }
+  ],
+  "verdict": {
+    "decision": "REJECT_KEEP_REFERENCE",
+    "promote": false,
+    "reasons": [
+      "bootstrap_95pct_lower_bound_positive=false",
+      "all_six_permutation_medians_positive=false",
+      "all_stable_pstate_segments_positive=false"
+    ]
+  },
+  "source_results_zip_sha256": "048bee225b5a63968f5cb659db0b5da8bcdb3955b365663047578aa63e384ad5",
+  "source_csv_sha256": "e127109a75655fa34b91e5d302303dcf529b28937f3d53a255a15b68cbd1fdb2"
+}
