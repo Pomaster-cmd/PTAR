@@ -1,0 +1,30 @@
+{
+  "protocol": "LAB37B_CODEGEN_GATE",
+  "lab36b": {
+    "sha256": "21c7bb739779c9bf61fd4ee0d502f8a0304c9f9ac75f936128c09220c76c99c0",
+    "instructions": 52,
+    "bytes": 2540,
+    "div": 0,
+    "udiv": 0,
+    "gather4": 1,
+    "sample_l": 4,
+    "uav": 0,
+    "op_counts": {"add":8,"and":3,"endif":1,"eq":1,"frc":1,"gather4_indexable":1,"ge":3,"if_nz":1,"lt":1,"mad":6,"max":2,"min":4,"mov":1,"movc":3,"mul":8,"ret":2,"round_ni":2,"sample_l_indexable":4}
+  },
+  "lab37b": {
+    "sha256": "cd92ead859b9e7e210b96b1b811c95f91b1eba3c18c64a7cfa83e0a004c5a0b5",
+    "instructions": 52,
+    "bytes": 2532,
+    "div": 0,
+    "udiv": 0,
+    "gather4": 1,
+    "sample_l": 4,
+    "uav": 0,
+    "op_counts": {"add":8,"and":3,"endif":1,"eq":1,"frc":1,"gather4_indexable":1,"ge":3,"if_nz":1,"mad":7,"max":2,"min":4,"mov":1,"movc":2,"mul":8,"ret":2,"round_ne":1,"round_ni":2,"sample_l_indexable":4}
+  },
+  "instruction_delta": 0,
+  "byte_delta": -8,
+  "texture_contract_pass": true,
+  "semantic_change": "phase coefficient LT+MOVC -> ROUND_NE+MAD; bit-exact output admitted",
+  "pass": true
+}
