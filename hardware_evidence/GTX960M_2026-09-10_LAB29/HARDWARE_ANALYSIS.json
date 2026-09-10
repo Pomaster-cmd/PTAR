@@ -1,0 +1,89 @@
+{
+  "protocol": "LAB29_GTX960M_HARDWARE_ANALYSIS",
+  "source_zip": {
+    "name": "results(6).zip",
+    "sha256": "fac82dd23e11af6433268d17a5e9ef6807a179dd3db75f7477200d5777f3ccde",
+    "bytes": 10056,
+    "zip_crc_pass": true
+  },
+  "input_validation": {
+    "adapter": "NVIDIA GeForce GTX 960M",
+    "input": "1280x720",
+    "output": "1920x1080",
+    "samples": 600,
+    "warmup_triads": 60,
+    "raw_rows": 600,
+    "triads_contiguous_0_599": true,
+    "six_permutations_balanced_100_each": true,
+    "blocks_recomputed_exact": true,
+    "summary_recomputed_match": true
+  },
+  "overall": {
+    "lab28_median_ms": 0.810784,
+    "lab29_median_ms": 0.797072,
+    "k185_median_ms": 0.697472,
+    "paired_lab28_minus_lab29_median_ms": 0.017104,
+    "paired_speedup_median_percent": 2.104211041,
+    "lab29_faster_count": 597,
+    "lab28_faster_count": 3,
+    "ties": 0,
+    "bootstrap_95ci_paired_median_ms": [0.015872, 0.017104, 0.018208],
+    "bootstrap_95ci_paired_speedup_percent": [1.960396822, 2.104211041, 2.233357046],
+    "two_sided_exact_sign_test_p": 1.735166450271125e-173
+  },
+  "pstate": {
+    "method": "largest adjacent K185 timing jump",
+    "jump_after_triad": 180,
+    "k185_before_ms": 0.501696,
+    "k185_after_ms": 0.699584,
+    "jump_ms": 0.197888,
+    "fast_state": {
+      "triads": "0..180",
+      "n": 181,
+      "lab28_median_ms": 0.564224,
+      "lab29_median_ms": 0.538528,
+      "k185_median_ms": 0.497792,
+      "paired_delta_median_ms": 0.025760,
+      "paired_speedup_median_percent": 4.565562613,
+      "lab29_wins": 181,
+      "lab28_wins": 0,
+      "bootstrap_95ci_paired_median_ms": [0.025600, 0.025760, 0.025856]
+    },
+    "slow_state": {
+      "triads": "181..599",
+      "n": 419,
+      "lab28_median_ms": 0.813184,
+      "lab29_median_ms": 0.799616,
+      "k185_median_ms": 0.699456,
+      "paired_delta_median_ms": 0.013504,
+      "paired_speedup_median_percent": 1.672280563,
+      "lab29_wins": 416,
+      "lab28_wins": 3,
+      "bootstrap_95ci_paired_median_ms": [0.012864, 0.013504, 0.014304]
+    }
+  },
+  "permutations": [
+    {"order":"K185>LAB28>LAB29","n":100,"delta_median_ms":0.016272,"speedup_median_percent":1.989939307,"lab29_wins":98,"lab28_wins":2},
+    {"order":"K185>LAB29>LAB28","n":100,"delta_median_ms":0.017440,"speedup_median_percent":2.135787592,"lab29_wins":100,"lab28_wins":0},
+    {"order":"LAB28>K185>LAB29","n":100,"delta_median_ms":0.016896,"speedup_median_percent":2.070032843,"lab29_wins":100,"lab28_wins":0},
+    {"order":"LAB28>LAB29>K185","n":100,"delta_median_ms":0.016192,"speedup_median_percent":2.000575724,"lab29_wins":100,"lab28_wins":0},
+    {"order":"LAB29>K185>LAB28","n":100,"delta_median_ms":0.016912,"speedup_median_percent":2.084955694,"lab29_wins":100,"lab28_wins":0},
+    {"order":"LAB29>LAB28>K185","n":100,"delta_median_ms":0.019088,"speedup_median_percent":2.348514314,"lab29_wins":99,"lab28_wins":1}
+  ],
+  "losses": [
+    {"triad":242,"order":"LAB29>LAB28>K185","lab28_ms":0.808800,"lab29_ms":0.813312,"k185_ms":0.705440,"delta_ms":-0.004512},
+    {"triad":298,"order":"K185>LAB28>LAB29","lab28_ms":0.805504,"lab29_ms":0.805888,"k185_ms":0.702432,"delta_ms":-0.000384},
+    {"triad":562,"order":"K185>LAB28>LAB29","lab28_ms":0.807424,"lab29_ms":0.810848,"k185_ms":0.699008,"delta_ms":-0.003424}
+  ],
+  "shader_hashes": {
+    "lab28": "fb77c785fd79891c321a4abf5d517367a7d873574c04046fe6c44b45a0df9a77",
+    "lab29": "6a407b37938ec6a0bf89d13cf84fa4ae23c6f712a947fc6926bbfde9725028ed",
+    "k185": "6bd926e85f21dd08788ff9d189c472800a5e0eb726091158ed1ecde3d06d8c16"
+  },
+  "decision": {
+    "software_correctness_gate": "PASS_BIT_EXACT_TO_LAB28",
+    "hardware_gain_reproducible": true,
+    "promote_lab29_over_lab28": true,
+    "reason": "Positive paired median in both K185-defined P-states, 597/600 wins, and positive median in all six balanced permutations."
+  }
+}
