@@ -1,0 +1,36 @@
+{
+  "protocol": "PTAR_LAB37B_GTX960M_TWO_RUN_REPLICATION_SUMMARY_V01",
+  "candidate": "LAB37B",
+  "reference": "LAB36B",
+  "control": "K185",
+  "run1": {
+    "source_results_zip_sha256": "fe9b904bc1c1376fe7ab1f4b6f5ad42b79a3f3feac335abac51ce43849f5cde4",
+    "paired_speedup_median_percent": 2.159627182328,
+    "bootstrap_ci95_percent": [2.041531094146, 2.256160073020],
+    "candidate_wins": 599,
+    "reference_wins": 1,
+    "ties": 0,
+    "pstate_stable_speedups_percent": [1.575781352164, 2.574829638575]
+  },
+  "run2": {
+    "source_results_zip_sha256": "8fbf66e496658ce2cc0626f9c9e8120e97d52fa3176fc8992302306b0367b632",
+    "paired_speedup_median_percent": 2.213099876574,
+    "bootstrap_ci95_percent": [2.132355979147, 2.348839803903],
+    "candidate_wins": 598,
+    "reference_wins": 2,
+    "ties": 0,
+    "pstate_stable_speedups_percent": [1.603403141361, 2.597064589053]
+  },
+  "replication": {
+    "runs": 2,
+    "measured_triads_total": 1200,
+    "candidate_wins_total": 1197,
+    "reference_wins_total": 3,
+    "ties_total": 0,
+    "overall_speedup_median_range_percent": [2.159627182328, 2.213099876574],
+    "conservative_min_overall_ci95_lower_bound_percent": 2.041531094146,
+    "fast_state_speedup_range_percent": [1.575781352164, 1.603403141361],
+    "slow_state_speedup_range_percent": [2.574829638575, 2.597064589053],
+    "decision": "CONFIRMED_HARDWARE_SELECTED_BASELINE"
+  }
+}
