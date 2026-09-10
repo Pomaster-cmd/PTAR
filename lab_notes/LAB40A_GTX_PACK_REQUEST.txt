@@ -1,0 +1,1 @@
+Build the audited LAB40A vs replicated LAB38A vs K185 GTX960M same-run balanced comparator pack. Hardware execution is requested only after CI pack audit succeeds.
