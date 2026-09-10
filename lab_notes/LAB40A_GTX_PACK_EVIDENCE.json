@@ -1,0 +1,51 @@
+{
+  "protocol": "LAB40A_GTX960M_COMPARE_PACK_EVIDENCE",
+  "workflow_run_id": 34525898057,
+  "workflow_head_sha": "099a99708336fc8d99ae2d6c626401fb2cb93cf3",
+  "workflow_conclusion": "success",
+  "artifact_id": 10171540914,
+  "artifact_digest": "sha256:92e9e6f6678894bfdc605c3649b352fd897166c960eccfd17d924076adc063aa",
+  "artifact_zip_crc_pass": true,
+  "manifest_entries": 16,
+  "manifest_recalculated_matches": 16,
+  "manifest_pass": true,
+  "baseline": {
+    "name": "LAB38A",
+    "sha256": "d60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3",
+    "instructions": 49,
+    "bytes": 2528,
+    "temps": 8
+  },
+  "candidate": {
+    "name": "LAB40A",
+    "sha256": "9b6fa72a22216e7aafa0e24f33d0b83fc21bf0c2c346c96767c3dedce6ba1293",
+    "instructions": 49,
+    "bytes": 2528,
+    "temps": 8,
+    "full_software_bit_exact_pass": true
+  },
+  "same_op_multiset": true,
+  "distinct_dxbc": true,
+  "texture_contract": "1 Gather + 4 SampleLevel + 0 UAV",
+  "div_udiv": 0,
+  "host": {
+    "exe_sha256": "9c527b028306efd474ca73502a8dc32d5f7c2b0eb13841b9bcf3a3f361279e5a",
+    "bytes": 350208,
+    "machine": "x64/0x8664",
+    "pe32_plus": true,
+    "os_version": "6.03",
+    "subsystem_version": "6.03",
+    "subsystem": "Windows CUI",
+    "crt": "/MT",
+    "imports": ["d3d11.dll", "dxgi.dll", "bcrypt.dll", "KERNEL32.dll"],
+    "forbidden_runtime_imports": false
+  },
+  "warp_smoke_pass": true,
+  "adapter_guard": "NVIDIA vendor 0x10DE and description contains GTX 960M",
+  "dimensions": "1280x720 -> 1920x1080",
+  "warmup_triads": 60,
+  "measured_triads": 600,
+  "permutations": "six rotating permutations, 100 each",
+  "runtime_compiler_dependency": false,
+  "hardware_execution_status": "PENDING_PHYSICAL_GTX960M"
+}
