@@ -1,0 +1,91 @@
+{
+  "protocol": "LAB32B_GTX960M_RESULT_ANALYSIS",
+  "source_archive_sha256": "5f6ba2211b557844e702c9581c0d620182328f251d57d85fd099f5f8a1a56a6f",
+  "source_files_sha256": {
+    "BLOCKS_60.csv": "814e2d3ecd881979e605d0732081dd3e3ec8f515c706575555f8d858b424cd9a",
+    "LAB32B_COMPARE_RAW.csv": "5cdeecb05e1fe8c409c77c76fccbca769784d4b598afd12d0bd748b015ba83d8",
+    "LAB32B_COMPARE_SUMMARY.json": "8787489137a6f80b8da91e2ecf506f747a3c0d3a2ad43e6856bf64de05fc711e"
+  },
+  "adapter": "NVIDIA GeForce GTX 960M",
+  "dimensions": {
+    "input": "1280x720",
+    "output": "1920x1080"
+  },
+  "samples": 600,
+  "warmup_triads": 60,
+  "hashes": {
+    "lab31g": "ead1e18944b392ef23562d9a45a9429d5bdee77ae914e313b415c3143c39aed1",
+    "lab32b": "65ed361923b37f0f2ec93e602b841bd11801820afa7ca94382606974d2eccab2",
+    "k185": "6bd926e85f21dd08788ff9d189c472800a5e0eb726091158ed1ecde3d06d8c16"
+  },
+  "permutation_counts": {
+    "K185/LAB31G/LAB32B": 100,
+    "K185/LAB32B/LAB31G": 100,
+    "LAB31G/K185/LAB32B": 100,
+    "LAB31G/LAB32B/K185": 100,
+    "LAB32B/K185/LAB31G": 100,
+    "LAB32B/LAB31G/K185": 100
+  },
+  "overall": {
+    "n": 600,
+    "lab31g_median_ms": 0.756048,
+    "lab32b_median_ms": 0.752224,
+    "k185_median_ms": 0.6992160000000001,
+    "paired_delta_median_ms": 0.0023360000000000047,
+    "paired_speedup_median_percent": 0.3326380156132943,
+    "lab32b_wins": 403,
+    "lab31g_wins": 195,
+    "ties": 2,
+    "bootstrap_95ci_delta_median_ms": [0.0017279999999999518, 0.0028799999999999937],
+    "bootstrap_95ci_speedup_median_percent": [0.2677819977719882, 0.40653632297119385],
+    "two_sided_sign_test_p": 1.2093622003290267e-17
+  },
+  "pstate": {
+    "detected_transition_boundary": "between triad 157 and 158",
+    "basis": "K185 robust two-segment L1 change point",
+    "mixed_transition_triads_excluded": [158],
+    "fast_state_0_157": {
+      "n": 158,
+      "lab31g_median_ms": 0.4952,
+      "lab32b_median_ms": 0.495216,
+      "k185_median_ms": 0.497872,
+      "paired_delta_median_ms": -0.0003840000000000232,
+      "paired_speedup_median_percent": -0.07726003509963192,
+      "lab32b_wins": 70,
+      "lab31g_wins": 87,
+      "ties": 1,
+      "bootstrap_95ci_delta_median_ms": [-0.0007360000000000144, 0.00020800000000001373],
+      "bootstrap_95ci_speedup_median_percent": [-0.14790527948422977, 0.04198342354514813],
+      "two_sided_sign_test_p": 0.2014742324100292
+    },
+    "slow_state_159_599": {
+      "n": 441,
+      "lab31g_median_ms": 0.758368,
+      "lab32b_median_ms": 0.754272,
+      "k185_median_ms": 0.700896,
+      "paired_delta_median_ms": 0.0040639999999999565,
+      "paired_speedup_median_percent": 0.5365441487114433,
+      "lab32b_wins": 332,
+      "lab31g_wins": 108,
+      "ties": 1,
+      "bootstrap_95ci_delta_median_ms": [0.0032640000000000446, 0.0048639999999999795],
+      "bootstrap_95ci_speedup_median_percent": [0.4331578053337775, 0.6370227567997961],
+      "two_sided_sign_test_p": 1.423828479569465e-27
+    }
+  },
+  "permutation_results": {
+    "K185/LAB31G/LAB32B": {"n": 100, "paired_delta_median_ms": 0.0031040000000000234, "paired_speedup_median_percent": 0.4618155695267987, "lab32b_wins": 71, "lab31g_wins": 29, "ties": 0},
+    "K185/LAB32B/LAB31G": {"n": 100, "paired_delta_median_ms": 0.0023839999999999417, "paired_speedup_median_percent": 0.32897699791653334, "lab32b_wins": 68, "lab31g_wins": 32, "ties": 0},
+    "LAB31G/K185/LAB32B": {"n": 100, "paired_delta_median_ms": 0.0017119999999999913, "paired_speedup_median_percent": 0.2266284176243556, "lab32b_wins": 62, "lab31g_wins": 37, "ties": 1},
+    "LAB31G/LAB32B/K185": {"n": 100, "paired_delta_median_ms": 0.0017439999999999678, "paired_speedup_median_percent": 0.2836471515566177, "lab32b_wins": 63, "lab31g_wins": 37, "ties": 0},
+    "LAB32B/K185/LAB31G": {"n": 100, "paired_delta_median_ms": 0.002944000000000002, "paired_speedup_median_percent": 0.39899047142045374, "lab32b_wins": 74, "lab31g_wins": 25, "ties": 1},
+    "LAB32B/LAB31G/K185": {"n": 100, "paired_delta_median_ms": 0.001376000000000016, "paired_speedup_median_percent": 0.2261155194315395, "lab32b_wins": 65, "lab31g_wins": 35, "ties": 0}
+  },
+  "block_median_deltas_ms": [-0.0005280000000000007, -0.0002560000000000062, 0.0008959999999999801, 0.0026080000000000547, 0.005168000000000006, 0.005664000000000002, 0.0034560000000000146, 0.003408000000000022, 0.005647999999999986, 0.005727999999999955],
+  "all_10_blocks_positive_median_delta": false,
+  "selection": {
+    "decision": "REJECT_LAB32B_KEEP_LAB31G",
+    "reason": "Overall LAB32B gain is significant and all six balanced permutations are positive, but the K185-defined fast P-state regime is neutral/slightly negative (median below zero and bootstrap CI crosses zero). The pack's preregistered promotion rule requires reproducible gain across K185-defined P-state regimes; neutral or negative means keep LAB31G.",
+    "production_modified": false
+  }
+}
