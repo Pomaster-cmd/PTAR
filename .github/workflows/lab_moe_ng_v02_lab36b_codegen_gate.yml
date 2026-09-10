@@ -1,0 +1,103 @@
+name: LAB36B Combined Codegen Gate
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-lab36-diag-product-revisit
+
+permissions:
+  contents: read
+
+jobs:
+  codegen-gate:
+    if: contains(github.event.head_commit.message, '[run-lab36b-codegen]')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --disable-pip-version-check numpy
+
+      - name: Locate x64 FXC
+        id: fxc
+        shell: pwsh
+        run: |
+          $fxc=Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if(-not $fxc){ throw 'x64 FXC not found' }
+          "path=$($fxc.FullName)" >> $env:GITHUB_OUTPUT
+
+      - name: Compile LAB31G LAB36A LAB36B
+        shell: pwsh
+        run: |
+          $out='lab_results\lab36b_codegen'; New-Item -ItemType Directory -Force $out | Out-Null
+          $fxc='${{ steps.fxc.outputs.path }}'
+          $map=@{
+            'lab31g'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab31g_host_inv_half_mad_ps.hlsl'
+            'lab36a'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab36a_diag_product_ps.hlsl'
+            'lab36b'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab36b_diag_axis_movc_ps.hlsl'
+          }
+          foreach($n in $map.Keys){
+            & $fxc /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$out\$n.cso" /Fc "$out\$n.asm" $map[$n]
+            if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          }
+          & $fxc /nologo /T vs_5_0 /E main /O3 /Ges /WX /Fo "$out\fullscreen_vs.cso" src\hlsl\moe_ng_v02\lab_fullscreen_vs.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          $h=(Get-FileHash "$out\lab31g.cso" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($h -ne 'ead1e18944b392ef23562d9a45a9429d5bdee77ae914e313b415c3143c39aed1'){ throw "LAB31G hash mismatch $h" }
+
+      - name: Static DXBC audit
+        shell: pwsh
+        run: |
+          @'
+          import hashlib,json,re
+          from pathlib import Path
+          from collections import Counter
+          p=Path('lab_results/lab36b_codegen'); rows={}; op_re=re.compile(r'^\s*([A-Za-z][A-Za-z0-9_]*)\b')
+          for n in ('lab31g','lab36a','lab36b'):
+              ops=[]
+              for raw in (p/f'{n}.asm').read_text(encoding='utf-8',errors='replace').splitlines():
+                  s=raw.lstrip()
+                  if not s or s.startswith('//') or s.startswith('ps_5_0'): continue
+                  m=op_re.match(raw)
+                  if not m: continue
+                  op=m.group(1).lower()
+                  if op.startswith('dcl_') or op in {'def','defi','defb'}: continue
+                  ops.append(op)
+              c=Counter(ops); q=p/f'{n}.cso'
+              rows[n]={'sha256':hashlib.sha256(q.read_bytes()).hexdigest(),'instructions':len(ops),'bytes':q.stat().st_size,'add':c.get('add',0),'mul':c.get('mul',0),'mad':c.get('mad',0),'lt':c.get('lt',0),'movc':c.get('movc',0),'gather4':sum(v for k,v in c.items() if k.startswith('gather4')),'sample_l':sum(v for k,v in c.items() if k.startswith('sample_l')),'uav':sum(v for k,v in c.items() if k.startswith('store_uav') or k.startswith('atomic_')),'op_counts':dict(sorted(c.items()))}
+          base=rows['lab31g']; cand=rows['lab36b']; contract=cand['gather4']==1 and cand['sample_l']==4 and cand['uav']==0
+          r={'protocol':'LAB36B_COMBINED_CODEGEN_AUDIT','rows':rows,'instruction_delta_vs_lab31g':cand['instructions']-base['instructions'],'byte_delta_vs_lab31g':cand['bytes']-base['bytes'],'texture_contract_pass':contract,'pass':contract and cand['instructions']<=base['instructions']}
+          (p/'CODEGEN_AUDIT.json').write_text(json.dumps(r,indent=2)+'\n'); print(json.dumps(r,indent=2))
+          if not r['pass']: raise SystemExit('LAB36B codegen not competitive')
+          '@ | python -
+
+      - name: Build shared ABI float WARP harness
+        shell: pwsh
+        run: |
+          python tools/moe_ng_v02_prepare_shared_abi_harnesses.py --outdir lab_results/lab36b_codegen
+          $out='lab_results\lab36b_codegen'; $vswhere="${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"; $vcvars=& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Auxiliary\Build\vcvars64.bat' | Select-Object -First 1
+          if(-not $vcvars){throw 'vcvars64.bat not found'}
+          $cmd="call `"$vcvars`" && cl /nologo /EHsc /O2 /std:c++17 $out\warp_float_shared.cpp /Fe:$out\warp_float_shared.exe d3d11.lib dxgi.lib"; cmd.exe /d /s /c $cmd; if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+
+      - name: Six-resolution bit-exact WARP parity
+        shell: pwsh
+        run: |
+          @'
+          import json,subprocess,numpy as np
+          from pathlib import Path
+          p=Path('lab_results/lab36b_codegen'); exe=p/'warp_float_shared.exe'; vs=p/'fullscreen_vs.cso'; rows=[]
+          for w,h in [(24,24),(64,64),(192,192),(320,180),(640,360),(1280,720)]:
+              ow,oh=w*3//2,h*3//2; y,x=np.mgrid[0:h,0:w]; xf=x.astype(np.float32)/np.float32(max(1,w-1)); yf=y.astype(np.float32)/np.float32(max(1,h-1)); rng=np.random.default_rng(3602000+w*7+h*11); noise=rng.random((h,w),dtype=np.float32); checker=((x+y)&1).astype(np.float32)
+              img=np.stack([np.clip(.06+.62*xf+.28*checker,0,1),np.clip(.04+.67*yf+.24*noise,0,1),np.clip(.08+.50*noise+.35*(xf*yf),0,1),np.ones((h,w),np.float32)],axis=2).astype(np.float32); inp=p/f'in_{w}x{h}.f32'; a=p/'a.f32'; b=p/'b.f32'; img.tofile(inp)
+              subprocess.run([str(exe),str(inp),str(w),str(h),str(ow),str(oh),str(p/'lab31g.cso'),str(vs),str(a)],check=True); subprocess.run([str(exe),str(inp),str(w),str(h),str(ow),str(oh),str(p/'lab36b.cso'),str(vs),str(b)],check=True)
+              aa=np.fromfile(a,np.float32); bb=np.fromfile(b,np.float32); exact=bool(np.array_equal(aa,bb)); rows.append({'input':f'{w}x{h}','output':f'{ow}x{oh}','bit_exact':exact,'different_values':int(np.count_nonzero(aa!=bb))}); inp.unlink(); a.unlink(); b.unlink()
+          r={'protocol':'LAB36B_SIX_RES_FLOAT_EQUIVALENCE','cases':rows,'pass':all(x['bit_exact'] for x in rows)}; (p/'WARP_PARITY.json').write_text(json.dumps(r,indent=2)+'\n'); print(json.dumps(r,indent=2));
+          if not r['pass']: raise SystemExit('LAB36B WARP drift')
+          '@ | python -
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lab36b-combined-codegen-gate
+          path: lab_results/lab36b_codegen
