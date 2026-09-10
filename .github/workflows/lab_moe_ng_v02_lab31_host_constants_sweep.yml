@@ -1,0 +1,169 @@
+name: LAB31 Host Constants Sweep
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-lab31-codegen-sweep
+
+permissions:
+  contents: read
+
+jobs:
+  host-constants:
+    if: contains(github.event.head_commit.message, '[run-lab31-host]')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --disable-pip-version-check numpy
+
+      - name: Compile LAB30C and host-constant candidates
+        shell: pwsh
+        run: |
+          $out='lab_results\lab31_host'; New-Item -ItemType Directory -Force $out | Out-Null
+          $fxc=Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if(-not $fxc){ throw 'x64 FXC not found' }
+          $src=@{
+            'lab30c'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab30c_movc_frac_ps.hlsl'
+            'lab31e'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab31e_host_inv_ps.hlsl'
+            'lab31f'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab31f_host_inv_mad_ps.hlsl'
+            'lab31g'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab31g_host_inv_half_mad_ps.hlsl'
+          }
+          foreach($n in $src.Keys){
+            & $fxc.FullName /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$out\$n.cso" /Fc "$out\$n.asm" $src[$n]
+            if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          }
+          & $fxc.FullName /nologo /T vs_5_0 /E main /O3 /Ges /WX /Fo "$out\fullscreen_vs.cso" src\hlsl\moe_ng_v02\lab_fullscreen_vs.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          $h=(Get-FileHash "$out\lab30c.cso" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($h -ne 'be967e9bdb56cad2f1b90e9d7e553a0316140577329e900f4caa02d337aabb8a'){ throw "LAB30C hash mismatch $h" }
+
+      - name: DXBC audit
+        shell: pwsh
+        run: |
+          @'
+          import hashlib,json,re
+          from collections import Counter
+          from pathlib import Path
+          p=Path('lab_results/lab31_host'); names=['lab30c','lab31e','lab31f','lab31g']; rows={}
+          op_re=re.compile(r'^\s*([A-Za-z][A-Za-z0-9_]*)\b')
+          for n in names:
+              ops=[]
+              for raw in (p/f'{n}.asm').read_text(encoding='utf-8',errors='replace').splitlines():
+                  s=raw.lstrip()
+                  if not s or s.startswith('//') or s.startswith('ps_5_0'): continue
+                  m=op_re.match(raw)
+                  if not m: continue
+                  op=m.group(1).lower()
+                  if op.startswith('dcl_') or op in {'def','defi','defb'}: continue
+                  ops.append(op)
+              c=Counter(ops); cs=(p/f'{n}.cso').read_bytes()
+              rows[n]={
+                'sha256':hashlib.sha256(cs).hexdigest(),'instruction_total':len(ops),'cso_bytes':len(cs),
+                'div_ops':c.get('div',0),'mad_ops':c.get('mad',0),'mul_ops':c.get('mul',0),'add_ops':c.get('add',0),
+                'ftou_ops':c.get('ftou',0),'utof_ops':c.get('utof',0),'round_ni_ops':c.get('round_ni',0),
+                'gather4_ops':sum(v for k,v in c.items() if k.startswith('gather4')),
+                'sample_l_ops':sum(v for k,v in c.items() if k.startswith('sample_l')),
+                'uav_ops':sum(v for k,v in c.items() if k.startswith('store_uav') or k.startswith('atomic_')),
+                'op_counts':dict(sorted(c.items()))}
+              rows[n]['texture_contract_pass']=rows[n]['gather4_ops']==1 and rows[n]['sample_l_ops']==4 and rows[n]['uav_ops']==0
+          out={'protocol':'LAB31_HOST_CONSTANTS_DXBC_SWEEP','baseline':'lab30c','candidates':rows}
+          (p/'DXBC_HOST_SWEEP.json').write_text(json.dumps(out,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps(out,indent=2))
+          if not all(r['texture_contract_pass'] for r in rows.values()): raise SystemExit('texture contract changed')
+          '@ | python -
+
+      - name: Generate ABI-specific WARP harness sources
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          src=Path('tools/lab_moe_ng_v02_warp_harness.cpp').read_text(encoding='utf-8')
+          p=Path('lab_results/lab31_host')
+          (p/'warp_legacy.cpp').write_text(src,encoding='utf-8')
+          inv=src.replace('constants.outputSize[0] = static_cast<float>(outW);','constants.outputSize[0] = 1.0f / static_cast<float>(inW);').replace('constants.outputSize[1] = static_cast<float>(outH);','constants.outputSize[1] = 1.0f / static_cast<float>(inH);')
+          if inv==src: raise SystemExit('inv ABI patch failed')
+          (p/'warp_inv.cpp').write_text(inv,encoding='utf-8')
+          invhalf=src.replace('constants.inputSize[0] = static_cast<float>(inW);','constants.inputSize[0] = 1.0f / static_cast<float>(inW);').replace('constants.inputSize[1] = static_cast<float>(inH);','constants.inputSize[1] = 1.0f / static_cast<float>(inH);').replace('constants.outputSize[0] = static_cast<float>(outW);','constants.outputSize[0] = 0.5f / static_cast<float>(inW);').replace('constants.outputSize[1] = static_cast<float>(outH);','constants.outputSize[1] = 0.5f / static_cast<float>(inH);')
+          if invhalf==src: raise SystemExit('invhalf ABI patch failed')
+          (p/'warp_invhalf.cpp').write_text(invhalf,encoding='utf-8')
+          '@ | python -
+
+      - name: Build WARP harness variants
+        shell: pwsh
+        run: |
+          $out='lab_results\lab31_host'
+          $vswhere="${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vcvars=& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Auxiliary\Build\vcvars64.bat' | Select-Object -First 1
+          if(-not $vcvars){ throw 'vcvars64.bat not found' }
+          foreach($n in @('legacy','inv','invhalf')){
+            $cmd="call `"$vcvars`" && cl /nologo /EHsc /O2 /std:c++17 $out\warp_$n.cpp /Fe:$out\warp_$n.exe d3d11.lib dxgi.lib"
+            cmd.exe /d /s /c $cmd
+            if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          }
+
+      - name: Multi-resolution ABI-aware WARP parity
+        shell: pwsh
+        run: |
+          @'
+          import json,subprocess
+          from pathlib import Path
+          import numpy as np
+          p=Path('lab_results/lab31_host'); dims=[(24,24),(64,64),(192,192),(320,180),(640,360),(1280,720)]
+          variants={'lab31e':'warp_inv.exe','lab31f':'warp_inv.exe','lab31g':'warp_invhalf.exe'}
+          results={n:[] for n in variants}; vs=str(p/'fullscreen_vs.cso')
+          for W,H in dims:
+              OW,OH=W*3//2,H*3//2; y,x=np.mgrid[0:H,0:W]
+              xf=x.astype(np.float32)/np.float32(max(W-1,1)); yf=y.astype(np.float32)/np.float32(max(H-1,1)); rng=np.random.default_rng(311000+W*7+H*11)
+              noise=rng.random((H,W),dtype=np.float32); checker=((x+y)&1).astype(np.float32)
+              img=np.stack([np.clip(.06+.62*xf+.28*checker,0,1),np.clip(.04+.67*yf+.24*noise,0,1),np.clip(.08+.50*noise+.35*(xf*yf),0,1),np.ones((H,W),np.float32)],axis=2).astype(np.float32)
+              ip=p/f'in_{W}x{H}.f32'; ref=p/f'ref_{W}x{H}.f32'; img.tofile(ip)
+              subprocess.run([str(p/'warp_legacy.exe'),str(ip),str(W),str(H),str(OW),str(OH),str(p/'lab30c.cso'),vs,str(ref)],check=True,stdout=subprocess.DEVNULL)
+              aa=np.fromfile(ref,np.float32)
+              for n,exe in variants.items():
+                  out=p/f'{n}_{W}x{H}.f32'
+                  subprocess.run([str(p/exe),str(ip),str(W),str(H),str(OW),str(OH),str(p/f'{n}.cso'),vs,str(out)],check=True,stdout=subprocess.DEVNULL)
+                  bb=np.fromfile(out,np.float32); d=np.abs(aa-bb)
+                  results[n].append({'input':f'{W}x{H}','output':f'{OW}x{OH}','values':int(aa.size),'different_values':int(np.count_nonzero(d)),'max_abs':float(d.max()) if d.size else 0.0,'bit_exact':bool(np.array_equal(aa,bb))})
+                  out.unlink(missing_ok=True)
+              ip.unlink(missing_ok=True); ref.unlink(missing_ok=True)
+          report={'protocol':'LAB31_HOST_CONSTANTS_MULTIRES_WARP','baseline':'LAB30C legacy ABI','candidates':{n:{'cases':r,'all_bit_exact':all(x['bit_exact'] for x in r)} for n,r in results.items()}}
+          (p/'WARP_HOST_SWEEP.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps(report,indent=2))
+          '@ | python -
+
+      - name: Host-candidate ranking
+        shell: pwsh
+        run: |
+          @'
+          import json
+          from pathlib import Path
+          p=Path('lab_results/lab31_host'); dx=json.loads((p/'DXBC_HOST_SWEEP.json').read_text())['candidates']; wa=json.loads((p/'WARP_HOST_SWEEP.json').read_text())['candidates']; base=dx['lab30c']
+          rows=[]
+          for n in ['lab31e','lab31f','lab31g']:
+              r=dx[n]; rows.append({'candidate':n,'instructions':r['instruction_total'],'delta_instructions':r['instruction_total']-base['instruction_total'],'cso_bytes':r['cso_bytes'],'delta_bytes':r['cso_bytes']-base['cso_bytes'],'div_ops':r['div_ops'],'bit_exact_multires':wa[n]['all_bit_exact'],'texture_contract_pass':r['texture_contract_pass'],'pre_admitted':bool(wa[n]['all_bit_exact'] and r['texture_contract_pass'])})
+          admiss=[r for r in rows if r['pre_admitted']]
+          best=sorted(admiss,key=lambda r:(r['div_ops'],r['instructions'],r['cso_bytes']))[0]['candidate'] if admiss else None
+          out={'protocol':'LAB31_HOST_CONSTANTS_PRE_ADMISSION','baseline':{'instructions':base['instruction_total'],'cso_bytes':base['cso_bytes'],'div_ops':base['div_ops']},'candidates':rows,'best_pre_admitted':best}
+          (p/'PRE_ADMISSION_HOST.json').write_text(json.dumps(out,indent=2)+'\n',encoding='utf-8'); print(json.dumps(out,indent=2))
+          if not admiss: raise SystemExit('no host-constant candidate admitted')
+          '@ | python -
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lab31-host-constants-sweep
+          path: |
+            lab_results/lab31_host/DXBC_HOST_SWEEP.json
+            lab_results/lab31_host/WARP_HOST_SWEEP.json
+            lab_results/lab31_host/PRE_ADMISSION_HOST.json
+            lab_results/lab31_host/lab30c.asm
+            lab_results/lab31_host/lab31e.asm
+            lab_results/lab31_host/lab31f.asm
+            lab_results/lab31_host/lab31g.asm
+            lab_results/lab31_host/lab30c.cso
+            lab_results/lab31_host/lab31e.cso
+            lab_results/lab31_host/lab31f.cso
+            lab_results/lab31_host/lab31g.cso
