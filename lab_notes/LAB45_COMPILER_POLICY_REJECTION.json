@@ -1,0 +1,41 @@
+{
+  "protocol": "LAB45_COMPILER_POLICY_SEMANTIC_DXBC_AUDIT",
+  "date_utc": "2026-09-11T10:32:07Z",
+  "branch": "lab/moe-ng-v02-lab45-compiler-policy-sweep",
+  "workflow_run": 34589666220,
+  "workflow_commit": "08af44943f7dbd493837b0a815eb0ab1c6694813",
+  "artifact_id": 10195083530,
+  "artifact_name": "lab45-compiler-policy-semantic-audit",
+  "artifact_sha256": "30ae840edf9ee7d907055d3c7b1269c0f4e49fba2caa3268f42da083c36c80ae",
+  "source": "LAB38A exact HLSL",
+  "baseline_policy": "/O3",
+  "baseline_dxbc_sha256": "d60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3",
+  "baseline_codegen": {
+    "instructions": 49,
+    "bytes": 2528,
+    "temps": 8,
+    "movc": 3,
+    "gather4": 1,
+    "sample_l": 4,
+    "sample_positions": [15, 16, 20, 21]
+  },
+  "alternates": {
+    "o3_gfa": "bb983b81068bbecfa1af3bec3cecfb363e0ae58429b7a3283fa5659febda7e63",
+    "o3_gfp": "05b5ea21973f198032f11026d288dba501b67271e635b520fdf8c57326429c13",
+    "o2": "0d5d77b9497b09339d53301ad56e040925257583fdf2fb6ce661ae59c537a24d",
+    "o2_gfa": "a4af4af7af8d80a655983578346eccc67c595b99f13d40c9f6fee29eb75a5d6f",
+    "o2_gfp": "0d3a8295b395a0910ed8136d7a0e7418ee911b4d9801550a96ef9b11472c8d35"
+  },
+  "semantic_result": {
+    "all_alternates_gpu_semantic_noop": true,
+    "semantic_asm_equal": true,
+    "executable_asm_equal": true,
+    "shader_token_chunks_equal": true,
+    "only_changed_dxbc_chunk": "RDEF",
+    "preferred_for_full_software_gate": []
+  },
+  "decision": "REJECT_METADATA_ONLY_COMPILER_POLICY_FAMILY",
+  "hardware_test_required": false,
+  "reference_kept": "LAB38A",
+  "note": "The raw DXBC container hashes differ only because RDEF metadata differs. SHDR/SHEX token payloads and normalized assembly are identical, so the GPU executes the same shader. No correctness or hardware benchmark is justified."
+}
