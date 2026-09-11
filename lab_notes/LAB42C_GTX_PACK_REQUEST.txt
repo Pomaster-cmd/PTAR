@@ -1,0 +1,2 @@
+LAB42C audited GTX960M hardware-pack trigger.
+No physical execution requested until CI packaging, PE audit, manifest verification and WARP smoke all pass.
