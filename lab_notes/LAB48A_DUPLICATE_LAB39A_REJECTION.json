@@ -1,0 +1,25 @@
+{
+  "protocol": "LAB48A_DUPLICATE_LAB39A_CODEGEN_REJECTION",
+  "candidate": "LAB48A",
+  "research_baseline": "LAB47A",
+  "workflow_run": 34598994704,
+  "workflow_job": 103261436010,
+  "raw_candidate_sha256": "4632826b25ec63d7fa5bf615ec83d2b81a47f53a0fc24ac52ed0004d78b92c1a",
+  "historical_duplicate": "LAB39A",
+  "historical_lab39a_sha256": "4632826b25ec63d7fa5bf615ec83d2b81a47f53a0fc24ac52ed0004d78b92c1a",
+  "raw_instructions": 50,
+  "raw_bytes": 2624,
+  "raw_temps": 8,
+  "sample_positions": [16, 17, 21, 22],
+  "comparison_raw_lab38a": {
+    "instructions": 49,
+    "bytes": 2528,
+    "temps": 8,
+    "sample_positions": [15, 16, 20, 21]
+  },
+  "reason": "The compiler-generated SV_Position center-FMA formulation reproduces the historical LAB39A executable exactly. It is larger and adds one instruction before the texture schedule, so there is no new candidate to admit or benchmark.",
+  "verdict": "REJECT_DUPLICATE_LAB39A_CODEGEN",
+  "full_software_gate_required": false,
+  "hardware_test_required": false,
+  "protected_refs_modified": false
+}
