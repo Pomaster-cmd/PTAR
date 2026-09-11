@@ -1,0 +1,58 @@
+{
+  "protocol": "LAB47A_TWO_RUN_HARDWARE_REPLICATION_SUMMARY",
+  "candidate": "LAB47A",
+  "previous_baseline": "LAB38A",
+  "gpu": "NVIDIA GeForce GTX 960M",
+  "run1": {
+    "source_zip_sha256": "db7328385888831c5f06e5ca8d467cd74f0c9c197a79c1eb918b5bcbd3c4ff6b",
+    "paired_speedup_median_percent": 3.011740374781304,
+    "bootstrap_ci95_percent": [
+      2.944850954531538,
+      3.0781240843030577
+    ],
+    "candidate_wins": 599,
+    "baseline_wins": 1,
+    "ties": 0,
+    "strict_gate_pass": true
+  },
+  "run2": {
+    "source_zip_sha256": "b6ea0232381a11cb3e793361b82f4805f8f17ed9991aa19b3880c62039d5d31f",
+    "paired_speedup_median_percent": 3.047615363214503,
+    "bootstrap_ci95_percent": [
+      2.974449545340076,
+      3.102416550564829
+    ],
+    "candidate_wins": 599,
+    "baseline_wins": 1,
+    "ties": 0,
+    "strict_gate_pass": true
+  },
+  "replication": {
+    "independent_source_archives": true,
+    "both_runs_strict_pass": true,
+    "total_measured_triads": 1200,
+    "total_candidate_wins": 1198,
+    "total_baseline_wins": 2,
+    "total_ties": 0,
+    "run_median_speedup_range_percent": [
+      3.011740374781304,
+      3.047615363214503
+    ],
+    "conservative_minimum_run_ci95_lower_percent": 2.944850954531538,
+    "all_six_permutation_ci_lowers_positive_both_runs": true,
+    "all_stable_segment_ci_lowers_positive_both_runs": true
+  },
+  "pooled_descriptive_only": {
+    "triads": 1200,
+    "candidate_wins": 1198,
+    "baseline_wins": 2,
+    "ties": 0,
+    "paired_speedup_median_percent": 3.0240569872636973,
+    "bootstrap_ci95_percent": [
+      2.978962207654508,
+      3.075442412066989
+    ]
+  },
+  "final_verdict": "PROMOTE_LAB47A_AS_REPLICATED_HARDWARE_SELECTED_BASELINE",
+  "protected_refs_policy": "Do not modify main or SOURCE as part of lab baseline promotion."
+}
