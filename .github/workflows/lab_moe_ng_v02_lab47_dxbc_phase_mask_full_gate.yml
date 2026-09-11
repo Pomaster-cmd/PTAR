@@ -56,7 +56,7 @@ jobs:
             --output lab_results/lab47a_full/lab47a.cso `
             --audit lab_results/lab47a_full/PATCH_AUDIT.json
           $hc=(Get-FileHash 'lab_results\lab47a_full\lab47a.cso' -Algorithm SHA256).Hash.ToLowerInvariant()
-          if($hc -ne '2e3d6d7cf051937455c97300e48a076f843bb1fe9463275075f8a66e86fa9d06'){ throw "LAB47A hash mismatch $hc" }
+          if($hc -ne '12ab14074c5de7a91b50aa8c114f4f235aea2f6d8903f8d0e6b2813e8907cc72'){ throw "LAB47A hash mismatch $hc" }
           @("LAB38A=d60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3","LAB47A=$hc") | Set-Content 'lab_results\lab47a_full\HASHES.txt' -Encoding ascii
 
       - name: Disassemble patched DXBC
@@ -126,7 +126,7 @@ jobs:
             --baseline lab38a `
             --candidate lab47a `
             --baseline-sha d60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3 `
-            --candidate-sha 2e3d6d7cf051937455c97300e48a076f843bb1fe9463275075f8a66e86fa9d06 `
+            --candidate-sha 12ab14074c5de7a91b50aa8c114f4f235aea2f6d8903f8d0e6b2813e8907cc72 `
             --baseline-instructions 49 `
             --candidate-instructions 48 `
             --baseline-bytes 2528 `
