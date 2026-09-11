@@ -56,74 +56,137 @@ jobs:
           $h=(Get-FileHash "$root\o3.cso" -Algorithm SHA256).Hash.ToLowerInvariant()
           if($h -ne 'd60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3'){ throw "LAB38A O3 hash mismatch: $h" }
 
-      - name: Audit alternate codegen
+      - name: Semantic ASM and DXBC chunk audit
         shell: pwsh
         run: |
           @'
-          import hashlib,json,re
+          import hashlib,json,re,struct
           from collections import Counter
           from pathlib import Path
+
           root=Path('lab_results/lab45_compiler_policy')
           names=['o3','o3_gfa','o3_gfp','o2','o2_gfa','o2_gfp']
           pat=re.compile(r'^\s*([A-Za-z][A-Za-z0-9_]*)\b')
+          ws=re.compile(r'\s+')
+
+          def sha(b): return hashlib.sha256(b).hexdigest()
+
+          def parse_dxbc(data):
+              if len(data)<32 or data[:4]!=b'DXBC': raise ValueError('invalid DXBC header')
+              marker,total,count=struct.unpack_from('<III',data,20)
+              if marker!=1: raise ValueError(f'unexpected DXBC marker {marker}')
+              if total!=len(data): raise ValueError(f'DXBC size mismatch header={total} actual={len(data)}')
+              if count<1 or 32+4*count>len(data): raise ValueError(f'invalid chunk count {count}')
+              offsets=struct.unpack_from('<'+'I'*count,data,32)
+              chunks=[]
+              for i,off in enumerate(offsets):
+                  if off+8>len(data): raise ValueError(f'chunk {i} header out of range')
+                  fourcc=data[off:off+4].decode('ascii','strict')
+                  size=struct.unpack_from('<I',data,off+4)[0]
+                  end=off+8+size
+                  if end>len(data): raise ValueError(f'chunk {fourcc} out of range')
+                  payload=data[off+8:end]
+                  chunks.append({'index':i,'fourcc':fourcc,'size':size,'sha256':sha(payload)})
+              return chunks
+
           rows={}
           for n in names:
-              asm=(root/f'{n}.asm').read_text(encoding='utf-8',errors='replace').splitlines()
+              rawasm=(root/f'{n}.asm').read_text(encoding='utf-8',errors='replace').splitlines()
               ops=[]; samples=[]; gathers=[]; temps=None
-              for raw in asm:
-                  s=raw.lstrip()
-                  if s.startswith('dcl_temps '):
+              semantic=[]; executable=[]
+              in_shader=False
+              for raw in rawasm:
+                  s=raw.strip()
+                  if not s or s.startswith('//'): continue
+                  if s=='ps_5_0':
+                      in_shader=True
+                      semantic.append('ps_5_0')
+                      continue
+                  if not in_shader: continue
+                  norm=ws.sub(' ',s)
+                  semantic.append(norm)
+                  m=pat.match(raw)
+                  if not m: continue
+                  op=m.group(1).lower()
+                  if op.startswith('dcl_temps'):
                       try: temps=int(s.split()[1])
                       except: pass
-                  m=pat.match(raw)
-                  if not s or s.startswith('//') or s.startswith('ps_5_0') or not m: continue
-                  op=m.group(1).lower()
                   if op.startswith('dcl_') or op in {'def','defi','defb'}: continue
+                  executable.append(norm)
                   ops.append(op)
                   if op.startswith('sample_l'): samples.append(len(ops))
                   if op.startswith('gather4'): gathers.append(len(ops))
-              c=Counter(ops); data=(root/f'{n}.cso').read_bytes()
+              c=Counter(ops); data=(root/f'{n}.cso').read_bytes(); chunks=parse_dxbc(data)
               rows[n]={
-                'sha256':hashlib.sha256(data).hexdigest(),'instructions':len(ops),'bytes':len(data),'temps':temps,
+                'sha256':sha(data),'instructions':len(ops),'bytes':len(data),'temps':temps,
                 'div':c.get('div',0),'udiv':c.get('udiv',0),'movc':c.get('movc',0),'if_nz':c.get('if_nz',0),'endif':c.get('endif',0),
                 'gather4':sum(v for k,v in c.items() if k.startswith('gather4')),
                 'sample_l':sum(v for k,v in c.items() if k.startswith('sample_l')),
                 'uav':sum(v for k,v in c.items() if k.startswith('store_uav') or k.startswith('atomic_')),
                 'gather_positions':gathers,'sample_positions':samples,
                 'sample_span':(max(samples)-min(samples)) if samples else None,
-                'op_counts':dict(sorted(c.items())),'op_sequence':ops
+                'op_counts':dict(sorted(c.items())),'op_sequence':ops,
+                'semantic_asm_sha256':sha(('\n'.join(semantic)+'\n').encode()),
+                'executable_asm_sha256':sha(('\n'.join(executable)+'\n').encode()),
+                'semantic_asm_lines':semantic,
+                'executable_asm_lines':executable,
+                'dxbc_chunks':chunks
               }
+
           base=rows['o3']
           expected='d60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3'
           if base['sha256']!=expected: raise SystemExit('O3 baseline hash mismatch')
           if base['instructions']!=49 or base['bytes']!=2528 or base['temps']!=8 or base['movc']!=3 or base['sample_positions']!=[15,16,20,21]: raise SystemExit(f'baseline codegen drift: {base}')
+
+          base_chunks={(x['fourcc'],x['index']):x for x in base['dxbc_chunks']}
           candidates={}; preferred=[]
           for n in names[1:]:
               r=rows[n]
               contract=(r['gather4']==1 and r['sample_l']==4 and r['uav']==0 and r['div']==0 and r['udiv']==0)
-              no_op=(r['sha256']==base['sha256'])
-              first_diff=None
-              for i,(a,b) in enumerate(zip(base['op_sequence'],r['op_sequence']),1):
-                  if a!=b: first_diff=i; break
-              if first_diff is None and len(base['op_sequence'])!=len(r['op_sequence']): first_diff=min(len(base['op_sequence']),len(r['op_sequence']))+1
-              promising=bool(contract and not no_op and r['instructions']<=base['instructions'] and r['bytes']<=base['bytes'] and (r['temps'] or 99)<=base['temps'] and r['movc']<=base['movc'] and (r['sample_span'] or 999)<=base['sample_span'])
+              cchunks={(x['fourcc'],x['index']):x for x in r['dxbc_chunks']}
+              keys=sorted(set(base_chunks)|set(cchunks))
+              chunk_diffs=[]
+              for k in keys:
+                  a=base_chunks.get(k); b=cchunks.get(k)
+                  if a is None or b is None or a['size']!=b['size'] or a['sha256']!=b['sha256']:
+                      chunk_diffs.append({'fourcc':k[0],'index':k[1],'o3':a,'candidate':b})
+              shader_chunks=[x for x in r['dxbc_chunks'] if x['fourcc'] in ('SHDR','SHEX')]
+              base_shader_chunks=[x for x in base['dxbc_chunks'] if x['fourcc'] in ('SHDR','SHEX')]
+              shader_token_equal=(shader_chunks==base_shader_chunks)
+              semantic_equal=(r['semantic_asm_sha256']==base['semantic_asm_sha256'])
+              executable_equal=(r['executable_asm_sha256']==base['executable_asm_sha256'])
+              gpu_semantic_noop=bool(shader_token_equal and semantic_equal and executable_equal)
+              promising=bool(contract and not gpu_semantic_noop and r['instructions']<=base['instructions'] and r['bytes']<=base['bytes'] and (r['temps'] or 99)<=base['temps'] and r['movc']<=base['movc'] and (r['sample_span'] or 999)<=base['sample_span'])
               candidates[n]={
-                'texture_contract_pass':contract,'byte_identical_to_o3':no_op,
+                'texture_contract_pass':contract,
+                'container_byte_identical_to_o3':r['sha256']==base['sha256'],
+                'semantic_asm_equal_to_o3':semantic_equal,
+                'executable_asm_equal_to_o3':executable_equal,
+                'shader_token_chunks_equal_to_o3':shader_token_equal,
+                'gpu_semantic_noop':gpu_semantic_noop,
                 'instruction_delta':r['instructions']-base['instructions'],'byte_delta':r['bytes']-base['bytes'],
                 'temp_delta':(r['temps'] or 0)-base['temps'],'movc_delta':r['movc']-base['movc'],
-                'sample_positions':r['sample_positions'],'sample_span':r['sample_span'],'first_opcode_difference':first_diff,
+                'sample_positions':r['sample_positions'],'sample_span':r['sample_span'],
+                'different_dxbc_chunks':chunk_diffs,
                 'promising_for_full_software_gate':promising
               }
               if promising: preferred.append(n)
           preferred.sort(key=lambda n:(rows[n]['instructions'],rows[n]['temps'],rows[n]['movc'],rows[n]['bytes'],abs((rows[n]['sample_span'] or 0)-base['sample_span'])))
-          out={'protocol':'LAB45_COMPILER_POLICY_CODEGEN_SWEEP','source':'LAB38A exact HLSL','baseline_policy':'O3','baseline_hardware_selected':True,'rows':rows,'candidates':candidates,'preferred_for_full_software_gate':preferred,'pass':True,'decision_note':'Compiler-policy-only sweep. No hardware unless alternate DXBC survives exact full software parity and offers a credible structural/scheduling advantage.'}
-          (root/'CODEGEN_SWEEP.json').write_text(json.dumps(out,indent=2)+'\n',encoding='utf-8')
-          print(json.dumps(out,indent=2))
+          all_noop=all(candidates[n]['gpu_semantic_noop'] for n in names[1:])
+          decision='REJECT_METADATA_ONLY_COMPILER_POLICY_FAMILY' if all_noop else ('CONTINUE_SELECTED_ALTERNATES' if preferred else 'REJECT_NO_CREDIBLE_SEMANTIC_ADVANTAGE')
+          out={
+            'protocol':'LAB45_COMPILER_POLICY_SEMANTIC_DXBC_AUDIT','source':'LAB38A exact HLSL','baseline_policy':'O3','baseline_hardware_selected':True,
+            'rows':rows,'candidates':candidates,'preferred_for_full_software_gate':preferred,
+            'all_alternates_gpu_semantic_noop':all_noop,'decision':decision,'pass':True,
+            'decision_note':'Raw container hashes alone are not treated as codegen differences; SHDR/SHEX token payload plus normalized ASM must differ before any further gate.'
+          }
+          (root/'SEMANTIC_DXBC_AUDIT.json').write_text(json.dumps(out,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps({'protocol':out['protocol'],'decision':decision,'all_alternates_gpu_semantic_noop':all_noop,'preferred_for_full_software_gate':preferred,'candidates':candidates},indent=2))
           '@ | python -
 
       - name: Upload sweep artifact
         uses: actions/upload-artifact@v4
         with:
-          name: lab45-compiler-policy-codegen
+          name: lab45-compiler-policy-semantic-audit
           path: lab_results/lab45_compiler_policy
           if-no-files-found: error
