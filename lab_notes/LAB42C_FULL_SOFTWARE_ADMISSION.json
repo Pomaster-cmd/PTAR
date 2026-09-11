@@ -1,0 +1,31 @@
+{
+  "protocol": "LAB42C_FULL_SOFTWARE_ADMISSION_RECORD",
+  "workflow_run_id": 34565688255,
+  "workflow_head_sha": "35e1de2d6b89b93a8afb6bbd9204d7c43da8fc66",
+  "artifact_id": 10185929133,
+  "artifact_digest": "sha256:6be01be86d1b77ede1b50e585ab1ff5086c6d28750338763da38e1cd07d3c005",
+  "baseline": {
+    "name": "LAB38A",
+    "sha256": "d60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3",
+    "instructions": 49,
+    "bytes": 2528
+  },
+  "candidate": {
+    "name": "LAB42C",
+    "sha256": "24fc8f5a8e28a6f4452cdf57e306cbb5431fee57dbe65141078162769194628f",
+    "instructions": 48,
+    "bytes": 2496
+  },
+  "shared_abi": "cb0.xy=invInputSize; cb0.zw=halfInvInputSize",
+  "canonical_float": {"values": 5184, "different_values": 0, "bit_exact": true},
+  "multires_float": {"cases": 6, "largest_input": "1280x720", "different_values": 0, "pass": true},
+  "corpus_unorm8": {"cases": 42, "different_bytes": 0, "total_bytes": 13934592, "pass": true},
+  "synthetic_unorm8": {"probes": 8, "different_bytes": 0, "pass": true},
+  "warp_cpu_parity_max_abs": 1.1920928955078125e-07,
+  "texture_contract": "1 Gather + 4 SampleLevel + 0 UAV",
+  "div_udiv": 0,
+  "sample_issue_positions": {"LAB38A": [15,16,20,21], "LAB42C": [16,17,18,19]},
+  "sample_issue_span": {"LAB38A": 6, "LAB42C": 3},
+  "full_software_pass": true,
+  "hardware_question": "Does LAB42C's one-instruction reduction plus contiguous four-SampleLevel issue block improve replicated LAB38A performance on Maxwell GTX960M?"
+}
