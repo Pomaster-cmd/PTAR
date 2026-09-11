@@ -1,0 +1,113 @@
+name: LAB48B DXBC center-FMA codegen gate
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-lab48-svpos-center-fma
+
+permissions:
+  contents: read
+
+jobs:
+  codegen:
+    if: contains(github.event.head_commit.message, '[run-lab48b-codegen]')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Locate x64 FXC
+        id: fxc
+        shell: pwsh
+        run: |
+          $fxc=Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if(-not $fxc){ throw 'x64 fxc.exe not found' }
+          "path=$($fxc.FullName)" >> $env:GITHUB_OUTPUT
+
+      - name: Build frozen LAB38A then deterministic LAB47A and LAB48B
+        shell: pwsh
+        run: |
+          $root='lab_results\lab48b_codegen'; New-Item -ItemType Directory -Force $root | Out-Null
+          $fxc='${{ steps.fxc.outputs.path }}'
+          & $fxc /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$root\lab38a.cso" /Fc "$root\lab38a.asm" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab38a_branchless_phase0_ps.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          python tools/moe_ng_v02_lab47_patch_dxbc.py --input "$root\lab38a.cso" --output "$root\lab47a.cso" --audit "$root\LAB47_PATCH_AUDIT.json"
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          python tools/moe_ng_v02_lab48b_patch_dxbc.py --input "$root\lab47a.cso" --output "$root\lab48b.cso" --audit "$root\LAB48B_PATCH_AUDIT.json"
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & $fxc /nologo /dumpbin /Fc "$root\lab47a.asm" "$root\lab47a.cso"
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & $fxc /nologo /dumpbin /Fc "$root\lab48b.asm" "$root\lab48b.cso"
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+
+      - name: Static shape and schedule audit
+        shell: pwsh
+        run: |
+          @'
+          import hashlib,json,re
+          from collections import Counter
+          from pathlib import Path
+          root=Path('lab_results/lab48b_codegen')
+          pat=re.compile(r'^\s*([A-Za-z][A-Za-z0-9_]*)\b')
+          rows={}
+          for n in ('lab47a','lab48b'):
+              ops=[]; temps=None; samples=[]; executable=[]
+              for raw in (root/f'{n}.asm').read_text(encoding='utf-8',errors='replace').splitlines():
+                  s=raw.lstrip(); m=pat.match(raw)
+                  if s.startswith('dcl_temps '):
+                      try: temps=int(s.split()[1])
+                      except: pass
+                  if not s or s.startswith('//') or s.startswith('ps_5_0') or not m: continue
+                  op=m.group(1).lower()
+                  if op.startswith('dcl_') or op in {'def','defi','defb'}: continue
+                  ops.append(op); executable.append(s.strip())
+                  if op.startswith('sample_l'): samples.append(len(ops))
+              c=Counter(ops); data=(root/f'{n}.cso').read_bytes()
+              rows[n]={
+                  'sha256':hashlib.sha256(data).hexdigest(),
+                  'bytes':len(data),'instructions':len(ops),'temps':temps,
+                  'op_counts':dict(sorted(c.items())),'sample_positions':samples,
+                  'first_instructions':executable[:5],
+                  'last_instructions':executable[-3:],
+              }
+          b=rows['lab47a']; c=rows['lab48b']; co=c['op_counts']; bo=b['op_counts']
+          texture_ok=(co.get('gather4_indexable',0)==1 and co.get('sample_l_indexable',0)==4 and c['sample_positions']==[14,15,19,20])
+          no_forbidden=(co.get('div',0)==0 and co.get('udiv',0)==0 and sum(v for k,v in co.items() if k.startswith('store_uav') or k.startswith('atomic_'))==0)
+          expected=(
+              b['sha256']=='12ab14074c5de7a91b50aa8c114f4f235aea2f6d8903f8d0e6b2813e8907cc72' and
+              c['sha256']=='499193c3bfeff4966fd5a8d03f1618d4880d16e1c2ad0fe96fd16c5523a3855a' and
+              b['instructions']==48 and b['bytes']==2500 and b['temps']==8 and b['sample_positions']==[15,16,20,21] and
+              c['instructions']==47 and c['bytes']==2500 and c['temps']==8 and
+              bo.get('round_ni',0)==2 and co.get('round_ni',0)==1 and
+              bo.get('mul',0)==8 and co.get('mul',0)==7 and
+              bo.get('mad',0)==7 and co.get('mad',0)==8 and
+              bo.get('eq',0)==0 and co.get('eq',0)==0 and
+              texture_ok and no_forbidden and
+              c['first_instructions'][0].startswith('mad r0.zw, v0.xxxy')
+          )
+          r={
+              'protocol':'LAB48B_DIRECT_DXBC_CENTER_FMA_CODEGEN_GATE',
+              'research_baseline':'LAB47A',
+              'candidate':'LAB48B',
+              'rows':rows,
+              'instruction_delta':c['instructions']-b['instructions'],
+              'byte_delta':c['bytes']-b['bytes'],
+              'texture_contract_pass':texture_ok,
+              'forbidden_ops_absent':no_forbidden,
+              'relative_texture_interleave_preserved':c['sample_positions']==[x-1 for x in b['sample_positions']],
+              'pass':bool(expected),
+          }
+          (root/'CODEGEN_AUDIT.json').write_text(json.dumps(r,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps(r,indent=2))
+          if not r['pass']: raise SystemExit('LAB48B codegen gate failed')
+          '@ | python -
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lab48b-dxbc-center-fma-codegen
+          path: lab_results/lab48b_codegen
+          if-no-files-found: error
+          compression-level: 0
