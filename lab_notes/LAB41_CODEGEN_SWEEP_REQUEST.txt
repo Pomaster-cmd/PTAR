@@ -1,0 +1,4 @@
+PTAR LAB41 codegen sweep trigger.
+Baseline: replicated hardware-selected LAB38A.
+Candidates: LAB40B, LAB40C, LAB41A, LAB41B, LAB41C, LAB41D.
+Purpose: eliminate static/codegen regressions before any full software or hardware request.
