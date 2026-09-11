@@ -1,0 +1,140 @@
+name: LAB47 DXBC phase-mask full software gate
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-lab47-dxbc-phase-mask
+    paths:
+      - 'src/hlsl/moe_ng_v02/ptar_moe_ng_v02_lab38a_branchless_phase0_ps.hlsl'
+      - 'src/hlsl/moe_ng_v02/lab_fullscreen_vs.hlsl'
+      - 'tools/moe_ng_v02_lab47_patch_dxbc.py'
+      - 'tools/moe_ng_v02_prepare_shared_abi_harnesses.py'
+      - 'tools/moe_ng_v02_shared_abi_full_gate.py'
+      - 'tools/lab_moe_ng_v02_warp_validate.py'
+      - 'tools/lab_moe_ng_v02_warp_harness*.cpp'
+      - '.github/workflows/lab_moe_ng_v02_lab47_dxbc_phase_mask_full_gate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  full-gate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --disable-pip-version-check numpy pillow
+
+      - name: Locate x64 FXC
+        id: fxc
+        shell: pwsh
+        run: |
+          $fxc=Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if(-not $fxc){ throw 'x64 FXC not found' }
+          "path=$($fxc.FullName)" >> $env:GITHUB_OUTPUT
+
+      - name: Compile frozen LAB38A and fullscreen VS
+        shell: pwsh
+        run: |
+          $out='lab_results\lab47a_full'; New-Item -ItemType Directory -Force $out | Out-Null
+          $fxc='${{ steps.fxc.outputs.path }}'
+          & $fxc /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$out\lab38a.cso" /Fc "$out\lab38a.asm" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab38a_branchless_phase0_ps.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & $fxc /nologo /T vs_5_0 /E main /O3 /Ges /WX /Fo "$out\fullscreen_vs.cso" src\hlsl\moe_ng_v02\lab_fullscreen_vs.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          $hb=(Get-FileHash "$out\lab38a.cso" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($hb -ne 'd60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3'){ throw "LAB38A hash mismatch $hb" }
+
+      - name: Deterministically patch DXBC
+        shell: pwsh
+        run: |
+          python tools/moe_ng_v02_lab47_patch_dxbc.py `
+            --input lab_results/lab47a_full/lab38a.cso `
+            --output lab_results/lab47a_full/lab47a.cso `
+            --audit lab_results/lab47a_full/PATCH_AUDIT.json
+          $hc=(Get-FileHash 'lab_results\lab47a_full\lab47a.cso' -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($hc -ne '2e3d6d7cf051937455c97300e48a076f843bb1fe9463275075f8a66e86fa9d06'){ throw "LAB47A hash mismatch $hc" }
+          @("LAB38A=d60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3","LAB47A=$hc") | Set-Content 'lab_results\lab47a_full\HASHES.txt' -Encoding ascii
+
+      - name: Disassemble patched DXBC
+        shell: pwsh
+        run: |
+          $fxc='${{ steps.fxc.outputs.path }}'
+          & $fxc /nologo /dumpbin /Fc 'lab_results\lab47a_full\lab47a.asm' 'lab_results\lab47a_full\lab47a.cso'
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          if(-not (Test-Path 'lab_results\lab47a_full\lab47a.asm')){ throw 'LAB47A disassembly missing' }
+
+      - name: Audit exact patched instruction shape
+        shell: pwsh
+        run: |
+          @'
+          import json,re
+          from collections import Counter
+          from pathlib import Path
+          asm=Path('lab_results/lab47a_full/lab47a.asm').read_text(encoding='utf-8',errors='replace').splitlines()
+          pat=re.compile(r'^\s*([A-Za-z][A-Za-z0-9_]*)\b')
+          ops=[]; executable=[]
+          for raw in asm:
+              s=raw.lstrip(); m=pat.match(raw)
+              if not s or s.startswith('//') or s.startswith('ps_5_0') or not m: continue
+              op=m.group(1).lower()
+              if op.startswith('dcl_') or op in {'def','defi','defb'}: continue
+              ops.append(op); executable.append(s.strip())
+          c=Counter(ops)
+          movc=[x for x in executable if x.lower().startswith('movc ')]
+          final=movc[-1] if movc else ''
+          out={
+            'protocol':'LAB47A_PATCHED_DXBC_SHAPE_AUDIT',
+            'instructions':len(ops),'op_counts':dict(sorted(c.items())),
+            'final_movc':final,
+            'eq_count':c.get('eq',0),
+            'gather4':sum(v for k,v in c.items() if k.startswith('gather4')),
+            'sample_l':sum(v for k,v in c.items() if k.startswith('sample_l')),
+            'div':c.get('div',0),'udiv':c.get('udiv',0),
+            'pass':False
+          }
+          out['pass']=bool(len(ops)==48 and c.get('eq',0)==0 and out['gather4']==1 and out['sample_l']==4 and out['div']==0 and out['udiv']==0 and 'r0.zzzz' in final and 'r1.xyzw' in final and 'r3.xyzw' in final)
+          Path('lab_results/lab47a_full/SHAPE_AUDIT.json').write_text(json.dumps(out,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps(out,indent=2))
+          if not out['pass']: raise SystemExit('LAB47A exact shape audit failed')
+          '@ | python -
+
+      - name: Generate shared ABI harness sources
+        run: python tools/moe_ng_v02_prepare_shared_abi_harnesses.py --outdir lab_results/lab47a_full
+
+      - name: Build shared WARP harnesses
+        shell: pwsh
+        run: |
+          $out='lab_results\lab47a_full'
+          $vswhere="${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vcvars=& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Auxiliary\Build\vcvars64.bat' | Select-Object -First 1
+          if(-not $vcvars){ throw 'vcvars64.bat not found' }
+          foreach($n in @('float_shared','unorm8_shared')){
+            $cmd="call `"$vcvars`" && cl /nologo /EHsc /O2 /std:c++17 $out\warp_$n.cpp /Fe:$out\warp_$n.exe d3d11.lib dxgi.lib"
+            cmd.exe /d /s /c $cmd
+            if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          }
+
+      - name: Run full exact shared-ABI software admission
+        shell: pwsh
+        run: |
+          python tools/moe_ng_v02_shared_abi_full_gate.py `
+            --outdir lab_results/lab47a_full `
+            --baseline lab38a `
+            --candidate lab47a `
+            --baseline-sha d60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3 `
+            --candidate-sha 2e3d6d7cf051937455c97300e48a076f843bb1fe9463275075f8a66e86fa9d06 `
+            --baseline-instructions 49 `
+            --candidate-instructions 48 `
+            --baseline-bytes 2528 `
+            --candidate-bytes 2500
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lab47a-dxbc-phase-mask-full-gate
+          path: lab_results/lab47a_full
+          if-no-files-found: error
