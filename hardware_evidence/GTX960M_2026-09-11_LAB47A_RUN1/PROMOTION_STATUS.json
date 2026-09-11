@@ -1,0 +1,11 @@
+{
+  "candidate": "LAB47A",
+  "current_canonical_baseline": "LAB38A",
+  "run": "GTX960M_2026-09-11_LAB47A_RUN1",
+  "strict_hardware_gate": "PASS",
+  "replication_status": "PENDING_SECOND_INDEPENDENT_RUN",
+  "promotion_status": "NOT_PROMOTED_YET",
+  "reason": "Project policy requires two independent strict GTX960M PASS runs before canonical promotion.",
+  "next_action": "Rerun the exact same audited LAB47A compare pack once and analyze the resulting independent results ZIP.",
+  "protected_refs_unchanged": true
+}
