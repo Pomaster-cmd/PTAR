@@ -1,0 +1,131 @@
+name: LAB49C direct-DXBC full software gate
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-lab49-svpos-add-half
+    paths:
+      - 'tools/moe_ng_v02_lab49c_patch_dxbc.py'
+      - '.github/workflows/lab_moe_ng_v02_lab49c_full_software_gate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  full-gate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --disable-pip-version-check numpy pillow
+      - name: Locate x64 FXC
+        id: fxc
+        shell: pwsh
+        run: |
+          $fxc=Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if(-not $fxc){ throw 'x64 FXC not found' }
+          "path=$($fxc.FullName)" >> $env:GITHUB_OUTPUT
+      - name: Build frozen LAB38A, deterministic LAB47A, then LAB49C
+        shell: pwsh
+        run: |
+          $out='lab_results\lab49c_full'; New-Item -ItemType Directory -Force $out | Out-Null
+          $fxc='${{ steps.fxc.outputs.path }}'
+          & $fxc /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$out\lab38a.cso" src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab38a_branchless_phase0_ps.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & $fxc /nologo /T vs_5_0 /E main /O3 /Ges /WX /Fo "$out\fullscreen_vs.cso" src\hlsl\moe_ng_v02\lab_fullscreen_vs.hlsl
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          $hb=(Get-FileHash "$out\lab38a.cso" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($hb -ne 'd60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3'){ throw "LAB38A hash mismatch $hb" }
+          python tools/moe_ng_v02_lab47_patch_dxbc.py --input "$out\lab38a.cso" --output "$out\lab47a.cso" --audit "$out\LAB47_PATCH_AUDIT.json"
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          python tools/moe_ng_v02_lab49c_patch_dxbc.py --input "$out\lab47a.cso" --output "$out\lab49c.cso" --audit "$out\LAB49C_PATCH_AUDIT.json"
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          $h47=(Get-FileHash "$out\lab47a.cso" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $h49=(Get-FileHash "$out\lab49c.cso" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($h47 -ne '12ab14074c5de7a91b50aa8c114f4f235aea2f6d8903f8d0e6b2813e8907cc72'){ throw "LAB47A hash mismatch $h47" }
+          if($h49 -ne '1e9692db2bf685fab74b3b1bf88afaf29b5ba21ac3cc86f4a2949b64da7f4f82'){ throw "LAB49C hash mismatch $h49" }
+          @("LAB47A=$h47","LAB49C=$h49") | Set-Content "$out\HASHES.txt" -Encoding ascii
+      - name: Disassemble admitted pair
+        shell: pwsh
+        run: |
+          $fxc='${{ steps.fxc.outputs.path }}'; $out='lab_results\lab49c_full'
+          & $fxc /nologo /dumpbin /Fc "$out\lab47a.asm" "$out\lab47a.cso"
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          & $fxc /nologo /dumpbin /Fc "$out\lab49c.asm" "$out\lab49c.cso"
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+      - name: Audit exact candidate shape and texture schedule
+        shell: pwsh
+        run: |
+          @'
+          import json,re
+          from collections import Counter
+          from pathlib import Path
+          out=Path('lab_results/lab49c_full'); pat=re.compile(r'^\s*([A-Za-z][A-Za-z0-9_]*)\b'); rows={}
+          for n in ('lab47a','lab49c'):
+              ops=[]; samples=[]; temps=None; executable=[]
+              for raw in (out/f'{n}.asm').read_text(encoding='utf-8',errors='replace').splitlines():
+                  s=raw.lstrip(); m=pat.match(raw)
+                  if s.startswith('dcl_temps '):
+                      try: temps=int(s.split()[1])
+                      except: pass
+                  if not s or s.startswith('//') or s.startswith('ps_5_0') or not m: continue
+                  op=m.group(1).lower()
+                  if op.startswith('dcl_') or op in {'def','defi','defb'}: continue
+                  ops.append(op); executable.append(s.strip())
+                  if op.startswith('sample_l'): samples.append(len(ops))
+              c=Counter(ops)
+              rows[n]={'instructions':len(ops),'bytes':(out/f'{n}.cso').stat().st_size,'temps':temps,
+                       'op_counts':dict(sorted(c.items())),'sample_positions':samples,
+                       'first_three':executable[:3],
+                       'final_movc':[x for x in executable if x.startswith('movc o0')][-1]}
+          b=rows['lab47a']; c=rows['lab49c']; co=c['op_counts']
+          contract=(co.get('gather4_indexable',0)==1 and co.get('sample_l_indexable',0)==4 and co.get('div',0)==0 and co.get('udiv',0)==0)
+          good=(b['instructions']==48 and b['bytes']==2500 and b['temps']==8 and b['sample_positions']==[15,16,20,21]
+                and c['instructions']==48 and c['bytes']==2520 and c['temps']==8 and c['sample_positions']==[15,16,20,21]
+                and c['first_three'][0].startswith('add r0.xy, v0.xyxx, l(-0.500000')
+                and c['first_three'][1].startswith('mul r0.zw, r0.xxxy')
+                and c['first_three'][2].startswith('round_ni r0.xy, r0.zwzz')
+                and b['op_counts'].get('round_ni',0)==2 and c['op_counts'].get('round_ni',0)==1
+                and b['op_counts'].get('add',0)==8 and c['op_counts'].get('add',0)==9
+                and 'r0.zzzz' in c['final_movc'] and contract)
+          r={'protocol':'LAB49C_FULL_GATE_SHAPE_AUDIT','baseline':'LAB47A','candidate':'LAB49C','rows':rows,
+             'texture_schedule_identical':c['sample_positions']==b['sample_positions'],'texture_contract_pass':contract,'pass':bool(good)}
+          (out/'SHAPE_AUDIT.json').write_text(json.dumps(r,indent=2)+'\n',encoding='utf-8'); print(json.dumps(r,indent=2))
+          if not r['pass']: raise SystemExit('LAB49C shape audit failed')
+          '@ | python -
+      - name: Generate shared ABI harness sources
+        run: python tools/moe_ng_v02_prepare_shared_abi_harnesses.py --outdir lab_results/lab49c_full
+      - name: Build shared WARP harnesses
+        shell: pwsh
+        run: |
+          $out='lab_results\lab49c_full'
+          $vswhere="${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vcvars=& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Auxiliary\Build\vcvars64.bat' | Select-Object -First 1
+          if(-not $vcvars){ throw 'vcvars64.bat not found' }
+          foreach($n in @('float_shared','unorm8_shared')){
+            $cmd="call `"$vcvars`" && cl /nologo /EHsc /O2 /std:c++17 $out\warp_$n.cpp /Fe:$out\warp_$n.exe d3d11.lib dxgi.lib"
+            cmd.exe /d /s /c $cmd
+            if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          }
+      - name: Run full exact shared-ABI software admission
+        shell: pwsh
+        run: |
+          python tools/moe_ng_v02_shared_abi_full_gate.py `
+            --outdir lab_results/lab49c_full `
+            --baseline lab47a `
+            --candidate lab49c `
+            --baseline-sha 12ab14074c5de7a91b50aa8c114f4f235aea2f6d8903f8d0e6b2813e8907cc72 `
+            --candidate-sha 1e9692db2bf685fab74b3b1bf88afaf29b5ba21ac3cc86f4a2949b64da7f4f82 `
+            --baseline-instructions 48 `
+            --candidate-instructions 48 `
+            --baseline-bytes 2500 `
+            --candidate-bytes 2520
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lab49c-direct-dxbc-full-gate
+          path: lab_results/lab49c_full
+          if-no-files-found: error
