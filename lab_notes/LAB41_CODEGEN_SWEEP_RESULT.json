@@ -1,0 +1,18 @@
+{
+  "protocol": "LAB41_FXC_CODEGEN_SWEEP_RESULT_V01",
+  "workflow_run_id": 34565373072,
+  "artifact_id": 10185804174,
+  "artifact_digest": "sha256:fb4c3271124a194ded61d97ae8b9eba8ab8c0c1f08b4fee2864e010a028fc9e7",
+  "baseline": {"name":"LAB38A","sha256":"d60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3","instructions":49,"bytes":2528,"temps":8},
+  "variants": {
+    "LAB40B": {"sha256":"9b6fa72a22216e7aafa0e24f33d0b83fc21bf0c2c346c96767c3dedce6ba1293","instructions":49,"bytes":2528,"temps":8,"disposition":"ELIMINATE_ALREADY_HARDWARE_REJECTED_DXBC","note":"DXBC hash is exactly the previously hardware-tested/rejected LAB40A shader."},
+    "LAB40C": {"sha256":"d60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3","instructions":49,"bytes":2528,"temps":8,"disposition":"ELIMINATE_IDENTICAL_TO_LAB38A"},
+    "LAB41A": {"sha256":"1f6eb013bca3b06db4935e06635506edd9efd118b295293e47462a9ffeb5b790","instructions":49,"bytes":2528,"temps":8,"disposition":"HOLD_NO_HARDWARE_REQUEST","note":"Distinct limiter-mask schedule, but no static reduction and same estimated five-stage slope dependency depth as LAB38A; insufficient evidence to spend a physical run after LAB40A scheduling-only rejection."},
+    "LAB41B": {"sha256":"c89566b28f3257d592de010f1a81b14f0a91b66119bea8721d35facd13b69e30","instructions":49,"bytes":2528,"temps":8,"disposition":"HOLD_NO_HARDWARE_REQUEST","note":"Same op multiset and no static reduction; limiter-mask dataflow only."},
+    "LAB41C": {"sha256":"0bfc5789077fe67464c642d0b3c25538321da9f7f6884dfaa2ba9efeb18bc4d6","instructions":58,"bytes":2848,"temps":9,"disposition":"REJECT_STATIC_REGRESSION"},
+    "LAB41D": {"sha256":"d60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3","instructions":49,"bytes":2528,"temps":8,"disposition":"ELIMINATE_IDENTICAL_TO_LAB38A"}
+  },
+  "texture_contract_all": "1 Gather + 4 SampleLevel + 0 UAV; 0 DIV/UDIV",
+  "hardware_request": false,
+  "decision": "KEEP_LAB38A_AND_CONTINUE_SOFTWARE_EXPLORATION"
+}
