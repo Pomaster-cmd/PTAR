@@ -1,0 +1,3 @@
+PTAR LAB42 packed texture-coordinate codegen sweep trigger.
+Baseline: replicated hardware-selected LAB38A.
+Purpose: search for a strict ALU reduction and/or denser SampleLevel issue schedule before any full software or hardware request.
