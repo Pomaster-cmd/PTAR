@@ -1,0 +1,99 @@
+name: LAB49 SVPos add-half codegen gate
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-lab49-svpos-add-half
+    paths:
+      - 'src/hlsl/moe_ng_v02/ptar_moe_ng_v02_lab38a_branchless_phase0_ps.hlsl'
+      - 'src/hlsl/moe_ng_v02/ptar_moe_ng_v02_lab49a_svpos_minus_half_ps.hlsl'
+      - 'src/hlsl/moe_ng_v02/ptar_moe_ng_v02_lab49b_precise_svpos_minus_half_ps.hlsl'
+      - '.github/workflows/lab_moe_ng_v02_lab49_svpos_add_half_codegen.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  codegen:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Locate x64 FXC
+        id: fxc
+        shell: pwsh
+        run: |
+          $fxc=Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if(-not $fxc){ throw 'x64 FXC not found' }
+          "path=$($fxc.FullName)" >> $env:GITHUB_OUTPUT
+      - name: Compile baseline and LAB49 family
+        shell: pwsh
+        run: |
+          $out='lab_results\lab49_codegen'; New-Item -ItemType Directory -Force $out | Out-Null
+          $fxc='${{ steps.fxc.outputs.path }}'
+          $rows=@(
+            @('lab38a','src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab38a_branchless_phase0_ps.hlsl',@('/O3','/Ges','/WX')),
+            @('lab49a','src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab49a_svpos_minus_half_ps.hlsl',@('/O3','/Ges','/WX')),
+            @('lab49b','src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab49b_precise_svpos_minus_half_ps.hlsl',@('/O3','/Ges','/WX')),
+            @('lab49a_gis','src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab49a_svpos_minus_half_ps.hlsl',@('/O3','/Ges','/Gis','/WX'))
+          )
+          foreach($r in $rows){
+            $n=$r[0]; $src=$r[1]; $flags=$r[2]
+            & $fxc /nologo /T ps_5_0 /E main @flags /Fo "$out\$n.cso" /Fc "$out\$n.asm" $src
+            if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          }
+          $hb=(Get-FileHash "$out\lab38a.cso" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($hb -ne 'd60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3'){ throw "LAB38A hash mismatch $hb" }
+      - name: Audit codegen and identify only credible >=3-percent-class shapes
+        shell: pwsh
+        run: |
+          @'
+          import hashlib,json,re
+          from collections import Counter
+          from pathlib import Path
+          out=Path('lab_results/lab49_codegen')
+          pat=re.compile(r'^\s*([A-Za-z][A-Za-z0-9_]*)\b')
+          rows={}
+          for n in ('lab38a','lab49a','lab49b','lab49a_gis'):
+              asm=(out/f'{n}.asm').read_text(encoding='utf-8',errors='replace').splitlines()
+              ops=[]; ex=[]; samples=[]; temps=None
+              for raw in asm:
+                  s=raw.lstrip(); m=pat.match(raw)
+                  if s.startswith('dcl_temps '):
+                      try: temps=int(s.split()[1])
+                      except: pass
+                  if not s or s.startswith('//') or s.startswith('ps_5_0') or not m: continue
+                  op=m.group(1).lower()
+                  if op.startswith('dcl_') or op in {'def','defi','defb'}: continue
+                  ops.append(op); ex.append(s.strip())
+                  if op.startswith('sample_l'): samples.append(len(ops))
+              c=Counter(ops); cso=out/f'{n}.cso'
+              rows[n]={
+                'sha256':hashlib.sha256(cso.read_bytes()).hexdigest(),
+                'instructions':len(ops),'bytes':cso.stat().st_size,'temps':temps,
+                'op_counts':dict(sorted(c.items())),'sample_positions':samples,
+                'first_four':ex[:4],
+                'final_four':ex[-4:],
+              }
+          # A candidate is only worth deeper work under the user's >=3% rule if it
+          # preserves the LAB38A/LAB47 texture interleave and replaces the leading
+          # ROUND_NI with a simple ADD without increasing the executable count.
+          credible=[]
+          for n in ('lab49a','lab49b','lab49a_gis'):
+              r=rows[n]
+              first='\n'.join(r['first_four']).lower()
+              if (r['instructions']<=49 and r['temps']<=8 and r['sample_positions']==[15,16,20,21]
+                  and first.startswith('add ') and '\n' in first and 'mul ' in first):
+                  credible.append(n)
+          report={'protocol':'LAB49_SVPOS_ADD_HALF_CODEGEN_GATE','rows':rows,'credible_pre_phase_patch':credible,
+                  'rule':'Only candidates with ADD then MUL, <=49 instructions, <=8 temps, and preserved texture schedule advance. LAB47 phase-mask removal would then target 48 instructions.',
+                  'pass':bool(credible)}
+          (out/'CODEGEN_AUDIT.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps(report,indent=2))
+          '@ | python -
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lab49-svpos-add-half-codegen
+          path: lab_results/lab49_codegen
+          if-no-files-found: error
