@@ -1,0 +1,4 @@
+LAB42C full software admission trigger.
+Baseline LAB38A: d60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3
+Candidate LAB42C: 24fc8f5a8e28a6f4452cdf57e306cbb5431fee57dbe65141078162769194628f
+Static target: 48 instructions / 2496 bytes, four SampleLevel instructions contiguous in DXBC.
