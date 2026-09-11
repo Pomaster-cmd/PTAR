@@ -1,4 +1,4 @@
-name: PTAR LAB export current runtime
+name: PTAR LAB export full locked package
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  export-current-runtime:
+  export-full-package:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout exact PR head
@@ -18,7 +18,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Verify locked runtime identity
+      - name: Verify locked baseline identity
         shell: bash
         run: |
           set -euo pipefail
@@ -28,18 +28,28 @@ jobs:
           SHA="$(sha256sum "$DLL" | awk '{print $1}')"
           test "$SIZE" = '320000'
           test "$SHA" = '864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c'
-          mkdir -p lab_export
-          cp "$DLL" lab_export/
-          printf '%s  %s\n' "$SHA" 'win81_nis_dx11_x64.dll' > lab_export/SHA256.txt
-          printf '%s\n' "$SIZE" > lab_export/SIZE.txt
-          file "$DLL" > lab_export/FILE.txt || true
-          (objdump -x "$DLL" || true) > lab_export/OBJDUMP_X.txt 2>&1
-          (strings -a -n 5 "$DLL" || true) > lab_export/STRINGS_ASCII.txt 2>&1
+          test "$(sha256sum payload/d3d11.dll | awk '{print $1}')" = "$SHA"
 
-      - name: Upload locked runtime artifact
+      - name: Build exact runnable package artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p lab_full_package
+          shopt -s dotglob
+          for p in *; do
+            case "$p" in
+              .git|.github|lab_full_package) ;;
+              *) cp -a "$p" lab_full_package/ ;;
+            esac
+          done
+          printf '%s\n' 'source_commit=009b8326d0c6f2d7869077ef621c712cca060479' > lab_full_package/LAB_EXPORT_SOURCE.txt
+          printf '%s  %s\n' '864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c' 'payload/win81_nis_dx11_x64.dll' >> lab_full_package/LAB_EXPORT_SOURCE.txt
+          find lab_full_package -type f -print0 | sort -z | xargs -0 sha256sum > lab_full_package/LAB_EXPORT_SHA256SUMS.txt
+
+      - name: Upload full locked package artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ptar-current-runtime-009b8326
-          path: lab_export/
+          name: ptar-full-package-009b8326
+          path: lab_full_package/
           if-no-files-found: error
           retention-days: 1
