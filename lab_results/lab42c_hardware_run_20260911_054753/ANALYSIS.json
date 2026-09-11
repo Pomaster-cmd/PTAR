@@ -1,0 +1,75 @@
+{
+  "protocol": "PTAR_BALANCED_TRIAD_RESULT_ANALYSIS_V01",
+  "hardware_protocol": "LAB42C_GTX960M_SAME_RUN_BALANCED_COMPARE",
+  "reference": "LAB38A",
+  "candidate": "LAB42C",
+  "control": "K185",
+  "software_correctness": "pass",
+  "source_results_zip_sha256": "0113c96756ccacb32ba5272b2ab2956374fe5d61cfba509cc11cd55529817343",
+  "source_csv_sha256": "15b3225e1a216624ebeda15fa91a8842176189982a1b4fe81c0ee461c049efdd",
+  "source_blocks_sha256": "128d36f857a30449c7d240aa552c22fc455ed78f037803351c5ba1fa1f3ef4c9",
+  "source_summary_sha256": "2d1a32c21f3f5f5c3500d10ece18db10ee5eda39d446ae36afb76a6067fcfc84",
+  "protocol_validation": {
+    "valid": true,
+    "zip_crc_pass": true,
+    "samples": 600,
+    "warmup_triads": 60,
+    "adapter": "NVIDIA GeForce GTX 960M",
+    "input": "1280x720",
+    "output": "1920x1080",
+    "triads_contiguous_0_599": true,
+    "timings_finite_positive": true,
+    "paired_delta_column_exact": true,
+    "winner_column_exact": true,
+    "blocks_60_recomputed_exact": true,
+    "summary_recomputed_exact": true,
+    "permutation_counts": {
+      "K185>LAB38A>LAB42C": 100,
+      "K185>LAB42C>LAB38A": 100,
+      "LAB38A>K185>LAB42C": 100,
+      "LAB38A>LAB42C>K185": 100,
+      "LAB42C>K185>LAB38A": 100,
+      "LAB42C>LAB38A>K185": 100
+    }
+  },
+  "overall": {
+    "triads": 600,
+    "reference_median_ms": 0.706016,
+    "candidate_median_ms": 0.713008,
+    "control_median_ms": 0.700128,
+    "paired_reference_minus_candidate_median_ms": -0.00848,
+    "paired_speedup_median_percent": -1.2875231542975774,
+    "bootstrap_median_speedup_ci95_percent": [-1.3600721863264316, -1.2169903377704865],
+    "candidate_wins": 40,
+    "reference_wins": 559,
+    "ties": 1,
+    "two_sided_sign_test_p": 4.199752847572646e-118
+  },
+  "permutation_speedup_medians_percent": {
+    "K185>LAB38A>LAB42C": -1.4043813466085597,
+    "K185>LAB42C>LAB38A": -1.2275405678570395,
+    "LAB38A>K185>LAB42C": -1.3061361832354597,
+    "LAB38A>LAB42C>K185": -1.2897346540078636,
+    "LAB42C>K185>LAB38A": -1.1894568379055055,
+    "LAB42C>LAB38A>K185": -1.2838065312741391
+  },
+  "pstate": {
+    "detected": true,
+    "mixed_transition_triads": [406],
+    "stable_ranges": [[0, 405], [407, 599]],
+    "segment_speedup_medians_percent": [-1.276797211552454, -1.320613047126881]
+  },
+  "verdict": {
+    "decision": "REJECT_KEEP_REFERENCE",
+    "promote": false,
+    "checks": {
+      "overall_median_speedup_positive": false,
+      "bootstrap_95pct_lower_bound_positive": false,
+      "candidate_wins_majority": false,
+      "all_six_permutation_medians_positive": false,
+      "all_stable_pstate_segments_positive": false
+    }
+  },
+  "analyzer_self_tests": "4/4 PASS",
+  "decision_note": "LAB42C is rejected on its first valid hardware run. No replication run is warranted; LAB38A remains the hardware-selected baseline."
+}
