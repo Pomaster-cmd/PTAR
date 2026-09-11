@@ -1,0 +1,26 @@
+{
+  "protocol": "LAB47A_RESULT_INTEGRITY",
+  "source_zip_sha256": "db7328385888831c5f06e5ca8d467cd74f0c9c197a79c1eb918b5bcbd3c4ff6b",
+  "source_zip_bytes": 10617,
+  "files": {
+    "BLOCKS_60.csv": "524984551513bfb25c07fe96f9bb1b005a988ec5942067c3c100aabfbe8568c3",
+    "LAB47A_COMPARE_RAW.csv": "87e8d7666583e8ca47f673027d2efd4bbdaf5873463c7eaaf772212e8d613826",
+    "LAB47A_COMPARE_SUMMARY.json": "6830d639e702a9ee2498bae98cd98c3e9c8b9a6926006146f7ce02ef61dc8e41"
+  },
+  "zip_crc_pass": true,
+  "protocol_exact": true,
+  "adapter_exact": true,
+  "dimensions_exact": true,
+  "warmup_60": true,
+  "measured_600": true,
+  "triads_0_599_unique_contiguous": true,
+  "six_rotating_permutations_exact": true,
+  "each_permutation_count": 100,
+  "finite_positive_timings": true,
+  "delta_column_recomputed_exact": true,
+  "winner_column_recomputed_exact": true,
+  "blocks_recomputed_exact_to_emitted_precision": true,
+  "summary_recomputed_consistent": true,
+  "shader_hashes_exact": true,
+  "pass": true
+}
