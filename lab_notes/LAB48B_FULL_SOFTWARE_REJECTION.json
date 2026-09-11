@@ -1,0 +1,34 @@
+{
+  "protocol": "LAB48B_FULL_SOFTWARE_REJECTION",
+  "candidate": "LAB48B",
+  "research_baseline": "LAB47A",
+  "codegen_run": 34599617933,
+  "full_software_run": 34599706123,
+  "full_software_artifact_id": 10263284535,
+  "candidate_sha256": "499193c3bfeff4966fd5a8d03f1618d4880d16e1c2ad0fe96fd16c5523a3855a",
+  "static_shape": {
+    "baseline_instructions": 48,
+    "candidate_instructions": 47,
+    "baseline_bytes": 2500,
+    "candidate_bytes": 2500,
+    "temps": 8,
+    "texture_contract": "1 Gather + 4 SampleLevel + 0 UAV",
+    "baseline_sample_positions": [15, 16, 20, 21],
+    "candidate_sample_positions": [14, 15, 19, 20]
+  },
+  "canonical_warp_comparison": {
+    "values": 5184,
+    "bit_different_values": 519,
+    "different_pixels": 173,
+    "total_pixels": 1296,
+    "max_abs": 0.13715049624443054,
+    "mean_abs": 0.003926647827029228,
+    "values_over_2e_6": 519,
+    "worst_pixel": {"x": 13, "y": 3, "channel": 1, "baseline": 0.08156679570674896, "candidate": 0.2187172919511795}
+  },
+  "cause_class": "SV_POSITION_CENTER_REASSOCIATION_NOT_RUNTIME_EXACT",
+  "reason": "Replacing floor(SV_Position.xy) followed by multiply(2/3) with a single MAD using the pixel-center identity is algebraically valid but not D3D11-runtime exact. The full WARP gate shows coordinate-boundary changes large enough to select different source neighborhoods.",
+  "verdict": "REJECT_SOFTWARE_NOT_EXACT",
+  "hardware_test_required": false,
+  "protected_refs_modified": false
+}
