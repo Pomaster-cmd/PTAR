@@ -1,0 +1,254 @@
+{
+  "protocol": "LAB47A_GTX960M_RUN2_STRICT_ANALYSIS",
+  "source_zip": {
+    "name": "results(20260911-120024).zip",
+    "sha256": "b6ea0232381a11cb3e793361b82f4805f8f17ed9991aa19b3880c62039d5d31f",
+    "bytes": 10579,
+    "crc_pass": true
+  },
+  "result_file_hashes": {
+    "results/LAB47A_COMPARE_RAW.csv": "7a4aa6f3d130fe687f099c96bf374e59f2f693132032a96a36b76baf209fa873",
+    "results/LAB47A_COMPARE_SUMMARY.json": "a29e8379a9d1bc7c41d93156cb7aef490693a6f722cf18292163d0a6ae6e4d90",
+    "results/BLOCKS_60.csv": "6e8879f28cfb257b3ac9c7c256fb9742902ab2269206181b1ac3bbc65efde768"
+  },
+  "integrity": {
+    "zip_crc_pass": true,
+    "expected_files_present": true,
+    "protocol_exact": true,
+    "adapter_exact": true,
+    "dimensions_exact": true,
+    "warmup_exact": true,
+    "samples_exact": true,
+    "triads_contiguous_unique": true,
+    "six_permutations_exact_rotation": true,
+    "six_permutations_balanced_100_each": true,
+    "finite_positive_timings": true,
+    "delta_exact": true,
+    "winner_exact": true,
+    "hashes_exact": true,
+    "blocks_recompute_exact_to_emitted_precision": true,
+    "summary_recompute_consistent": true
+  },
+  "summary_checks": {
+    "lab38a_median_ms": true,
+    "lab47a_median_ms": true,
+    "k185_median_ms": true,
+    "paired_delta_median_ms": true,
+    "paired_speedup_median_percent": true,
+    "winner_counts": true
+  },
+  "hashes": {
+    "lab38a": "d60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3",
+    "lab47a": "12ab14074c5de7a91b50aa8c114f4f235aea2f6d8903f8d0e6b2813e8907cc72",
+    "k185": "6bd926e85f21dd08788ff9d189c472800a5e0eb726091158ed1ecde3d06d8c16"
+  },
+  "measurements": {
+    "lab38a_median_ms": 0.704032,
+    "lab47a_median_ms": 0.6832,
+    "k185_median_ms": 0.699344,
+    "paired_delta_median_ms": 0.022016000000000036,
+    "paired_speedup_median_percent": 3.047615363214503,
+    "bootstrap_method": "100000 paired-row resamples, median, NumPy PCG64 seed 20260910",
+    "bootstrap_ci95_percent": [
+      2.974449545340076,
+      3.102416550564829
+    ],
+    "candidate_wins": 599,
+    "baseline_wins": 1,
+    "ties": 0,
+    "two_sided_sign_test_p": 2.8967236778536667e-178
+  },
+  "permutations": [
+    {
+      "order": "LAB38A>LAB47A>K185",
+      "n": 100,
+      "median_speedup_percent": 3.1061206674157016,
+      "bootstrap_ci95_percent": [
+        2.9163572537635867,
+        3.1980141721019795
+      ],
+      "candidate_wins": 100,
+      "baseline_wins": 0,
+      "strict_pass": true
+    },
+    {
+      "order": "LAB38A>K185>LAB47A",
+      "n": 100,
+      "median_speedup_percent": 3.022418119808539,
+      "bootstrap_ci95_percent": [
+        2.826017594238566,
+        3.1531593765246386
+      ],
+      "candidate_wins": 99,
+      "baseline_wins": 1,
+      "strict_pass": true
+    },
+    {
+      "order": "LAB47A>LAB38A>K185",
+      "n": 100,
+      "median_speedup_percent": 3.063005921512919,
+      "bootstrap_ci95_percent": [
+        2.9078648291435374,
+        3.2377899325496386
+      ],
+      "candidate_wins": 100,
+      "baseline_wins": 0,
+      "strict_pass": true
+    },
+    {
+      "order": "LAB47A>K185>LAB38A",
+      "n": 100,
+      "median_speedup_percent": 3.093673932163815,
+      "bootstrap_ci95_percent": [
+        2.906316697697644,
+        3.1964716046014585
+      ],
+      "candidate_wins": 100,
+      "baseline_wins": 0,
+      "strict_pass": true
+    },
+    {
+      "order": "K185>LAB38A>LAB47A",
+      "n": 100,
+      "median_speedup_percent": 2.945825439622203,
+      "bootstrap_ci95_percent": [
+        2.8400985118143454,
+        3.078377101194895
+      ],
+      "candidate_wins": 100,
+      "baseline_wins": 0,
+      "strict_pass": true
+    },
+    {
+      "order": "K185>LAB47A>LAB38A",
+      "n": 100,
+      "median_speedup_percent": 3.0141956009232174,
+      "bootstrap_ci95_percent": [
+        2.8762858689767192,
+        3.180498345600643
+      ],
+      "candidate_wins": 100,
+      "baseline_wins": 0,
+      "strict_pass": true
+    }
+  ],
+  "k185_pstate": {
+    "jump_rule": "abs(adjacent K185 delta)/previous > 20%",
+    "jump_triads": [
+      158,
+      398,
+      399,
+      558
+    ],
+    "jump_details": [
+      {
+        "triad": 158,
+        "previous_k185_ms": 0.494208,
+        "current_k185_ms": 0.696896,
+        "relative_jump_percent": 41.01269101269101
+      },
+      {
+        "triad": 398,
+        "previous_k185_ms": 0.703136,
+        "current_k185_ms": 0.942848,
+        "relative_jump_percent": 34.09183998543668
+      },
+      {
+        "triad": 399,
+        "previous_k185_ms": 0.942848,
+        "current_k185_ms": 1.44592,
+        "relative_jump_percent": 53.356638609828956
+      },
+      {
+        "triad": 558,
+        "previous_k185_ms": 1.434848,
+        "current_k185_ms": 2.328352,
+        "relative_jump_percent": 62.27168313298693
+      }
+    ],
+    "mixed_transition_triads": [
+      {
+        "triad": 157,
+        "reason": "order LAB38A>K185>LAB47A; LAB38A/K185 remain in the preceding state while LAB47A is measured during/after the transition"
+      },
+      {
+        "triad": 398,
+        "reason": "order LAB47A>LAB38A>K185; LAB38A/LAB47A remain in the preceding state while K185 is measured during the transition (intermediate timing)"
+      },
+      {
+        "triad": 557,
+        "reason": "order K185>LAB47A>LAB38A; K185/LAB47A remain in the preceding state while LAB38A is measured during/after the transition"
+      }
+    ],
+    "stable_segments": [
+      {
+        "first_triad": 0,
+        "last_triad": 156,
+        "n": 157,
+        "k185_median_ms": 0.494208,
+        "median_speedup_percent": 3.0973152093054717,
+        "bootstrap_ci95_percent": [
+          3.0587440918298467,
+          3.141431845759737
+        ],
+        "candidate_wins": 157,
+        "baseline_wins": 0,
+        "strict_pass": true
+      },
+      {
+        "first_triad": 158,
+        "last_triad": 397,
+        "n": 240,
+        "k185_median_ms": 0.698384,
+        "median_speedup_percent": 2.9130455600549348,
+        "bootstrap_ci95_percent": [
+          2.7315397029371855,
+          3.063500709061433
+        ],
+        "candidate_wins": 240,
+        "baseline_wins": 0,
+        "strict_pass": true
+      },
+      {
+        "first_triad": 399,
+        "last_triad": 556,
+        "n": 158,
+        "k185_median_ms": 1.440288,
+        "median_speedup_percent": 3.2273393764480174,
+        "bootstrap_ci95_percent": [
+          3.159928852192632,
+          3.3314098011363535
+        ],
+        "candidate_wins": 158,
+        "baseline_wins": 0,
+        "strict_pass": true
+      },
+      {
+        "first_triad": 558,
+        "last_triad": 599,
+        "n": 42,
+        "k185_median_ms": 2.329408,
+        "median_speedup_percent": 2.0481252275012034,
+        "bootstrap_ci95_percent": [
+          1.9080472655335896,
+          2.130849247626025
+        ],
+        "candidate_wins": 42,
+        "baseline_wins": 0,
+        "strict_pass": true
+      }
+    ]
+  },
+  "strict_gate": {
+    "overall_median_positive": true,
+    "overall_bootstrap_lower_positive": true,
+    "majority_wins": true,
+    "all_six_permutation_medians_positive": true,
+    "all_six_permutation_ci_lowers_positive": true,
+    "all_stable_segment_medians_positive": true,
+    "all_stable_segment_ci_lowers_positive": true,
+    "pass": true
+  },
+  "verdict": "RUN2_STRICT_PASS_REPLICATION_CONFIRMED_PROMOTE_LAB47A",
+  "baseline_status": "LAB47A becomes replicated hardware-selected baseline after independent RUN1 + RUN2 strict PASS"
+}
