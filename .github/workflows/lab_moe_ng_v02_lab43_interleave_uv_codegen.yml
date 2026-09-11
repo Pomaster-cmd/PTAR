@@ -1,0 +1,118 @@
+name: LAB43 interleave-preserving UV codegen sweep
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-lab43-interleave-preserving-uv
+    paths:
+      - 'src/hlsl/moe_ng_v02/ptar_moe_ng_v02_lab38a_branchless_phase0_ps.hlsl'
+      - 'src/hlsl/moe_ng_v02/ptar_moe_ng_v02_lab43*.hlsl'
+      - '.github/workflows/lab_moe_ng_v02_lab43_interleave_uv_codegen.yml'
+  workflow_dispatch:
+
+jobs:
+  codegen:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Locate x64 FXC
+        id: fxc
+        shell: pwsh
+        run: |
+          $fxc=Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if(-not $fxc){ throw 'x64 fxc.exe not found' }
+          "path=$($fxc.FullName)" >> $env:GITHUB_OUTPUT
+
+      - name: Compile LAB38A and LAB43 candidates
+        shell: pwsh
+        run: |
+          $root='lab_results\lab43_codegen'; New-Item -ItemType Directory -Force $root | Out-Null
+          $fxc='${{ steps.fxc.outputs.path }}'
+          $sources=@{
+            'lab38a'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab38a_branchless_phase0_ps.hlsl'
+            'lab43a'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab43a_packed_positive_uv_round_gap_ps.hlsl'
+            'lab43b'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab43b_packed_positive_uv_coeff_gap_ps.hlsl'
+            'lab43c'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab43c_split_gap_packed_positive_uv_ps.hlsl'
+          }
+          foreach($n in $sources.Keys){
+            & $fxc /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$root\$n.cso" /Fc "$root\$n.asm" $sources[$n]
+            if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          }
+          $h=(Get-FileHash "$root\lab38a.cso" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($h -ne 'd60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3'){ throw "LAB38A hash mismatch: $h" }
+
+      - name: Audit and rank DXBC
+        shell: pwsh
+        run: |
+          @'
+          import hashlib,json,re
+          from collections import Counter
+          from pathlib import Path
+          root=Path('lab_results/lab43_codegen')
+          names=['lab38a','lab43a','lab43b','lab43c']
+          pat=re.compile(r'^\s*([A-Za-z][A-Za-z0-9_]*)\b')
+          rows={}
+          for n in names:
+              asm=(root/f'{n}.asm').read_text(encoding='utf-8',errors='replace').splitlines()
+              ops=[]; sample_pos=[]; dcl_temps=None
+              for raw in asm:
+                  s=raw.lstrip()
+                  if s.startswith('dcl_temps '):
+                      try: dcl_temps=int(s.split()[1])
+                      except: pass
+                  m=pat.match(raw)
+                  if not s or s.startswith('//') or s.startswith('ps_5_0') or not m: continue
+                  op=m.group(1).lower()
+                  if op.startswith('dcl_') or op in {'def','defi','defb'}: continue
+                  ops.append(op)
+                  if op.startswith('sample_l'): sample_pos.append(len(ops))
+              c=Counter(ops); data=(root/f'{n}.cso').read_bytes()
+              rows[n]={
+                  'sha256':hashlib.sha256(data).hexdigest(),
+                  'instructions':len(ops),'bytes':len(data),'temps':dcl_temps,
+                  'div':c.get('div',0),'udiv':c.get('udiv',0),
+                  'add':c.get('add',0),'mad':c.get('mad',0),'mul':c.get('mul',0),
+                  'mov':c.get('mov',0),'movc':c.get('movc',0),'ge':c.get('ge',0),'and':c.get('and',0),
+                  'round_ne':c.get('round_ne',0),'round_ni':c.get('round_ni',0),'frc':c.get('frc',0),
+                  'gather4':sum(v for k,v in c.items() if k.startswith('gather4')),
+                  'sample_l':sum(v for k,v in c.items() if k.startswith('sample_l')),
+                  'uav':sum(v for k,v in c.items() if k.startswith('store_uav') or k.startswith('atomic_')),
+                  'sample_positions':sample_pos,
+                  'sample_span':(max(sample_pos)-min(sample_pos)) if sample_pos else None,
+              }
+          base=rows['lab38a']
+          if base['sha256']!='d60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3': raise SystemExit('baseline hash mismatch')
+          if base['instructions']!=49 or base['bytes']!=2528 or base['sample_positions']!=[15,16,20,21]: raise SystemExit(f'baseline codegen drift: {base}')
+          for n,r in rows.items():
+              if not (r['gather4']==1 and r['sample_l']==4 and r['uav']==0 and r['div']==0 and r['udiv']==0): raise SystemExit(f'texture/arithmetic contract failed {n}: {r}')
+          candidates={}
+          for n in names[1:]:
+              r=rows[n]
+              candidates[n]={
+                  'instruction_delta':r['instructions']-base['instructions'],
+                  'byte_delta':r['bytes']-base['bytes'],
+                  'sample_positions':r['sample_positions'],
+                  'sample_span':r['sample_span'],
+                  'structural_improvement':bool(r['instructions']<base['instructions'] and r['bytes']<base['bytes']),
+                  'fully_contiguous_four_samples':bool(r['sample_positions'] and r['sample_span']==3),
+              }
+          preferred=[n for n in names[1:] if candidates[n]['structural_improvement'] and not candidates[n]['fully_contiguous_four_samples']]
+          preferred.sort(key=lambda n:(rows[n]['instructions'],rows[n]['bytes'],abs(rows[n]['sample_span']-base['sample_span'])))
+          out={
+              'protocol':'LAB43_INTERLEAVE_PRESERVING_UV_CODEGEN_SWEEP',
+              'baseline':'lab38a','baseline_hardware_selected':True,
+              'rows':rows,'candidates':candidates,'preferred_for_software_gate':preferred,
+              'pass':True,
+              'decision_note':'Codegen-only gate. Full software exactness is mandatory before any hardware comparison.'
+          }
+          (root/'CODEGEN_SWEEP.json').write_text(json.dumps(out,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps(out,indent=2))
+          '@ | python -
+
+      - name: Upload sweep artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lab43-interleave-uv-codegen
+          path: lab_results/lab43_codegen
+          if-no-files-found: error
