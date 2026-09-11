@@ -1,0 +1,116 @@
+name: LAB46 cubic-anchor codegen gate
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-lab46-cubic-anchor
+    paths:
+      - 'src/hlsl/moe_ng_v02/ptar_moe_ng_v02_lab38a_branchless_phase0_ps.hlsl'
+      - 'src/hlsl/moe_ng_v02/ptar_moe_ng_v02_lab46*.hlsl'
+      - '.github/workflows/lab_moe_ng_v02_lab46_cubic_anchor_codegen.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  codegen:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Locate x64 FXC
+        id: fxc
+        shell: pwsh
+        run: |
+          $fxc=Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if(-not $fxc){ throw 'x64 fxc.exe not found' }
+          "path=$($fxc.FullName)" >> $env:GITHUB_OUTPUT
+
+      - name: Compile baseline and candidates
+        shell: pwsh
+        run: |
+          $root='lab_results\lab46_cubic_anchor'; New-Item -ItemType Directory -Force $root | Out-Null
+          $fxc='${{ steps.fxc.outputs.path }}'
+          $srcs=@{
+            'lab38a'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab38a_branchless_phase0_ps.hlsl'
+            'lab46a'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab46a_f0_anchor_compact_coeff_ps.hlsl'
+            'lab46b'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab46b_f1_anchor_compact_coeff_ps.hlsl'
+            'lab46c'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab46c_f0_anchor_full_coeff_ps.hlsl'
+          }
+          foreach($n in $srcs.Keys){
+            & $fxc /nologo /T ps_5_0 /E main /Ges /WX /O3 /Fo "$root\$n.cso" /Fc "$root\$n.asm" $srcs[$n]
+            if($LASTEXITCODE -ne 0){ throw "FXC failed for $n exit=$LASTEXITCODE" }
+          }
+          $h=(Get-FileHash "$root\lab38a.cso" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($h -ne 'd60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3'){ throw "LAB38A hash mismatch: $h" }
+
+      - name: Audit codegen shape
+        shell: pwsh
+        run: |
+          @'
+          import hashlib,json,re
+          from collections import Counter
+          from pathlib import Path
+          root=Path('lab_results/lab46_cubic_anchor')
+          names=['lab38a','lab46a','lab46b','lab46c']
+          pat=re.compile(r'^\s*([A-Za-z][A-Za-z0-9_]*)\b')
+          rows={}
+          for n in names:
+              lines=(root/f'{n}.asm').read_text(encoding='utf-8',errors='replace').splitlines()
+              ops=[]; samples=[]; gathers=[]; temps=None
+              for raw in lines:
+                  s=raw.lstrip()
+                  if s.startswith('dcl_temps '):
+                      try: temps=int(s.split()[1])
+                      except: pass
+                  m=pat.match(raw)
+                  if not s or s.startswith('//') or s.startswith('ps_5_0') or not m: continue
+                  op=m.group(1).lower()
+                  if op.startswith('dcl_') or op in {'def','defi','defb'}: continue
+                  ops.append(op)
+                  if op.startswith('sample_l'): samples.append(len(ops))
+                  if op.startswith('gather4'): gathers.append(len(ops))
+              c=Counter(ops); data=(root/f'{n}.cso').read_bytes()
+              rows[n]={
+                'sha256':hashlib.sha256(data).hexdigest(),'instructions':len(ops),'bytes':len(data),'temps':temps,
+                'div':c.get('div',0),'udiv':c.get('udiv',0),'movc':c.get('movc',0),'mad':c.get('mad',0),'mul':c.get('mul',0),'add':c.get('add',0),
+                'gather4':sum(v for k,v in c.items() if k.startswith('gather4')),
+                'sample_l':sum(v for k,v in c.items() if k.startswith('sample_l')),
+                'uav':sum(v for k,v in c.items() if k.startswith('store_uav') or k.startswith('atomic_')),
+                'sample_positions':samples,'sample_span':(max(samples)-min(samples)) if samples else None,
+                'op_counts':dict(sorted(c.items())),'op_sequence':ops
+              }
+          base=rows['lab38a']
+          if base['sha256']!='d60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3': raise SystemExit('baseline hash mismatch')
+          if base['instructions']!=49 or base['bytes']!=2528 or base['temps']!=8 or base['movc']!=3: raise SystemExit(f'baseline codegen drift: {base}')
+          candidates={}; preferred=[]
+          for n in names[1:]:
+              r=rows[n]
+              contract=(r['gather4']==1 and r['sample_l']==4 and r['uav']==0 and r['div']==0 and r['udiv']==0)
+              structural=bool(contract and (r['instructions']<base['instructions'] or (r['instructions']==base['instructions'] and ((r['temps'] or 99)<base['temps'] or r['movc']<base['movc']))))
+              candidates[n]={
+                'texture_contract_pass':contract,
+                'instruction_delta':r['instructions']-base['instructions'],'byte_delta':r['bytes']-base['bytes'],
+                'temp_delta':(r['temps'] or 0)-base['temps'],'movc_delta':r['movc']-base['movc'],
+                'mad_delta':r['mad']-base['mad'],'mul_delta':r['mul']-base['mul'],'add_delta':r['add']-base['add'],
+                'sample_positions':r['sample_positions'],'sample_span':r['sample_span'],
+                'structurally_promising':structural
+              }
+              if structural: preferred.append(n)
+          preferred.sort(key=lambda n:(rows[n]['instructions'],rows[n]['temps'],rows[n]['movc'],rows[n]['bytes']))
+          decision='CONTINUE_SELECTED_CANDIDATES' if preferred else 'REJECT_CUBIC_ANCHOR_FAMILY_AT_CODEGEN'
+          out={'protocol':'LAB46_CUBIC_ANCHOR_CODEGEN_GATE','baseline':'LAB38A','identity':'coeff.x+coeff.z=27','rows':rows,'candidates':candidates,'preferred_for_exact_software_gate':preferred,'decision':decision,'pass':True}
+          (root/'CODEGEN_GATE.json').write_text(json.dumps(out,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps({'decision':decision,'preferred_for_exact_software_gate':preferred,'rows':rows,'candidates':candidates},indent=2))
+          '@ | python -
+
+      - name: Upload codegen artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lab46-cubic-anchor-codegen
+          path: lab_results/lab46_cubic_anchor
+          if-no-files-found: error
