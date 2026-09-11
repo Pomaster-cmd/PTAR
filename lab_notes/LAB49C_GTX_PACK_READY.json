@@ -1,0 +1,46 @@
+{
+  "protocol": "LAB49C_GTX960M_PACK_READY",
+  "reference": "LAB47A",
+  "candidate": "LAB49C",
+  "control": "K185",
+  "software_full_gate": {
+    "run_id": 34602023479,
+    "artifact_id": 10264776105,
+    "artifact_digest_sha256": "ec6891407e6a0284b4e91f7ac542db4d49c49480551f0ef577cd2432de7e94d0",
+    "result": "PASS_BIT_EXACT_AND_WARP"
+  },
+  "hardware_pack": {
+    "workflow_run_id": 34603022757,
+    "artifact_id": 10265475651,
+    "github_artifact_digest_sha256": "6fb4b595798a1418d2b1282ad8f7fd897313778e2e523a34ecb14318466b6e0c",
+    "inner_pack_sha256": "275bcaba06c84f5dffbb3ad5acc9918db0ec21292c0f9161e7c231eafaffeec4",
+    "inner_pack_bytes": 185162,
+    "zip_crc_pass": true,
+    "manifest_entries_verified": 21,
+    "pe_x64_win81_subsystem_603": true,
+    "forbidden_runtime_imports": false,
+    "warp_smoke_pass": true
+  },
+  "shader_hashes": {
+    "LAB47A": "12ab14074c5de7a91b50aa8c114f4f235aea2f6d8903f8d0e6b2813e8907cc72",
+    "LAB49C": "1e9692db2bf685fab74b3b1bf88afaf29b5ba21ac3cc86f4a2949b64da7f4f82",
+    "K185": "6bd926e85f21dd08788ff9d189c472800a5e0eb726091158ed1ecde3d06d8c16"
+  },
+  "static_delta": {
+    "LAB47A": {"instructions": 48, "bytes": 2500, "temps": 8, "add": 8, "round_ni": 2},
+    "LAB49C": {"instructions": 48, "bytes": 2520, "temps": 8, "add": 9, "round_ni": 1},
+    "texture_schedule_identical": true,
+    "sample_positions": [15, 16, 20, 21]
+  },
+  "physical_policy": {
+    "first_run_only_initially": true,
+    "strict_gate_required": true,
+    "minimum_material_gain_percent": 3.0,
+    "replication_rule": "Request RUN2 only if RUN1 is a strict statistical PASS and the observed gain is materially about 3 percent or greater. A clearly sub-3-percent result ends this optimization line."
+  },
+  "protected_refs_untouched_at_pack_audit": {
+    "main": "009b8326d0c6f2d7869077ef621c712cca060479",
+    "SOURCE": "bdb26584d4bcc7aa9655ae27d48359e60f707c50"
+  },
+  "status": "READY_FOR_ONE_GTX960M_RUN"
+}
