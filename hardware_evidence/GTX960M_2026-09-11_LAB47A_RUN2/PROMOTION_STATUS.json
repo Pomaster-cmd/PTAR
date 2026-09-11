@@ -1,0 +1,12 @@
+{
+  "candidate": "LAB47A",
+  "previous_canonical_lab_baseline": "LAB38A",
+  "new_replicated_hardware_selected_baseline": "LAB47A",
+  "run": "GTX960M_2026-09-11_LAB47A_RUN2",
+  "strict_hardware_gate": "PASS",
+  "replication_status": "CONFIRMED_TWO_INDEPENDENT_STRICT_PASS_RUNS",
+  "promotion_status": "PROMOTED_AS_REPLICATED_HARDWARE_SELECTED_BASELINE",
+  "reason": "Project policy requires two independent strict GTX960M PASS runs; LAB47A has now satisfied the full gate independently twice.",
+  "protected_refs_unchanged": true,
+  "next_action": "Use LAB47A as the baseline for subsequent lab exploration. Do not modify protected production refs main or SOURCE."
+}
