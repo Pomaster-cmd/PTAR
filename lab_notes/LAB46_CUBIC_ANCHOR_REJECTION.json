@@ -1,0 +1,65 @@
+{
+  "protocol": "LAB46_CUBIC_ANCHOR_REJECTION",
+  "baseline": {
+    "name": "LAB38A",
+    "hardware_selected": true,
+    "sha256": "d60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3",
+    "instructions": 49,
+    "bytes": 2528,
+    "temps": 8,
+    "movc": 3,
+    "texture_contract": "1 GatherGreen + 4 SampleLevel + 0 UAV"
+  },
+  "hypothesis": "Use the exact coefficient identity coeff.x + coeff.z = 27 to anchor the cubic at f0 or f1 and remove one weighted basis multiplication.",
+  "codegen_run": 34593608543,
+  "codegen_result": {
+    "lab46a": {"sha256":"c019ca0533ad14e8dd24caf3c52d792a334526de2c7f24f2e3b0d9d3726883bf","instructions":48,"bytes":2500,"temps":7,"mul":7,"instruction_delta":-1,"byte_delta":-28,"temp_delta":-1},
+    "lab46b": {"sha256":"e3971da8f8268db6532cd606d468efac5782bd4154d7a1c96503b0c0186103ea","instructions":48,"bytes":2504,"temps":8,"mul":7,"instruction_delta":-1,"byte_delta":-24,"temp_delta":0},
+    "lab46c": {"sha256":"5ae19a8c0748bee70a14f52f18bd73453fb04025eab060c9e019d2ff12936924","instructions":48,"bytes":2500,"temps":7,"mul":7,"instruction_delta":-1,"byte_delta":-28,"temp_delta":-1}
+  },
+  "full_software_run": 34593807953,
+  "full_software_gate": {
+    "lab46a": {
+      "artifact_id": 10261445187,
+      "artifact_zip_sha256": "08c4d82a65f731f2dd71246b92b827bc3f7a6a5a070901f7505f2df647b89f9f",
+      "zip_crc_pass": true,
+      "dxbc_gate_pass": true,
+      "canonical_values": 5184,
+      "canonical_different_values": 1114,
+      "canonical_max_abs": 1.1920928955078125e-07,
+      "canonical_max_ulp": 3,
+      "canonical_bit_exact": false
+    },
+    "lab46b": {
+      "artifact_id": 10261775008,
+      "artifact_zip_sha256": "5499644dfa9df343fd4780e4dce1cabfa3f2c572cec4e41816c937653e5e4333",
+      "zip_crc_pass": true,
+      "dxbc_gate_pass": true,
+      "canonical_values": 5184,
+      "canonical_different_values": 1129,
+      "canonical_max_abs": 1.1920928955078125e-07,
+      "canonical_max_ulp": 2,
+      "canonical_bit_exact": false
+    },
+    "lab46c": {
+      "artifact_id": 10260297739,
+      "artifact_zip_sha256": "be913c65e9705259392d1bf4caba253683e1d027f0047d8f26ae92f179d0bbd5",
+      "zip_crc_pass": true,
+      "dxbc_gate_pass": true,
+      "canonical_values": 5184,
+      "canonical_different_values": 1114,
+      "canonical_max_abs": 1.1920928955078125e-07,
+      "canonical_max_ulp": 3,
+      "canonical_bit_exact": false
+    }
+  },
+  "additional_a_vs_c_observation": {
+    "canonical_outputs_equal_on_test": true,
+    "executable_shader_token_equal": false,
+    "note": "LAB46A and LAB46C have equal canonical drift counts/output on this probe, but distinct SHEX payloads; they are not the same GPU program."
+  },
+  "decision": "REJECT_CUBIC_ANCHOR_FAMILY_EXACTNESS_GATE",
+  "hardware_test_justified": false,
+  "reason": "All three candidates improve codegen shape but fail the preregistered bit-exact canonical float gate. No multires/corpus/hardware promotion work is permitted after this failure.",
+  "protected_refs_modified": false
+}
