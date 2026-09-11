@@ -1,0 +1,180 @@
+{
+  "protocol": "LAB47A_GTX960M_RUN2_PAIRED_ANALYSIS",
+  "baseline": "LAB38A",
+  "candidate": "LAB47A",
+  "control": "K185",
+  "samples": 600,
+  "paired_speedup_definition": "(LAB38A_ms - LAB47A_ms) / LAB38A_ms * 100",
+  "lab38a_median_ms": 0.704032,
+  "lab47a_median_ms": 0.6832,
+  "k185_median_ms": 0.699344,
+  "paired_delta_median_ms": 0.022016000000000036,
+  "paired_speedup_median_percent": 3.047615363214503,
+  "bootstrap": {
+    "resamples": 100000,
+    "rng": "NumPy PCG64",
+    "seed": 20260910,
+    "ci95_percent": [
+      2.974449545340076,
+      3.102416550564829
+    ]
+  },
+  "wins": {
+    "LAB47A": 599,
+    "LAB38A": 1,
+    "ties": 0
+  },
+  "two_sided_sign_test_p": 2.8967236778536667e-178,
+  "permutations": [
+    {
+      "order": "LAB38A>LAB47A>K185",
+      "n": 100,
+      "median_speedup_percent": 3.1061206674157016,
+      "ci95": [
+        2.9163572537635867,
+        3.1980141721019795
+      ],
+      "wins": "100/0",
+      "pass": true
+    },
+    {
+      "order": "LAB38A>K185>LAB47A",
+      "n": 100,
+      "median_speedup_percent": 3.022418119808539,
+      "ci95": [
+        2.826017594238566,
+        3.1531593765246386
+      ],
+      "wins": "99/1",
+      "pass": true
+    },
+    {
+      "order": "LAB47A>LAB38A>K185",
+      "n": 100,
+      "median_speedup_percent": 3.063005921512919,
+      "ci95": [
+        2.9078648291435374,
+        3.2377899325496386
+      ],
+      "wins": "100/0",
+      "pass": true
+    },
+    {
+      "order": "LAB47A>K185>LAB38A",
+      "n": 100,
+      "median_speedup_percent": 3.093673932163815,
+      "ci95": [
+        2.906316697697644,
+        3.1964716046014585
+      ],
+      "wins": "100/0",
+      "pass": true
+    },
+    {
+      "order": "K185>LAB38A>LAB47A",
+      "n": 100,
+      "median_speedup_percent": 2.945825439622203,
+      "ci95": [
+        2.8400985118143454,
+        3.078377101194895
+      ],
+      "wins": "100/0",
+      "pass": true
+    },
+    {
+      "order": "K185>LAB47A>LAB38A",
+      "n": 100,
+      "median_speedup_percent": 3.0141956009232174,
+      "ci95": [
+        2.8762858689767192,
+        3.180498345600643
+      ],
+      "wins": "100/0",
+      "pass": true
+    }
+  ],
+  "k185_pstate": {
+    "jump_rule": "abs(adjacent K185 delta)/previous > 20%",
+    "jump_triads": [
+      158,
+      398,
+      399,
+      558
+    ],
+    "mixed_transition_triads": [
+      {
+        "triad": 157,
+        "reason": "order LAB38A>K185>LAB47A; LAB38A/K185 remain in the preceding state while LAB47A is measured during/after the transition"
+      },
+      {
+        "triad": 398,
+        "reason": "order LAB47A>LAB38A>K185; LAB38A/LAB47A remain in the preceding state while K185 is measured during the transition (intermediate timing)"
+      },
+      {
+        "triad": 557,
+        "reason": "order K185>LAB47A>LAB38A; K185/LAB47A remain in the preceding state while LAB38A is measured during/after the transition"
+      }
+    ],
+    "stable_segments": [
+      {
+        "range": "0..156",
+        "n": 157,
+        "k185_median_ms": 0.494208,
+        "median_speedup_percent": 3.0973152093054717,
+        "ci95": [
+          3.0587440918298467,
+          3.141431845759737
+        ],
+        "wins": "157/0",
+        "pass": true
+      },
+      {
+        "range": "158..397",
+        "n": 240,
+        "k185_median_ms": 0.698384,
+        "median_speedup_percent": 2.9130455600549348,
+        "ci95": [
+          2.7315397029371855,
+          3.063500709061433
+        ],
+        "wins": "240/0",
+        "pass": true
+      },
+      {
+        "range": "399..556",
+        "n": 158,
+        "k185_median_ms": 1.440288,
+        "median_speedup_percent": 3.2273393764480174,
+        "ci95": [
+          3.159928852192632,
+          3.3314098011363535
+        ],
+        "wins": "158/0",
+        "pass": true
+      },
+      {
+        "range": "558..599",
+        "n": 42,
+        "k185_median_ms": 2.329408,
+        "median_speedup_percent": 2.0481252275012034,
+        "ci95": [
+          1.9080472655335896,
+          2.130849247626025
+        ],
+        "wins": "42/0",
+        "pass": true
+      }
+    ]
+  },
+  "strict_gate": {
+    "overall_median_positive": true,
+    "overall_ci_lower_positive": true,
+    "majority_wins": true,
+    "all_six_permutation_medians_positive": true,
+    "all_six_permutation_ci_lowers_positive": true,
+    "all_stable_segment_medians_positive": true,
+    "all_stable_segment_ci_lowers_positive": true,
+    "pass": true
+  },
+  "verdict": "RUN2_STRICT_PASS_REPLICATION_CONFIRMED"
+}
