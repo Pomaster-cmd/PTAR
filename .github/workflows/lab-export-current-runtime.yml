@@ -1,0 +1,45 @@
+name: PTAR LAB export current runtime
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - lab/ptar-lab47a-keep
+
+permissions:
+  contents: read
+
+jobs:
+  export-current-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Verify locked runtime identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          DLL='payload/win81_nis_dx11_x64.dll'
+          test -f "$DLL"
+          SIZE="$(stat -c '%s' "$DLL")"
+          SHA="$(sha256sum "$DLL" | awk '{print $1}')"
+          test "$SIZE" = '320000'
+          test "$SHA" = '864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c'
+          mkdir -p lab_export
+          cp "$DLL" lab_export/
+          printf '%s  %s\n' "$SHA" 'win81_nis_dx11_x64.dll' > lab_export/SHA256.txt
+          printf '%s\n' "$SIZE" > lab_export/SIZE.txt
+          file "$DLL" > lab_export/FILE.txt || true
+          (objdump -x "$DLL" || true) > lab_export/OBJDUMP_X.txt 2>&1
+          (strings -a -n 5 "$DLL" || true) > lab_export/STRINGS_ASCII.txt 2>&1
+
+      - name: Upload locked runtime artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ptar-current-runtime-009b8326
+          path: lab_export/
+          if-no-files-found: error
+          retention-days: 1
