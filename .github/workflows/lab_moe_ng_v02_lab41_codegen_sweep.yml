@@ -1,0 +1,91 @@
+name: LAB41 Slope Codegen Sweep
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-lab41-slope-codegen-sweep
+
+permissions:
+  contents: read
+
+jobs:
+  codegen-sweep:
+    if: contains(github.event.head_commit.message, '[run-lab41-codegen]')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Locate x64 FXC
+        id: fxc
+        shell: pwsh
+        run: |
+          $fxc=Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if(-not $fxc){throw 'x64 FXC not found'}
+          "path=$($fxc.FullName)" >> $env:GITHUB_OUTPUT
+      - name: Compile baseline and sweep candidates
+        shell: pwsh
+        run: |
+          $out='lab_results\lab41_codegen'; New-Item -ItemType Directory -Force $out | Out-Null
+          $fxc='${{ steps.fxc.outputs.path }}'
+          $map=@{
+            'lab38a'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab38a_branchless_phase0_ps.hlsl'
+            'lab40b'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab40b_explicit_accum_ps.hlsl'
+            'lab40c'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab40c_early_coeff_ps.hlsl'
+            'lab41a'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab41a_slope_mask_lim_gt_ps.hlsl'
+            'lab41b'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab41b_slope_mask_lim_ge_ps.hlsl'
+            'lab41c'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab41c_slope_minmod_sign_ps.hlsl'
+            'lab41d'='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab41d_slope_explicit_minmax_ps.hlsl'
+          }
+          foreach($n in $map.Keys){
+            & $fxc /nologo /T ps_5_0 /E main /O3 /Ges /WX /Fo "$out\$n.cso" /Fc "$out\$n.asm" $map[$n]
+            if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          }
+      - name: Audit static DXBC
+        shell: pwsh
+        run: |
+          @'
+          import hashlib,json,re
+          from collections import Counter
+          from pathlib import Path
+          root=Path('lab_results/lab41_codegen')
+          names=['lab38a','lab40b','lab40c','lab41a','lab41b','lab41c','lab41d']
+          pat=re.compile(r'^\s*([A-Za-z][A-Za-z0-9_]*)\b')
+          temp_re=re.compile(r'^\s*dcl_temps\s+(\d+)\b',re.I)
+          rows={}
+          for n in names:
+              asm=(root/f'{n}.asm').read_text(encoding='utf-8',errors='replace').splitlines()
+              ops=[]; temps=None
+              for raw in asm:
+                  mt=temp_re.match(raw)
+                  if mt: temps=int(mt.group(1))
+                  s=raw.lstrip(); m=pat.match(raw)
+                  if not s or s.startswith('//') or s.startswith('ps_5_0') or not m: continue
+                  op=m.group(1).lower()
+                  if op.startswith('dcl_') or op in {'def','defi','defb'}: continue
+                  ops.append(op)
+              c=Counter(ops); data=(root/f'{n}.cso').read_bytes()
+              rows[n]={
+                'sha256':hashlib.sha256(data).hexdigest(),'bytes':len(data),'instructions':len(ops),'temps':temps,
+                'ops':dict(sorted(c.items())),
+                'gather4':sum(v for k,v in c.items() if k.startswith('gather4')),
+                'sample_l':sum(v for k,v in c.items() if k.startswith('sample_l')),
+                'uav':sum(v for k,v in c.items() if k.startswith('store_uav') or k.startswith('atomic_')),
+                'div':c.get('div',0),'udiv':c.get('udiv',0)
+              }
+          base=rows['lab38a']
+          for n,r in rows.items():
+              r['instruction_delta_vs_lab38a']=r['instructions']-base['instructions']
+              r['byte_delta_vs_lab38a']=r['bytes']-base['bytes']
+              r['same_hash_as_lab38a']=r['sha256']==base['sha256']
+              r['texture_contract_pass']=r['gather4']==1 and r['sample_l']==4 and r['uav']==0 and r['div']==0 and r['udiv']==0
+          groups={}
+          for n,r in rows.items():groups.setdefault(r['sha256'],[]).append(n)
+          report={'protocol':'LAB41_FXC_CODEGEN_SWEEP_V01','baseline':'lab38a','rows':rows,'hash_groups':[v for v in groups.values() if len(v)>1]}
+          (root/'CODEGEN_SWEEP.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps(report,indent=2))
+          if rows['lab38a']['sha256']!='d60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3': raise SystemExit('LAB38A hash mismatch')
+          if not all(r['texture_contract_pass'] for r in rows.values()): raise SystemExit('texture/div contract failure')
+          '@ | python -
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lab41-codegen-sweep
+          path: lab_results/lab41_codegen
