@@ -1,0 +1,129 @@
+name: LAB45 compiler policy codegen sweep
+
+on:
+  push:
+    branches:
+      - lab/moe-ng-v02-lab45-compiler-policy-sweep
+    paths:
+      - 'src/hlsl/moe_ng_v02/ptar_moe_ng_v02_lab38a_branchless_phase0_ps.hlsl'
+      - '.github/workflows/lab_moe_ng_v02_lab45_compiler_policy_codegen.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  codegen:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Locate x64 FXC
+        id: fxc
+        shell: pwsh
+        run: |
+          $fxc=Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '\\x64\\fxc\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if(-not $fxc){ throw 'x64 fxc.exe not found' }
+          "path=$($fxc.FullName)" >> $env:GITHUB_OUTPUT
+
+      - name: Compile exact LAB38A under compiler policies
+        shell: pwsh
+        run: |
+          $root='lab_results\lab45_compiler_policy'; New-Item -ItemType Directory -Force $root | Out-Null
+          $fxc='${{ steps.fxc.outputs.path }}'
+          $src='src\hlsl\moe_ng_v02\ptar_moe_ng_v02_lab38a_branchless_phase0_ps.hlsl'
+          $policies=@(
+            @{Name='o3'; Args=@('/O3')},
+            @{Name='o3_gfa'; Args=@('/O3','/Gfa')},
+            @{Name='o3_gfp'; Args=@('/O3','/Gfp')},
+            @{Name='o2'; Args=@('/O2')},
+            @{Name='o2_gfa'; Args=@('/O2','/Gfa')},
+            @{Name='o2_gfp'; Args=@('/O2','/Gfp')}
+          )
+          $compile=@()
+          foreach($p in $policies){
+            $n=$p.Name
+            $args=@('/nologo','/T','ps_5_0','/E','main','/Ges','/WX') + $p.Args + @('/Fo',"$root\$n.cso",'/Fc',"$root\$n.asm",$src)
+            & $fxc @args
+            $ec=$LASTEXITCODE
+            $compile += [pscustomobject]@{name=$n;args=($p.Args -join ' ');exit_code=$ec}
+            if($ec -ne 0){ throw "FXC failed for $n exit=$ec" }
+          }
+          $compile | ConvertTo-Json | Set-Content -Encoding UTF8 "$root\COMPILE_POLICIES.json"
+          $h=(Get-FileHash "$root\o3.cso" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($h -ne 'd60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3'){ throw "LAB38A O3 hash mismatch: $h" }
+
+      - name: Audit alternate codegen
+        shell: pwsh
+        run: |
+          @'
+          import hashlib,json,re
+          from collections import Counter
+          from pathlib import Path
+          root=Path('lab_results/lab45_compiler_policy')
+          names=['o3','o3_gfa','o3_gfp','o2','o2_gfa','o2_gfp']
+          pat=re.compile(r'^\s*([A-Za-z][A-Za-z0-9_]*)\b')
+          rows={}
+          for n in names:
+              asm=(root/f'{n}.asm').read_text(encoding='utf-8',errors='replace').splitlines()
+              ops=[]; samples=[]; gathers=[]; temps=None
+              for raw in asm:
+                  s=raw.lstrip()
+                  if s.startswith('dcl_temps '):
+                      try: temps=int(s.split()[1])
+                      except: pass
+                  m=pat.match(raw)
+                  if not s or s.startswith('//') or s.startswith('ps_5_0') or not m: continue
+                  op=m.group(1).lower()
+                  if op.startswith('dcl_') or op in {'def','defi','defb'}: continue
+                  ops.append(op)
+                  if op.startswith('sample_l'): samples.append(len(ops))
+                  if op.startswith('gather4'): gathers.append(len(ops))
+              c=Counter(ops); data=(root/f'{n}.cso').read_bytes()
+              rows[n]={
+                'sha256':hashlib.sha256(data).hexdigest(),'instructions':len(ops),'bytes':len(data),'temps':temps,
+                'div':c.get('div',0),'udiv':c.get('udiv',0),'movc':c.get('movc',0),'if_nz':c.get('if_nz',0),'endif':c.get('endif',0),
+                'gather4':sum(v for k,v in c.items() if k.startswith('gather4')),
+                'sample_l':sum(v for k,v in c.items() if k.startswith('sample_l')),
+                'uav':sum(v for k,v in c.items() if k.startswith('store_uav') or k.startswith('atomic_')),
+                'gather_positions':gathers,'sample_positions':samples,
+                'sample_span':(max(samples)-min(samples)) if samples else None,
+                'op_counts':dict(sorted(c.items())),'op_sequence':ops
+              }
+          base=rows['o3']
+          expected='d60820f62ca69e2cb2ef995c37001f100733e179f0821d7eb83247ad2c0014d3'
+          if base['sha256']!=expected: raise SystemExit('O3 baseline hash mismatch')
+          if base['instructions']!=49 or base['bytes']!=2528 or base['temps']!=8 or base['movc']!=3 or base['sample_positions']!=[15,16,20,21]: raise SystemExit(f'baseline codegen drift: {base}')
+          candidates={}; preferred=[]
+          for n in names[1:]:
+              r=rows[n]
+              contract=(r['gather4']==1 and r['sample_l']==4 and r['uav']==0 and r['div']==0 and r['udiv']==0)
+              no_op=(r['sha256']==base['sha256'])
+              first_diff=None
+              for i,(a,b) in enumerate(zip(base['op_sequence'],r['op_sequence']),1):
+                  if a!=b: first_diff=i; break
+              if first_diff is None and len(base['op_sequence'])!=len(r['op_sequence']): first_diff=min(len(base['op_sequence']),len(r['op_sequence']))+1
+              promising=bool(contract and not no_op and r['instructions']<=base['instructions'] and r['bytes']<=base['bytes'] and (r['temps'] or 99)<=base['temps'] and r['movc']<=base['movc'] and (r['sample_span'] or 999)<=base['sample_span'])
+              candidates[n]={
+                'texture_contract_pass':contract,'byte_identical_to_o3':no_op,
+                'instruction_delta':r['instructions']-base['instructions'],'byte_delta':r['bytes']-base['bytes'],
+                'temp_delta':(r['temps'] or 0)-base['temps'],'movc_delta':r['movc']-base['movc'],
+                'sample_positions':r['sample_positions'],'sample_span':r['sample_span'],'first_opcode_difference':first_diff,
+                'promising_for_full_software_gate':promising
+              }
+              if promising: preferred.append(n)
+          preferred.sort(key=lambda n:(rows[n]['instructions'],rows[n]['temps'],rows[n]['movc'],rows[n]['bytes'],abs((rows[n]['sample_span'] or 0)-base['sample_span'])))
+          out={'protocol':'LAB45_COMPILER_POLICY_CODEGEN_SWEEP','source':'LAB38A exact HLSL','baseline_policy':'O3','baseline_hardware_selected':True,'rows':rows,'candidates':candidates,'preferred_for_full_software_gate':preferred,'pass':True,'decision_note':'Compiler-policy-only sweep. No hardware unless alternate DXBC survives exact full software parity and offers a credible structural/scheduling advantage.'}
+          (root/'CODEGEN_SWEEP.json').write_text(json.dumps(out,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps(out,indent=2))
+          '@ | python -
+
+      - name: Upload sweep artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lab45-compiler-policy-codegen
+          path: lab_results/lab45_compiler_policy
+          if-no-files-found: error
