@@ -22,19 +22,15 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference='Stop'
-          $b64=(Get-Content 'lab/borderless/rc40/package_scripts/scripts_exact.zip.b64' -Raw).Trim()
-          [IO.File]::WriteAllBytes('RC40_SCRIPTS_EXACT.zip',[Convert]::FromBase64String($b64))
-          $h=(Get-FileHash 'RC40_SCRIPTS_EXACT.zip' -Algorithm SHA256).Hash.ToLowerInvariant()
-          if($h -ne '171ecb671f56451f58579e9f3d44b7e052b2984fd62fbf8b5601e53d4168b04f'){throw "fixture hash mismatch $h"}
-          Expand-Archive -LiteralPath 'RC40_SCRIPTS_EXACT.zip' -DestinationPath rc40_scripts -Force
-          $expected=[ordered]@{
-            'install.ps1'='f0f782831918526902af71e499f3c162f267f944f789f7b65b21b861bc726c0d'
-            'verify.ps1'='6cd92296f7e22eef7ce30c559836545bf12dba37ce341222fd05a9a1d659abbd'
-            'rollback.ps1'='802c31b4688f3996f9f5eee82b8541280634fb74bd5f9f944c6f8015e495a3b3'
-            'uninstall_overlay.ps1'='d67d963b40c75a6c219ddc221d15ad3bfa31bc36d886e6432ef7ebbeea9ae99f'
-            'collect_rc40.ps1'='b9a565ddcd1ebc258e3d018aa1bd41de7ac8923d73f99f8f02549a3b9be03faf'
-          }
-          foreach($n in $expected.Keys){$x=(Get-FileHash (Join-Path rc40_scripts $n) -Algorithm SHA256).Hash.ToLowerInvariant();if($x -ne $expected[$n]){throw "$n hash mismatch $x"};Write-Host "$n $x"}
+          $fixture='lab/borderless/rc38/package_scripts/scripts_exact.zip'
+          $h=(Get-FileHash $fixture -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($h -ne 'db2d63537d4950f54e6c1079008a0a4cb819e19eae38d53162cf72bf90b4ca4f'){throw "RC38 fixture hash mismatch $h"}
+          New-Item -ItemType Directory -Force -Path rc38_src,rc39_scripts,rc40_scripts | Out-Null
+          Expand-Archive -LiteralPath $fixture -DestinationPath rc38_src -Force
+          python lab/borderless/rc39/package_scripts/transform.py rc38_src rc39_scripts lab/borderless/rc39/package_scripts/collect_rc39.template.ps1
+          if($LASTEXITCODE -ne 0){throw 'RC39 exact reconstruction failed'}
+          python lab/borderless/rc40/package_scripts/transform.py rc39_scripts rc40_scripts lab/borderless/rc40/package_scripts/verify.template.ps1
+          if($LASTEXITCODE -ne 0){throw 'RC40 exact reconstruction failed'}
           'RC40_PACKAGE_SCRIPT_RECONSTRUCTION=PASS' | Set-Content RC40_PACKAGE_SCRIPT_RECONSTRUCTION.txt -Encoding ASCII
 
       - name: Parse exact RC40 PowerShell scripts
