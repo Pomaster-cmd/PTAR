@@ -1,0 +1,1 @@
+No functional source changed after hardware failure; all late commits are field-evidence markers only.
