@@ -1,0 +1,1 @@
+Next development line: RC41 LOGICAL_NATIVE_SUBRASTER. Native logical/presentation geometry remains 1920x1080 while the physical raster/backbuffer remains 1280x720; viewport/scissor and target-family handling must bridge the spaces.
