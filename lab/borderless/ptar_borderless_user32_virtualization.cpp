@@ -53,23 +53,64 @@ int main(){
     WNDCLASSW gc{};gc.hInstance=hi;gc.lpfnWndProc=GameProc;gc.lpszClassName=L"PTARUser32Game";
     WNDCLASSW pc{};pc.hInstance=hi;pc.lpfnWndProc=PresenterProc;pc.lpszClassName=L"PTARUser32Presenter";pc.style=CS_DBLCLKS;
     if((!RegisterClassW(&gc)&&GetLastError()!=ERROR_CLASS_ALREADY_EXISTS)||(!RegisterClassW(&pc)&&GetLastError()!=ERROR_CLASS_ALREADY_EXISTS))return 10;
-    g_game=CreateWindowExW(0,gc.lpszClassName,L"game",WS_POPUP,0,0,1280,720,nullptr,nullptr,hi,nullptr);
-    g_presenter=CreateWindowExW(WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW,pc.lpszClassName,L"presenter",WS_POPUP,0,0,1920,1080,g_game,nullptr,hi,nullptr);
-    if(!g_game||!g_presenter)return 11;
+
+    POINT origin{0,0};
+    HMONITOR monitor=MonitorFromPoint(origin,MONITOR_DEFAULTTOPRIMARY);
+    MONITORINFO mi{};mi.cbSize=sizeof(mi);
+    if(!monitor||!GetMonitorInfoW(monitor,&mi))return 11;
+    RECT output=mi.rcMonitor;
+    const LONG outW=output.right-output.left;
+    const LONG outH=output.bottom-output.top;
+    if(outW<320||outH<180)return 12;
+
+    g_game=CreateWindowExW(0,gc.lpszClassName,L"game",WS_POPUP,output.left,output.top,640,360,nullptr,nullptr,hi,nullptr);
+    g_presenter=CreateWindowExW(WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW,pc.lpszClassName,L"presenter",WS_POPUP,output.left,output.top,outW,outH,g_game,nullptr,hi,nullptr);
+    if(!g_game||!g_presenter)return 13;
     ShowWindow(g_game,SW_SHOW);ShowWindow(g_presenter,SW_SHOWNOACTIVATE);pump();
 
-    const std::vector<POINT> renders={{320,180},{640,360},{800,450},{960,540},{1024,576},{1280,720},{1024,768},{1280,800},{1600,900}};
-    const std::vector<RECT> outputs={{0,0,1024,768},{0,0,1366,768},{0,0,1920,1080},{0,0,2560,1440},{-1920,0,0,1080},{1920,-200,4480,1240},{-1280,-1024,0,0}};
+    std::vector<POINT> renders;
+    auto add_render=[&](LONG w,LONG h){
+        w=(std::max)(LONG(1),(std::min)(w,outW));
+        h=(std::max)(LONG(1),(std::min)(h,outH));
+        for(const POINT&p:renders)if(p.x==w&&p.y==h)return;
+        renders.push_back(POINT{w,h});
+    };
+    add_render(320,180);add_render(640,360);add_render(800,450);add_render(960,540);
+    add_render(1024,576);add_render(1280,720);add_render(outW,outH);
+    add_render(outW/2,outH/2);add_render((outW*3)/4,(outH*3)/4);
+
+    // Preserve broad synthetic geometry coverage without asking USER32 to place
+    // windows on monitors that do not exist on the CI machine. The real USER32
+    // phase below is restricted to the actual primary monitor returned by the OS.
+    const std::vector<RECT> syntheticOutputs={{0,0,1024,768},{0,0,1366,768},{0,0,1920,1080},{0,0,2560,1440},{-1920,0,0,1080},{1920,-200,4480,1240},{-1280,-1024,0,0}};
     std::mt19937 rng(0x55333256u);
-    unsigned failures=0,maxClientErr=0,maxMsgPosErr=0;
-    unsigned long long routedCases=0,captureCases=0,trackCases=0,queryCases=0,nestedScopes=0;
+    unsigned failures=0,maxClientErr=0,maxMsgPosErr=0,maxSyntheticErr=0;
+    unsigned long long routedCases=0,captureCases=0,trackCases=0,queryCases=0,nestedScopes=0,syntheticMathCases=0;
+
+    for(unsigned i=0;i<50000;++i){
+        RECT so=syntheticOutputs[rng()%syntheticOutputs.size()];
+        POINT rs{LONG(320+rng()%1281),LONG(180+rng()%721)};
+        Geometry sg{so,UINT(rs.x),UINT(rs.y)};
+        POINT logical{LONG(rng()%sg.render_w),LONG(rng()%sg.render_h)};
+        POINT physical=sg.logical_to_physical(logical);
+        POINT back=sg.physical_to_logical(physical);
+        unsigned e=(std::max)(diff(back.x,logical.x),diff(back.y,logical.y));
+        maxSyntheticErr=(std::max)(maxSyntheticErr,e);
+        if(e>1)++failures;
+        ++syntheticMathCases;
+    }
 
     for(unsigned i=0;i<12000;++i){
-        POINT rs=renders[rng()%renders.size()];RECT out=outputs[rng()%outputs.size()];
-        Geometry geo{out,UINT(rs.x),UINT(rs.y)};g_input.configure(g_game,g_presenter,geo);
-        SetWindowPos(g_game,nullptr,out.left,out.top,rs.x,rs.y,SWP_NOZORDER|SWP_NOACTIVATE);
-        SetWindowPos(g_presenter,nullptr,out.left,out.top,out.right-out.left,out.bottom-out.top,SWP_NOZORDER|SWP_NOACTIVATE);
+        POINT rs=renders[rng()%renders.size()];
+        Geometry geo{output,UINT(rs.x),UINT(rs.y)};g_input.configure(g_game,g_presenter,geo);
+        SetWindowPos(g_game,nullptr,output.left,output.top,rs.x,rs.y,SWP_NOZORDER|SWP_NOACTIVATE);
+        SetWindowPos(g_presenter,nullptr,output.left,output.top,outW,outH,SWP_NOZORDER|SWP_NOACTIVATE);
         pump();
+
+        RECT actualPresenter{};
+        if(!GetWindowRect(g_presenter,&actualPresenter)||actualPresenter.left!=output.left||actualPresenter.top!=output.top||actualPresenter.right!=output.right||actualPresenter.bottom!=output.bottom){++failures;continue;}
+        RECT actualGameClient{};
+        if(!GetClientRect(g_game,&actualGameClient)||actualGameClient.right!=rs.x||actualGameClient.bottom!=rs.y){++failures;continue;}
 
         POINT logical{LONG(rng()%geo.render_w),LONG(rng()%geo.render_h)};
         POINT physical=geo.logical_to_physical(logical);
@@ -81,14 +122,14 @@ int main(){
         if(g_forwarded!=before+1)++failures;
         unsigned ce=(std::max)(diff(g_lastClientX,logical.x),diff(g_lastClientY,logical.y));
         maxClientErr=(std::max)(maxClientErr,ce);if(ce>1)++failures;
-        LONG ex=out.left+logical.x,ey=out.top+logical.y;
+        LONG ex=output.left+logical.x,ey=output.top+logical.y;
         unsigned me=(std::max)(diff(g_lastMsgPosX,ex),diff(g_lastMsgPosY,ey));
         maxMsgPosErr=(std::max)(maxMsgPosErr,me);if(me>1)++failures;
         ++routedCases;
 
         if((i%2)==0){
-            HWND old=g_input.set_capture(g_game);
-            (void)old;
+            SetActiveWindow(g_game);SetFocus(g_game);
+            HWND old=g_input.set_capture(g_game);(void)old;
             if(::GetCapture()!=g_presenter||g_input.get_capture()!=g_game||!g_input.logical_capture_active())++failures;
             if(!g_input.release_capture()||::GetCapture()!=nullptr||g_input.get_capture()!=nullptr||g_input.logical_capture_active())++failures;
             ++captureCases;
@@ -109,8 +150,8 @@ int main(){
         }
 
         if((i%101)==0){
-            POINT outer{out.left+10,out.top+20};
-            POINT inner{out.left+30,out.top+40};
+            POINT outer{output.left+10,output.top+20};
+            POINT inner{output.left+30,output.top+40};
             {
                 InputVirtualizer::RoutedMessageScope a(outer);
                 POINT pa=InputVirtualizer::unpack_message_pos(InputVirtualizer::get_message_pos());
@@ -128,10 +169,10 @@ int main(){
     }
 
     LONG leaveBefore=g_leave;SendMessageW(g_presenter,WM_MOUSELEAVE,0,0);if(g_leave!=leaveBefore+1)++failures;
-    if(failures){std::printf("FAIL failures=%u routed=%llu capture=%llu track=%llu query=%llu max_client_err=%u max_msgpos_err=%u\n",failures,routedCases,captureCases,trackCases,queryCases,maxClientErr,maxMsgPosErr);return 20;}
+    if(failures){std::printf("FAIL failures=%u routed=%llu capture=%llu track=%llu query=%llu synthetic=%llu max_client_err=%u max_msgpos_err=%u max_synthetic_err=%u output=%ldx%ld\n",failures,routedCases,captureCases,trackCases,queryCases,syntheticMathCases,maxClientErr,maxMsgPosErr,maxSyntheticErr,outW,outH);return 20;}
     std::printf("PASS PTAR_BORDERLESS_USER32_VIRTUALIZATION\n");
-    std::printf("routed_message_cases=%llu capture_cases=%llu track_cases=%llu query_cases=%llu nested_messagepos_scopes=%llu\n",routedCases,captureCases,trackCases,queryCases,nestedScopes);
-    std::printf("max_client_error=%u max_GetMessagePos_error=%u mouseleave_forward=PASS\n",maxClientErr,maxMsgPosErr);
-    std::printf("contract=TrackMouseEvent_game_to_presenter; SetCapture_logical_game_to_physical_presenter; GetCapture_hidden; scoped_GetMessagePos_logical; WM_INPUT_untouched\n");
+    std::printf("routed_message_cases=%llu capture_cases=%llu track_cases=%llu query_cases=%llu nested_messagepos_scopes=%llu synthetic_math_cases=%llu\n",routedCases,captureCases,trackCases,queryCases,nestedScopes,syntheticMathCases);
+    std::printf("max_client_error=%u max_GetMessagePos_error=%u max_synthetic_error=%u mouseleave_forward=PASS actual_output=%ldx%ld\n",maxClientErr,maxMsgPosErr,maxSyntheticErr,outW,outH);
+    std::printf("contract=real_USER32_only_on_real_monitor; synthetic_multimonitor_math_separate; TrackMouseEvent_game_to_presenter; SetCapture_logical_game_to_physical_presenter; GetCapture_hidden; scoped_GetMessagePos_logical; WM_INPUT_untouched\n");
     return 0;
 }
