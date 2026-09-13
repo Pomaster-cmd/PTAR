@@ -1,0 +1,83 @@
+name: RC39 Package Script Lab
+
+on:
+  push:
+    branches:
+      - build/rc39-deferred-authority-20260913
+    paths:
+      - .github/workflows/rc39-package-script-lab.yml
+      - lab/borderless/rc39/package_scripts/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package-scripts:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct exact RC39 package scripts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $fixture='lab/borderless/rc38/package_scripts/scripts_exact.zip'
+          $h=(Get-FileHash $fixture -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($h -ne 'db2d63537d4950f54e6c1079008a0a4cb819e19eae38d53162cf72bf90b4ca4f'){throw "RC38 parser fixture hash mismatch $h"}
+          New-Item -ItemType Directory -Force -Path rc39_pkg_src,rc39_pkg_out | Out-Null
+          Expand-Archive -LiteralPath $fixture -DestinationPath rc39_pkg_src -Force
+          python lab/borderless/rc39/package_scripts/transform.py rc39_pkg_src rc39_pkg_out lab/borderless/rc39/package_scripts/collect_rc39.template.ps1
+          if($LASTEXITCODE -ne 0){throw 'RC39 script reconstruction failed'}
+
+      - name: Parse exact RC39 PowerShell scripts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $names=@('install.ps1','verify.ps1','rollback.ps1','uninstall_overlay.ps1','collect_rc39.ps1')
+          $out=@()
+          foreach($n in $names){
+            $p=Join-Path 'rc39_pkg_out' $n
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile($p,[ref]$tokens,[ref]$errors)|Out-Null
+            if($errors.Count -ne 0){$errors|ForEach-Object{Write-Host $_};throw "PARSE FAIL $n"}
+            $out += "PASS PARSE $n"
+          }
+          $out | Set-Content RC39_PACKAGE_SCRIPT_PARSE.txt -Encoding ASCII
+          Get-Content RC39_PACKAGE_SCRIPT_PARSE.txt
+
+      - name: Package script safety contracts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $i=Get-Content rc39_pkg_out/install.ps1 -Raw
+          $v=Get-Content rc39_pkg_out/verify.ps1 -Raw
+          $r=Get-Content rc39_pkg_out/rollback.ps1 -Raw
+          $u=Get-Content rc39_pkg_out/uninstall_overlay.ps1 -Raw
+          $c=Get-Content rc39_pkg_out/collect_rc39.ps1 -Raw
+          $checks=[ordered]@{
+            'install RC39 sidecar hash'=$i.Contains('f8654c6d20f243a4ba75cece6a2ceb7df559d9e33ecad2c1275376038826e89b')
+            'install recognizes RC38 sidecar migration'=$i.Contains('d7eef6d9a2c01e40fed34722c86cee36003a636d663a67174515af5086d274f8')
+            'install runtime unchanged'=$i.Contains('cb7202e5097b78c4965a8300a28a6004038d05bbfe1aaa25089e0a2c5f1b8abb')
+            'install fail closed unknown local DLL'=$i.Contains('DLL locale inconnue, installation refusee')
+            'install fail closed unknown sidecar'=$i.Contains('Sidecar local inconnu, installation refusee')
+            'verify 107 canonical base'=$v.Contains('BASE GITHUB 107/107 fichiers byte-identiques')
+            'rollback accepts only canonical or known candidates'=$r.Contains('Fichier actif inconnu/modifie, rollback refuse')
+            'rollback recognizes RC38 and RC39 sidecars'=($r.Contains('d7eef6d9') -and $r.Contains('f8654c6d'))
+            'uninstall delegates canonical engine'=$u.Contains('& $Engine -Root $Root')
+            'uninstall SHA ownership'=$u.Contains('OVERLAY_OWNERSHIP.tsv')
+            'collector runs canonical collector'=$c.Contains("diag\collect.ps1")
+            'collector adds sidecar log'=$c.Contains('ptar_borderless_rc38.log')
+            'collector emits RC39 results'=$c.Contains('PTAR_RC39_RESULTS_')
+          }
+          $out=@();foreach($k in $checks.Keys){if(-not $checks[$k]){throw "CONTRACT FAIL $k"};$out += "PASS $k"}
+          $out | Set-Content RC39_PACKAGE_SCRIPT_CONTRACT.txt -Encoding ASCII
+          Get-Content RC39_PACKAGE_SCRIPT_CONTRACT.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_RC39_PACKAGE_SCRIPT_LAB
+          path: |
+            RC39_PACKAGE_SCRIPT_PARSE.txt
+            RC39_PACKAGE_SCRIPT_CONTRACT.txt
+          retention-days: 7
