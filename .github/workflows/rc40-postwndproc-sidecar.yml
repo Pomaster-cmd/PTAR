@@ -1,0 +1,139 @@
+name: RC40 Post-WndProc Authority Lab
+
+on:
+  push:
+    branches:
+      - build/rc40-postwndproc-loader-20260913
+    paths:
+      - lab/borderless/rc40/**
+      - lab/borderless/rc38/ptar_borderless_rc38.cpp
+      - lab/borderless/rc38/ptar_borderless_host_test.cpp
+      - lab/borderless/rc38/ptar_borderless_stable_host_test.cpp
+      - lab/borderless/ptar_borderless_*.cpp
+      - .github/workflows/rc40-postwndproc-sidecar.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-rc40-lab:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Static RC40 production ordering contract
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $s=Get-Content 'lab/borderless/rc40/ptar_borderless_rc40_prod.cpp' -Raw
+          $checks=[ordered]@{
+            'old presenter hook restored guard'=$s.Contains('restoredPresenterLog')
+            'loader hook moved after game HWND store'=$s.Contains('base+0x00003806u')
+            'loader calls P1U46 installer first'=$s.Contains('base+0x03500517u')
+            'P1U46 WndProc exact guard'=$s.Contains('base+0x0000DC50u')
+            'AutoStart uses immediate stable attach'=($s.Contains('AUTO_START_RC40_POSTWNDPROC') -and $s.Contains('return attach_stable(game,presenter,renderW,renderH,outputW,outputH);'))
+          }
+          foreach($k in $checks.Keys){if(-not $checks[$k]){throw "RC40 CONTRACT FAIL $k"};Write-Host "PASS $k"}
+
+      - name: Build reproducible RC40 sidecar and host tests
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          if not exist lab\borderless\rc40\out mkdir lab\borderless\rc40\out
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603
+          cl %CFLAGS% /LD lab\borderless\rc40\ptar_borderless_rc40_prod.cpp /Fe:lab\borderless\rc40\out\ptar_borderless.dll user32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03
+          if errorlevel 1 exit /b 1
+          copy /y lab\borderless\rc40\out\ptar_borderless.dll lab\borderless\rc40\out\ptar_borderless_first.dll >nul
+          cl %CFLAGS% lab\borderless\rc38\ptar_borderless_host_test.cpp /Fe:lab\borderless\rc40\out\legacy_host_test.exe user32.lib /link /SUBSYSTEM:CONSOLE,6.03
+          if errorlevel 1 exit /b 1
+          cl %CFLAGS% lab\borderless\rc38\ptar_borderless_stable_host_test.cpp /Fe:lab\borderless\rc40\out\stable_host_test.exe user32.lib /link /SUBSYSTEM:CONSOLE,6.03
+          if errorlevel 1 exit /b 1
+          dumpbin /exports lab\borderless\rc40\out\ptar_borderless.dll > lab\borderless\rc40\out\EXPORTS.txt
+          dumpbin /imports lab\borderless\rc40\out\ptar_borderless.dll > lab\borderless\rc40\out\IMPORTS.txt
+          dumpbin /headers lab\borderless\rc40\out\ptar_borderless.dll > lab\borderless\rc40\out\HEADERS.txt
+          findstr /C:"PTAR_BorderlessAutoStart" lab\borderless\rc40\out\EXPORTS.txt >nul || exit /b 31
+          findstr /C:"PTAR_BorderlessAttachStable" lab\borderless\rc40\out\EXPORTS.txt >nul || exit /b 32
+          findstr /C:"PTAR_BorderlessAttach" lab\borderless\rc40\out\EXPORTS.txt >nul || exit /b 33
+          findstr /C:"PTAR_BorderlessQuery" lab\borderless\rc40\out\EXPORTS.txt >nul || exit /b 34
+
+      - name: Verify same-target reproducibility
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          ping -n 2 127.0.0.1 >nul
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603
+          cl %CFLAGS% /LD lab\borderless\rc40\ptar_borderless_rc40_prod.cpp /Fe:lab\borderless\rc40\out\ptar_borderless.dll user32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03
+          if errorlevel 1 exit /b 1
+          fc /b lab\borderless\rc40\out\ptar_borderless_first.dll lab\borderless\rc40\out\ptar_borderless.dll >nul
+          if errorlevel 1 exit /b 2
+          echo RC40_SIDECAR_SAME_TARGET_REPRODUCIBILITY=PASS
+
+      - name: Run post-WndProc stable and inherited deferred host gates
+        shell: cmd
+        run: |
+          pushd lab\borderless\rc40\out
+          stable_host_test.exe > STABLE_HOST_TEST.txt 2>&1
+          if errorlevel 1 (type STABLE_HOST_TEST.txt & popd & exit /b 41)
+          type STABLE_HOST_TEST.txt
+          legacy_host_test.exe > LEGACY_HOST_TEST.txt 2>&1
+          if errorlevel 1 (type LEGACY_HOST_TEST.txt & popd & exit /b 42)
+          type LEGACY_HOST_TEST.txt
+          popd
+
+      - name: Build inherited borderless gates
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          if not exist lab\borderless\rc40\gates mkdir lab\borderless\rc40\gates
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\borderless
+          set LFLAGS=/link /SUBSYSTEM:CONSOLE,6.03
+          cl %CFLAGS% lab\borderless\ptar_borderless_geometry_stress.cpp /Fe:lab\borderless\rc40\gates\geometry_stress.exe user32.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_input_stress.cpp /Fe:lab\borderless\rc40\gates\input_stress.exe user32.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_event_parity.cpp /Fe:lab\borderless\rc40\gates\event_parity.exe user32.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_user32_virtualization.cpp /Fe:lab\borderless\rc40\gates\user32_virtualization.exe user32.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_thread_affinity.cpp /Fe:lab\borderless\rc40\gates\thread_affinity.exe user32.lib d3d11.lib dxgi.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_dpi_policy.cpp /Fe:lab\borderless\rc40\gates\dpi_policy.exe user32.lib gdi32.lib shcore.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_lifecycle_stress.cpp /Fe:lab\borderless\rc40\gates\lifecycle_stress.exe user32.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_window_stress.cpp /Fe:lab\borderless\rc40\gates\window_stress.exe user32.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_takeover_harness.cpp /Fe:lab\borderless\rc40\gates\takeover_harness.exe user32.lib gdi32.lib d3d11.lib dxgi.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_warp_stress.cpp /Fe:lab\borderless\rc40\gates\warp_stress.exe user32.lib d3d11.lib dxgi.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_occlusion_focus_stress.cpp /Fe:lab\borderless\rc40\gates\occlusion_focus_stress.exe user32.lib d3d11.lib dxgi.lib %LFLAGS% || exit /b 1
+
+      - name: Run inherited borderless gates
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $tests=@('geometry_stress','input_stress','event_parity','user32_virtualization','thread_affinity','dpi_policy','lifecycle_stress','window_stress','takeover_harness','warp_stress','occlusion_focus_stress')
+          $summary=@()
+          foreach($n in $tests){
+            $exe="lab/borderless/rc40/gates/$n.exe";$log="lab/borderless/rc40/gates/$($n.ToUpper()).txt"
+            & $exe *> $log;$rc=$LASTEXITCODE
+            Get-Content $log
+            $summary += "$n RC=$rc"
+            if($rc -ne 0){throw "$n failed RC=$rc"}
+          }
+          $summary += 'RC40_INHERITED_GATES=11/11 PASS'
+          $summary | Set-Content 'lab/borderless/rc40/gates/GATES_SUMMARY.txt' -Encoding ASCII
+
+      - name: Package RC40 evidence
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $o='lab/borderless/rc40/out'
+          $h=(Get-FileHash "$o/ptar_borderless.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $s=(Get-Item "$o/ptar_borderless.dll").Length
+          "SHA256=$h`nSIZE=$s" | Set-Content "$o/RC40_SIDECAR_SHA256.txt" -Encoding ASCII
+          Compress-Archive -Path "$o/ptar_borderless.dll","$o/EXPORTS.txt","$o/IMPORTS.txt","$o/HEADERS.txt","$o/STABLE_HOST_TEST.txt","$o/LEGACY_HOST_TEST.txt","$o/RC40_SIDECAR_SHA256.txt","lab/borderless/rc40/gates/*.txt" -DestinationPath RC40_POSTWNDPROC_AUTHORITY_EVIDENCE.zip -Force
+          Write-Host "RC40_SIDECAR_SHA256=$h"
+          Write-Host "RC40_SIDECAR_SIZE=$s"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_RC40_POSTWNDPROC_AUTHORITY
+          path: RC40_POSTWNDPROC_AUTHORITY_EVIDENCE.zip
+          if-no-files-found: error
+          retention-days: 7
