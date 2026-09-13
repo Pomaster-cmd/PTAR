@@ -1,0 +1,1 @@
+Late marker-only commits are not functional changes and should be ignored by future branch diff review.
