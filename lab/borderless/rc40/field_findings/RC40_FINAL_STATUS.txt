@@ -1,0 +1,1 @@
+FINAL RC40 FIELD STATUS: FAIL. Window authority is active; visual framing still wrong. Root cause moved upstream into logical-composition vs physical-raster geometry.
