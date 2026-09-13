@@ -1,0 +1,122 @@
+name: RC38 Borderless Authority Lab
+
+on:
+  push:
+    branches:
+      - build/rc38-borderless-authority-20260913
+    paths-ignore:
+      - 'lab/borderless/rc38/generated/**'
+
+permissions:
+  contents: write
+
+jobs:
+  windows-rc38-lab:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build RC38 Win8.1 sidecar and integration host
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          if not exist lab\borderless\rc38\out mkdir lab\borderless\rc38\out
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603
+          cl %CFLAGS% /LD lab\borderless\rc38\ptar_borderless_rc38.cpp /Fe:lab\borderless\rc38\out\ptar_borderless.dll user32.lib /link /SUBSYSTEM:WINDOWS,6.03
+          if errorlevel 1 exit /b 1
+          cl %CFLAGS% lab\borderless\rc38\ptar_borderless_host_test.cpp /Fe:lab\borderless\rc38\out\ptar_borderless_host_test.exe user32.lib /link /SUBSYSTEM:CONSOLE,6.03
+          if errorlevel 1 exit /b 1
+          dumpbin /imports lab\borderless\rc38\out\ptar_borderless.dll > lab\borderless\rc38\out\SIDECAR_IMPORTS.txt
+          dumpbin /headers lab\borderless\rc38\out\ptar_borderless.dll > lab\borderless\rc38\out\SIDECAR_HEADERS.txt
+
+      - name: Run RC38 integrated sidecar host test
+        shell: cmd
+        run: |
+          pushd lab\borderless\rc38\out
+          ptar_borderless_host_test.exe > RC38_HOST_TEST.txt 2>&1
+          set RC=%ERRORLEVEL%
+          type RC38_HOST_TEST.txt
+          popd
+          exit /b %RC%
+
+      - name: Rebuild inherited borderless lab gates
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          if not exist lab\borderless\out mkdir lab\borderless\out
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\borderless
+          set LFLAGS=/link /SUBSYSTEM:CONSOLE,6.03
+          cl %CFLAGS% lab\borderless\ptar_borderless_geometry_stress.cpp /Fe:lab\borderless\out\geometry_stress.exe user32.lib %LFLAGS%
+          if errorlevel 1 exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_input_stress.cpp /Fe:lab\borderless\out\input_stress.exe user32.lib %LFLAGS%
+          if errorlevel 1 exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_event_parity.cpp /Fe:lab\borderless\out\event_parity.exe user32.lib %LFLAGS%
+          if errorlevel 1 exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_user32_virtualization.cpp /Fe:lab\borderless\out\user32_virtualization.exe user32.lib %LFLAGS%
+          if errorlevel 1 exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_thread_affinity.cpp /Fe:lab\borderless\out\thread_affinity.exe user32.lib d3d11.lib dxgi.lib %LFLAGS%
+          if errorlevel 1 exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_dpi_policy.cpp /Fe:lab\borderless\out\dpi_policy.exe user32.lib gdi32.lib shcore.lib %LFLAGS%
+          if errorlevel 1 exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_lifecycle_stress.cpp /Fe:lab\borderless\out\lifecycle_stress.exe user32.lib %LFLAGS%
+          if errorlevel 1 exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_window_stress.cpp /Fe:lab\borderless\out\window_stress.exe user32.lib %LFLAGS%
+          if errorlevel 1 exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_takeover_harness.cpp /Fe:lab\borderless\out\takeover_harness.exe user32.lib gdi32.lib d3d11.lib dxgi.lib %LFLAGS%
+          if errorlevel 1 exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_warp_stress.cpp /Fe:lab\borderless\out\warp_stress.exe user32.lib d3d11.lib dxgi.lib %LFLAGS%
+          if errorlevel 1 exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_occlusion_focus_stress.cpp /Fe:lab\borderless\out\occlusion_focus_stress.exe user32.lib d3d11.lib dxgi.lib %LFLAGS%
+          if errorlevel 1 exit /b 1
+
+      - name: Run inherited borderless regression gates
+        shell: cmd
+        run: |
+          lab\borderless\out\geometry_stress.exe > lab\borderless\out\GEOMETRY_STRESS.txt 2>&1
+          if errorlevel 1 exit /b 1
+          lab\borderless\out\input_stress.exe > lab\borderless\out\INPUT_STRESS.txt 2>&1
+          if errorlevel 1 exit /b 1
+          lab\borderless\out\event_parity.exe > lab\borderless\out\EVENT_PARITY.txt 2>&1
+          if errorlevel 1 exit /b 1
+          lab\borderless\out\user32_virtualization.exe > lab\borderless\out\USER32_VIRTUALIZATION.txt 2>&1
+          if errorlevel 1 exit /b 1
+          lab\borderless\out\thread_affinity.exe > lab\borderless\out\THREAD_AFFINITY.txt 2>&1
+          if errorlevel 1 exit /b 1
+          lab\borderless\out\dpi_policy.exe > lab\borderless\out\DPI_POLICY.txt 2>&1
+          if errorlevel 1 exit /b 1
+          lab\borderless\out\lifecycle_stress.exe > lab\borderless\out\LIFECYCLE_STRESS.txt 2>&1
+          if errorlevel 1 exit /b 1
+          lab\borderless\out\window_stress.exe > lab\borderless\out\WINDOW_STRESS.txt 2>&1
+          if errorlevel 1 exit /b 1
+          lab\borderless\out\takeover_harness.exe > lab\borderless\out\TAKEOVER_HARNESS.txt 2>&1
+          if errorlevel 1 exit /b 1
+          lab\borderless\out\warp_stress.exe > lab\borderless\out\WARP_STRESS.txt 2>&1
+          if errorlevel 1 exit /b 1
+          lab\borderless\out\occlusion_focus_stress.exe > lab\borderless\out\OCCLUSION_FOCUS_STRESS.txt 2>&1
+          if errorlevel 1 exit /b 1
+
+      - name: Export deterministic sidecar payload as Base64 text
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $out='lab/borderless/rc38/out/ptar_borderless.dll'
+          $gen='lab/borderless/rc38/generated'
+          New-Item -ItemType Directory -Force -Path $gen | Out-Null
+          [IO.File]::WriteAllText((Join-Path $gen 'ptar_borderless.dll.b64'), [Convert]::ToBase64String([IO.File]::ReadAllBytes($out)))
+          (Get-FileHash $out -Algorithm SHA256).Hash.ToLowerInvariant() | Set-Content -NoNewline (Join-Path $gen 'ptar_borderless.dll.sha256') -Encoding ASCII
+          (Get-Item $out).Length | Set-Content -NoNewline (Join-Path $gen 'ptar_borderless.dll.size') -Encoding ASCII
+          Copy-Item 'lab/borderless/rc38/out/RC38_HOST_TEST.txt' (Join-Path $gen 'RC38_HOST_TEST.txt') -Force
+          Copy-Item 'lab/borderless/rc38/out/SIDECAR_IMPORTS.txt' (Join-Path $gen 'SIDECAR_IMPORTS.txt') -Force
+          Copy-Item 'lab/borderless/rc38/out/SIDECAR_HEADERS.txt' (Join-Path $gen 'SIDECAR_HEADERS.txt') -Force
+
+      - name: Publish verified generated payload on temporary branch
+        shell: cmd
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lab/borderless/rc38/generated
+          git diff --cached --quiet && exit /b 0
+          git commit -m "lab: publish verified RC38 sidecar payload"
+          git push origin HEAD:build/rc38-borderless-authority-20260913
