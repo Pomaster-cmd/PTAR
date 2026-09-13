@@ -1,0 +1,1 @@
+Field line frozen after 2026-09-13 failure. Future code belongs to RC41 branch.
