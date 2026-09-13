@@ -30,6 +30,8 @@ jobs:
           if errorlevel 1 exit /b 1
           cl %CFLAGS% lab\borderless\ptar_borderless_warp_stress.cpp /Fe:lab\borderless\out\warp_stress.exe user32.lib d3d11.lib dxgi.lib %LFLAGS%
           if errorlevel 1 exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_occlusion_focus_stress.cpp /Fe:lab\borderless\out\occlusion_focus_stress.exe user32.lib d3d11.lib dxgi.lib %LFLAGS%
+          if errorlevel 1 exit /b 1
           dumpbin /imports lab\borderless\out\window_stress.exe > lab\borderless\out\WINDOW_IMPORTS.txt
           dumpbin /imports lab\borderless\out\warp_stress.exe > lab\borderless\out\WARP_IMPORTS.txt
           dumpbin /headers lab\borderless\out\warp_stress.exe > lab\borderless\out\WARP_HEADERS.txt
@@ -42,7 +44,7 @@ jobs:
         shell: cmd
         run: lab\borderless\out\input_stress.exe > lab\borderless\out\INPUT_STRESS.txt 2>&1
 
-      - name: Win32 takeover state stress - 100k hostile requests
+      - name: Win32 takeover state stress - 20k hostile requests
         shell: cmd
         run: lab\borderless\out\window_stress.exe > lab\borderless\out\WINDOW_STRESS.txt 2>&1
 
@@ -50,11 +52,15 @@ jobs:
         shell: cmd
         run: lab\borderless\out\warp_stress.exe > lab\borderless\out\WARP_STRESS.txt 2>&1
 
+      - name: Occlusion focus capture stress - 2k presents
+        shell: cmd
+        run: lab\borderless\out\occlusion_focus_stress.exe > lab\borderless\out\OCCLUSION_FOCUS_STRESS.txt 2>&1
+
       - name: Print reports
         if: always()
         shell: cmd
         run: |
-          for %%F in (GEOMETRY_STRESS.txt INPUT_STRESS.txt WINDOW_STRESS.txt WARP_STRESS.txt) do if exist lab\borderless\out\%%F (echo ==== %%F ==== & type lab\borderless\out\%%F)
+          for %%F in (GEOMETRY_STRESS.txt INPUT_STRESS.txt WINDOW_STRESS.txt WARP_STRESS.txt OCCLUSION_FOCUS_STRESS.txt) do if exist lab\borderless\out\%%F (echo ==== %%F ==== & type lab\borderless\out\%%F)
 
       - name: Upload lab reports
         if: always()
