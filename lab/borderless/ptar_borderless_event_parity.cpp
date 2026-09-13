@@ -26,6 +26,7 @@ static std::vector<Event> g_events;
 static unsigned long long g_focusReacquire = 0;
 static unsigned long long g_setCursorRoutes = 0;
 static unsigned long long g_leaveRoutes = 0;
+static unsigned long long g_directWheelRemaps = 0;
 
 static bool is_client_pointer(UINT m) {
     switch (m) {
@@ -47,7 +48,16 @@ static LRESULT CALLBACK GameProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         return 0;
     }
     if (is_wheel(m)) {
-        g_events.push_back(Event{m,w,GET_X_LPARAM(l),GET_Y_LPARAM(l)});
+        // WM_MOUSEWHEEL/HWHEEL are delivered to the focus window and carry
+        // screen-space coordinates. Since the game keeps focus, PTAR remaps
+        // the physical native point in the game WndProc guard itself rather
+        // than waiting for the presenter to receive the wheel message.
+        POINT p{GET_X_LPARAM(l),GET_Y_LPARAM(l)};
+        POINT q=g_geo.physical_to_logical(p);
+        q.x+=g_geo.output.left;
+        q.y+=g_geo.output.top;
+        ++g_directWheelRemaps;
+        g_events.push_back(Event{m,w,q.x,q.y});
         return 0;
     }
     if (m == WM_MOUSELEAVE) {
@@ -74,14 +84,6 @@ static LRESULT CALLBACK PresenterProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         ClientToScreen(h,&p);
         p = g_geo.physical_to_logical(p);
         SendMessageW(g_game,m,w,MAKELPARAM(p.x,p.y));
-        return 0;
-    }
-    if (is_wheel(m)) {
-        POINT p{GET_X_LPARAM(l),GET_Y_LPARAM(l)};
-        POINT q = g_geo.physical_to_logical(p);
-        q.x += g_geo.output.left;
-        q.y += g_geo.output.top;
-        SendMessageW(g_game,m,w,MAKELPARAM(q.x,q.y));
         return 0;
     }
     if (m == WM_MOUSELEAVE) {
@@ -155,7 +157,8 @@ int main() {
             POINT pp=g_geo.logical_to_physical(lp);
             WPARAM ww=MAKEWPARAM(0,SHORT((rng()&1)?WHEEL_DELTA:-WHEEL_DELTA));
             g_events.clear();
-            SendMessageW(g_presenter,wm,ww,MAKELPARAM(pp.x,pp.y));
+            // Model the real Win32 path: wheel goes to the focused game HWND.
+            SendMessageW(g_game,wm,ww,MAKELPARAM(pp.x,pp.y));
             if(g_events.size()!=1) ++failures;
             else {
                 const Event &got=g_events[0];
@@ -188,14 +191,15 @@ int main() {
     DWORD st=DWORD(GetWindowLongPtrW(g_presenter,GWL_STYLE));
     if(!(st&WS_POPUP)||(st&(WS_CAPTION|WS_THICKFRAME))||!(ex&WS_EX_NOACTIVATE)||!(ex&WS_EX_TOOLWINDOW)||(ex&WS_EX_TRANSPARENT)) ++failures;
     if(GetWindow(g_presenter,GW_OWNER)!=g_game) ++failures;
+    if(g_directWheelRemaps!=wheelCases) ++failures;
 
     if(failures) {
-        std::printf("FAIL failures=%u pointer=%llu wheel=%llu focus=%llu setcursor=%llu leave=%llu\n",failures,pointerCases,wheelCases,focusCases,setCursorCases,leaveCases);
+        std::printf("FAIL failures=%u pointer=%llu wheel=%llu focus=%llu setcursor=%llu leave=%llu direct_wheel_remaps=%llu\n",failures,pointerCases,wheelCases,focusCases,setCursorCases,leaveCases,g_directWheelRemaps);
         return 20;
     }
     std::printf("PASS PTAR_BORDERLESS_EVENT_PARITY\n");
     std::printf("pointer_cases=%llu wheel_cases=%llu focus_reacquire_cases=%llu setcursor_cases=%llu leave_cases=%llu\n",pointerCases,wheelCases,focusCases,setCursorCases,leaveCases);
-    std::printf("focus_reacquire_calls=%llu cursor_routes=%llu leave_routes=%llu\n",g_focusReacquire,g_setCursorRoutes,g_leaveRoutes);
-    std::printf("contract=presenter_routes_absolute_pointer_to_logical_game; wheel_screen_coords_virtualized; click_reactivates_game_not_presenter; doubleclick_enabled\n");
+    std::printf("direct_game_wheel_remaps=%llu focus_reacquire_calls=%llu cursor_routes=%llu leave_routes=%llu\n",g_directWheelRemaps,g_focusReacquire,g_setCursorRoutes,g_leaveRoutes);
+    std::printf("contract=presenter_routes_hit-tested_pointer; focused_game_WndProc_remaps_wheel_screen_coords; click_reactivates_game_not_presenter; doubleclick_enabled\n");
     return 0;
 }
