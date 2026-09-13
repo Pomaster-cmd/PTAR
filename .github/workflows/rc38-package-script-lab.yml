@@ -23,7 +23,13 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference='Stop'
-          $b64=(Get-Content 'lab/borderless/rc38/package_scripts/scripts_exact.zip.b64' -Raw).Trim()
+          $b64=((Get-Content 'lab/borderless/rc38/package_scripts/scripts_exact.zip.b64' -Raw) -replace '\s','').Trim()
+          switch ($b64.Length % 4) {
+            0 { }
+            2 { $b64 += '==' }
+            3 { $b64 += '=' }
+            default { throw ('Invalid base64 remainder: '+($b64.Length % 4)) }
+          }
           [IO.File]::WriteAllBytes((Join-Path $PWD 'scripts.zip'),[Convert]::FromBase64String($b64))
           Expand-Archive -LiteralPath scripts.zip -DestinationPath scripts -Force
           $names=(Get-ChildItem scripts\*.ps1 | Sort-Object Name | Select-Object -ExpandProperty Name)
