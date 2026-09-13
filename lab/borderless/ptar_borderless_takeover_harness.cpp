@@ -1,6 +1,7 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#include <windowsx.h>
 #include <d3d11.h>
 #include <dxgi.h>
 #include <cstdio>
@@ -245,7 +246,6 @@ int main()
             checks += 7;
         }
 
-        // 16 pseudo-random absolute-pointer routing probes per transition.
         for (int k=0;k<16;++k) {
             const LONG px = LONG(rng()%g_outW);
             const LONG py = LONG(rng()%g_outH);
@@ -258,7 +258,6 @@ int main()
         }
     }
 
-    // Explicit output takeover invariant: changing native output must not resize game client/backbuffer.
     UINT finalCW=0,finalCH=0; get_client_size(g_game,finalCW,finalCH);
     if (finalCW!=g_gameW || finalCH!=g_gameH) return 40;
     if (!verify_swap_size(gameSC,g_gameW,g_gameH)) return 41;
