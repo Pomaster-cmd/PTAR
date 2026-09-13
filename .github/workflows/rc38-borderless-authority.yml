@@ -71,31 +71,37 @@ jobs:
           cl %CFLAGS% lab\borderless\ptar_borderless_occlusion_focus_stress.cpp /Fe:lab\borderless\out\occlusion_focus_stress.exe user32.lib d3d11.lib dxgi.lib %LFLAGS%
           if errorlevel 1 exit /b 1
 
-      - name: Run inherited borderless regression gates
-        shell: cmd
+      - name: Run inherited borderless regression gates with diagnostics
+        shell: powershell
         run: |
-          lab\borderless\out\geometry_stress.exe > lab\borderless\out\GEOMETRY_STRESS.txt 2>&1
-          if errorlevel 1 exit /b 1
-          lab\borderless\out\input_stress.exe > lab\borderless\out\INPUT_STRESS.txt 2>&1
-          if errorlevel 1 exit /b 1
-          lab\borderless\out\event_parity.exe > lab\borderless\out\EVENT_PARITY.txt 2>&1
-          if errorlevel 1 exit /b 1
-          lab\borderless\out\user32_virtualization.exe > lab\borderless\out\USER32_VIRTUALIZATION.txt 2>&1
-          if errorlevel 1 exit /b 1
-          lab\borderless\out\thread_affinity.exe > lab\borderless\out\THREAD_AFFINITY.txt 2>&1
-          if errorlevel 1 exit /b 1
-          lab\borderless\out\dpi_policy.exe > lab\borderless\out\DPI_POLICY.txt 2>&1
-          if errorlevel 1 exit /b 1
-          lab\borderless\out\lifecycle_stress.exe > lab\borderless\out\LIFECYCLE_STRESS.txt 2>&1
-          if errorlevel 1 exit /b 1
-          lab\borderless\out\window_stress.exe > lab\borderless\out\WINDOW_STRESS.txt 2>&1
-          if errorlevel 1 exit /b 1
-          lab\borderless\out\takeover_harness.exe > lab\borderless\out\TAKEOVER_HARNESS.txt 2>&1
-          if errorlevel 1 exit /b 1
-          lab\borderless\out\warp_stress.exe > lab\borderless\out\WARP_STRESS.txt 2>&1
-          if errorlevel 1 exit /b 1
-          lab\borderless\out\occlusion_focus_stress.exe > lab\borderless\out\OCCLUSION_FOCUS_STRESS.txt 2>&1
-          if errorlevel 1 exit /b 1
+          $ErrorActionPreference = 'Stop'
+          $tests = @(
+            @{ Exe='geometry_stress.exe';          Log='GEOMETRY_STRESS.txt' },
+            @{ Exe='input_stress.exe';             Log='INPUT_STRESS.txt' },
+            @{ Exe='event_parity.exe';             Log='EVENT_PARITY.txt' },
+            @{ Exe='user32_virtualization.exe';    Log='USER32_VIRTUALIZATION.txt' },
+            @{ Exe='thread_affinity.exe';          Log='THREAD_AFFINITY.txt' },
+            @{ Exe='dpi_policy.exe';               Log='DPI_POLICY.txt' },
+            @{ Exe='lifecycle_stress.exe';         Log='LIFECYCLE_STRESS.txt' },
+            @{ Exe='window_stress.exe';            Log='WINDOW_STRESS.txt' },
+            @{ Exe='takeover_harness.exe';         Log='TAKEOVER_HARNESS.txt' },
+            @{ Exe='warp_stress.exe';              Log='WARP_STRESS.txt' },
+            @{ Exe='occlusion_focus_stress.exe';   Log='OCCLUSION_FOCUS_STRESS.txt' }
+          )
+          foreach ($t in $tests) {
+            $exe = Join-Path 'lab/borderless/out' $t.Exe
+            $log = Join-Path 'lab/borderless/out' $t.Log
+            Write-Host "::group::$($t.Exe)"
+            Write-Host ("START={0:o}" -f (Get-Date))
+            $sw = [System.Diagnostics.Stopwatch]::StartNew()
+            & $exe *> $log
+            $rc = $LASTEXITCODE
+            $sw.Stop()
+            if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log }
+            Write-Host ("EXIT={0} ELAPSED_MS={1}" -f $rc,$sw.ElapsedMilliseconds)
+            Write-Host "::endgroup::"
+            if ($rc -ne 0) { throw ("{0} failed with exit code {1}" -f $t.Exe,$rc) }
+          }
 
       - name: Export deterministic sidecar payload as Base64 text
         shell: powershell
