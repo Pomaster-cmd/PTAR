@@ -25,7 +25,7 @@ jobs:
           $b64=(Get-Content 'lab/borderless/rc40/package_scripts/scripts_exact.zip.b64' -Raw).Trim()
           [IO.File]::WriteAllBytes('RC40_SCRIPTS_EXACT.zip',[Convert]::FromBase64String($b64))
           $h=(Get-FileHash 'RC40_SCRIPTS_EXACT.zip' -Algorithm SHA256).Hash.ToLowerInvariant()
-          if($h -ne 'b1a246165d444c52b5eb0c19c9da008dc6af91352ffa47e5c310593cd2a541bd'){throw "fixture hash mismatch $h"}
+          if($h -ne '171ecb671f56451f58579e9f3d44b7e052b2984fd62fbf8b5601e53d4168b04f'){throw "fixture hash mismatch $h"}
           Expand-Archive -LiteralPath 'RC40_SCRIPTS_EXACT.zip' -DestinationPath rc40_scripts -Force
           $expected=[ordered]@{
             'install.ps1'='f0f782831918526902af71e499f3c162f267f944f789f7b65b21b861bc726c0d'
