@@ -1,0 +1,26 @@
+name: RC38 Apply Source Fix
+
+on:
+  push:
+    branches: [ build/rc38-borderless-authority-20260913 ]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply deterministic RC38 source fixes
+        shell: powershell
+        run: ./lab/borderless/rc38/apply_rc38_source_fixes.ps1
+      - name: Commit fixed source if changed
+        shell: cmd
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lab/borderless/rc38/ptar_borderless_rc38.cpp
+          git diff --cached --quiet && exit /b 0
+          git commit -m "lab: apply RC38 presenter NOTOPMOST source fix"
+          git push origin HEAD:build/rc38-borderless-authority-20260913
