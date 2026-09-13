@@ -1,0 +1,47 @@
+name: RC35 Authority Analysis
+
+on:
+  push:
+    branches:
+      - lab/rc35-window-root-authority-analysis-20260913
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout analysis branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Verify canonical baseline files
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(sha256sum payload/win81_nis_dx11_x64.dll | awk '{print $1}')" = "864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c"
+          test "$(sha256sum payload/d3d11.dll | awk '{print $1}')" = "864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c"
+
+      - name: Install analyzer dependencies
+        shell: bash
+        run: python3 -m pip install --disable-pip-version-check pefile capstone
+
+      - name: Analyze canonical runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/rc35_authority_analyze.py payload/win81_nis_dx11_x64.dll RC35_AUTHORITY_ANALYSIS.txt
+          echo '===== RC35 AUTHORITY ANALYSIS ====='
+          cat RC35_AUTHORITY_ANALYSIS.txt
+
+      - name: Upload analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: RC35_AUTHORITY_ANALYSIS
+          path: |
+            RC35_AUTHORITY_ANALYSIS.txt
+            RC35_AUTHORITY_ANALYSIS.json
+          if-no-files-found: error
+          retention-days: 7
