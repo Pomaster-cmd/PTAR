@@ -1,0 +1,64 @@
+name: RC32 Borderless Companion Lab
+
+on:
+  push:
+    branches:
+      - lab/rc32-borderless-companion-20260913
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-stress:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Win8.1-targeted companion and host
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          if not exist lab\rc32_borderless_companion\out mkdir lab\rc32_borderless_companion\out
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\rc32_borderless_companion
+          set LFLAGS=/link /SUBSYSTEM:WINDOWS,6.03
+          cl %CFLAGS% /LD lab\rc32_borderless_companion\ptar_borderless_companion.cpp /Fe:lab\rc32_borderless_companion\out\ptar_borderless.dll user32.lib gdi32.lib %LFLAGS%
+          if errorlevel 1 exit /b 1
+          cl %CFLAGS% lab\rc32_borderless_companion\ptar_borderless_host_test.cpp /Fe:lab\rc32_borderless_companion\out\host_test.exe lab\rc32_borderless_companion\out\ptar_borderless.lib user32.lib gdi32.lib /link /SUBSYSTEM:CONSOLE,6.03
+          if errorlevel 1 exit /b 1
+          dumpbin /headers lab\rc32_borderless_companion\out\ptar_borderless.dll > lab\rc32_borderless_companion\out\HEADERS.txt
+          dumpbin /imports lab\rc32_borderless_companion\out\ptar_borderless.dll > lab\rc32_borderless_companion\out\IMPORTS.txt
+          dumpbin /exports lab\rc32_borderless_companion\out\ptar_borderless.dll > lab\rc32_borderless_companion\out\EXPORTS.txt
+
+      - name: Host stress 20k pointer + hostile geometry cycles
+        shell: cmd
+        run: |
+          lab\rc32_borderless_companion\out\host_test.exe > lab\rc32_borderless_companion\out\HOST_STRESS.txt 2>&1
+          set RC=%ERRORLEVEL%
+          type lab\rc32_borderless_companion\out\HOST_STRESS.txt
+          exit /b %RC%
+
+      - name: Run established borderless gates
+        shell: cmd
+        run: |
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\borderless
+          cl %CFLAGS% lab\borderless\ptar_borderless_geometry_stress.cpp /Fe:lab\rc32_borderless_companion\out\geometry_stress.exe user32.lib /link /SUBSYSTEM:CONSOLE,6.03
+          if errorlevel 1 exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_warp_stress.cpp /Fe:lab\rc32_borderless_companion\out\warp_stress.exe user32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:CONSOLE,6.03
+          if errorlevel 1 exit /b 1
+          lab\rc32_borderless_companion\out\geometry_stress.exe > lab\rc32_borderless_companion\out\GEOMETRY_STRESS.txt 2>&1
+          if errorlevel 1 exit /b 1
+          lab\rc32_borderless_companion\out\warp_stress.exe > lab\rc32_borderless_companion\out\WARP_STRESS.txt 2>&1
+          if errorlevel 1 exit /b 1
+          type lab\rc32_borderless_companion\out\GEOMETRY_STRESS.txt
+          type lab\rc32_borderless_companion\out\WARP_STRESS.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc32-borderless-companion-lab
+          path: |
+            lab/rc32_borderless_companion/out/*.txt
+            lab/rc32_borderless_companion/out/ptar_borderless.dll
+          if-no-files-found: error
