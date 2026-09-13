@@ -24,11 +24,14 @@ jobs:
           set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603
           cl %CFLAGS% /LD lab\borderless\rc38\ptar_borderless_rc38.cpp /Fe:lab\borderless\rc38\out\ptar_borderless.dll user32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03
           if errorlevel 1 exit /b 1
-          cl %CFLAGS% /LD lab\borderless\rc38\ptar_borderless_rc38.cpp /Fe:lab\borderless\rc38\out\ptar_borderless_repro.dll user32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03
+          copy /y lab\borderless\rc38\out\ptar_borderless.dll lab\borderless\rc38\out\ptar_borderless_first.dll >nul
           if errorlevel 1 exit /b 1
-          fc /b lab\borderless\rc38\out\ptar_borderless.dll lab\borderless\rc38\out\ptar_borderless_repro.dll >nul
+          ping -n 2 127.0.0.1 >nul
+          cl %CFLAGS% /LD lab\borderless\rc38\ptar_borderless_rc38.cpp /Fe:lab\borderless\rc38\out\ptar_borderless.dll user32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03
+          if errorlevel 1 exit /b 1
+          fc /b lab\borderless\rc38\out\ptar_borderless_first.dll lab\borderless\rc38\out\ptar_borderless.dll >nul
           if errorlevel 1 exit /b 2
-          echo RC38_SIDECAR_REPRODUCIBILITY=PASS
+          echo RC38_SIDECAR_SAME_TARGET_REPRODUCIBILITY=PASS
           cl %CFLAGS% lab\borderless\rc38\ptar_borderless_host_test.cpp /Fe:lab\borderless\rc38\out\ptar_borderless_host_test.exe user32.lib /link /SUBSYSTEM:CONSOLE,6.03
           if errorlevel 1 exit /b 1
           pushd lab\borderless\rc38\out
