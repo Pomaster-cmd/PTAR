@@ -1,0 +1,1 @@
+This marker documents only an assistant tooling-loop artifact. No runtime or production file changed.
