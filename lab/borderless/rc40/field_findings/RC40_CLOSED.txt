@@ -1,0 +1,2 @@
+RC40 status: CLOSED - hardware visual framing failure despite proven active window authority.
+Do not derive another field candidate by changing only HWND/window authority.
