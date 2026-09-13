@@ -46,7 +46,7 @@ jobs:
         shell: cmd
         run: lab\borderless\out\input_stress.exe > lab\borderless\out\INPUT_STRESS.txt 2>&1
 
-      - name: Pointer event and focus parity - 500k routed events
+      - name: Pointer event and focus parity - 20k routed geometry transitions
         shell: cmd
         run: lab\borderless\out\event_parity.exe > lab\borderless\out\EVENT_PARITY.txt 2>&1
 
