@@ -6,8 +6,8 @@
 namespace ptar_lab {
 
 struct Geometry {
-    RECT output{};       // physical/output coordinate space
-    UINT render_w = 0;   // logical game client/backbuffer
+    RECT output{};
+    UINT render_w = 0;
     UINT render_h = 0;
 
     RECT aspect_fit() const noexcept {
@@ -27,8 +27,11 @@ struct Geometry {
         if (r.right <= r.left || r.bottom <= r.top || !render_w || !render_h) return POINT{0,0};
         p.x = (std::max)(r.left, (std::min)(r.right - 1, p.x));
         p.y = (std::max)(r.top,  (std::min)(r.bottom - 1, p.y));
-        const double u = double(p.x - r.left) / double(r.right - r.left);
-        const double v = double(p.y - r.top)  / double(r.bottom - r.top);
+        // Sample at the centre of the physical pixel. This makes logical->physical
+        // ->logical round-trips bounded to <=1 logical pixel even on non-integer
+        // ratios such as 1366x768 and asymmetric letterbox cases.
+        const double u = (double(p.x - r.left) + 0.5) / double(r.right - r.left);
+        const double v = (double(p.y - r.top)  + 0.5) / double(r.bottom - r.top);
         LONG x = LONG(u * double(render_w));
         LONG y = LONG(v * double(render_h));
         x = (std::max)(0L, (std::min)(LONG(render_w) - 1, x));
@@ -48,9 +51,6 @@ struct Geometry {
         return POINT{x,y};
     }
 
-    // Game virtual screen coordinates use the output monitor origin as the
-    // low-resolution game client's origin. This keeps ClientToScreen / ScreenToClient
-    // semantics internally coherent while the native presenter owns the physical area.
     RECT logical_screen_clip_to_physical(RECT vr) const noexcept {
         const RECT fit = aspect_fit();
         const LONG ox = output.left, oy = output.top;
