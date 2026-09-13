@@ -6,6 +6,7 @@ on:
       - build/rc38-borderless-authority-20260913
     paths:
       - .github/workflows/rc38-lifecycle-stability.yml
+      - lab/borderless/ptar_borderless_lifecycle_stress.cpp
       - lab/borderless/rc38/ptar_borderless_lifecycle_diagnostic.cpp
       - lab/borderless/rc38/ptar_owned_style_probe.cpp
   workflow_dispatch:
