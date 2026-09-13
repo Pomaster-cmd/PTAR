@@ -11,7 +11,7 @@ File Type: DLL
 FILE HEADER VALUES
             8664 machine (x64)
                6 number of sections
-        6AA6C2D2 time date stamp Sun Sep 13 15:35:46 2026
+        A76A397B time date stamp
                0 file pointer to symbol table
                0 number of symbols
               F0 size of optional header
@@ -49,13 +49,13 @@ OPTIONAL HEADER VALUES
             1000 size of heap commit
                0 loader flags
               10 number of directories
-           1A510 [      7C] RVA [size] of Export Directory
-           1A58C [      3C] RVA [size] of Import Directory
+           1A540 [      7C] RVA [size] of Export Directory
+           1A5BC [      3C] RVA [size] of Import Directory
                0 [       0] RVA [size] of Resource Directory
            1E000 [    10EC] RVA [size] of Exception Directory
                0 [       0] RVA [size] of Certificates Directory
            21000 [     658] RVA [size] of Base Relocation Directory
-           18D60 [      1C] RVA [size] of Debug Directory
+           18D60 [      38] RVA [size] of Debug Directory
                0 [       0] RVA [size] of Architecture Directory
                0 [       0] RVA [size] of Global Pointer Directory
                0 [       0] RVA [size] of Thread Storage Directory
@@ -83,8 +83,8 @@ SECTION HEADER #1
 
 SECTION HEADER #2
   .rdata name
-    A0F6 virtual size
-   11000 virtual address (0000000180011000 to 000000018001B0F5)
+    A126 virtual size
+   11000 virtual address (0000000180011000 to 000000018001B125)
     A200 size of raw data
     F800 file pointer to raw data (0000F800 to 000199FF)
        0 file pointer to relocation table
@@ -99,7 +99,8 @@ SECTION HEADER #2
 
         Time Type        Size      RVA  Pointer
     -------- ------- -------- -------- --------
-    6AA6C2D2 coffgrp      2F4 00019204    17A04
+    A76A397B coffgrp      2F4 00019204    17A04
+    A76A397B repro         24 00019520    17D20    67 D6 D0 9D 7A AD 46 58 4C CE 1A 53 3C 2D A3 A5 93 5E 35 89 44 63 F9 87 B3 76 37 76 7B 39 6A A7
 
 SECTION HEADER #3
    .data name
