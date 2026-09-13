@@ -1,0 +1,97 @@
+name: RC41 Logical Native Subraster Lab
+
+on:
+  push:
+    branches:
+      - build/rc41-logical-native-subraster-20260913
+    paths:
+      - lab/raster/rc41/**
+      - .github/workflows/rc41-logical-native-subraster.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-rc41-lab:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Static architecture contract
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $root='lab/raster/rc41'
+          $all=(Get-ChildItem $root -File | Get-Content -Raw) -join "`n"
+          $contract=Get-Content "$root/ptar_rc41_contract.h" -Raw
+          $warp=Get-Content "$root/ptar_rc41_warp_harness.cpp" -Raw
+          $checks=[ordered]@{
+            'logical and physical spaces are distinct'=($contract.Contains('SizeU logical') -and $contract.Contains('SizeU physical'))
+            'viewport mapping is primary-family gated'=$contract.Contains('primaryFamilyBound')
+            'scissor mapping uses conservative floor/ceil'=($contract.Contains('std::floor') -and $contract.Contains('std::ceil'))
+            'same-size unrelated render targets are rejected'=$warp.Contains('same_size_nonprimary=PASS')
+            'offscreen targets remain passthrough'=$warp.Contains('offscreen_passthrough=PASS')
+            'RC41 contains no new HWND geometry policy'=(-not $all.Contains('SetWindowPos(') -and -not $all.Contains('SetWindowLongPtr'))
+            'RC41 contains no USER32 virtualization'=(-not $all.Contains('GetCursorPos(') -and -not $all.Contains('ClipCursor('))
+          }
+          foreach($k in $checks.Keys){ if(-not $checks[$k]){ throw "RC41 CONTRACT FAIL: $k" }; Write-Host "PASS $k" }
+          'RC41_STATIC_ARCHITECTURE=7/7 PASS' | Set-Content "$root/STATIC_ARCHITECTURE.txt" -Encoding ASCII
+
+      - name: Build RC41 lab gates
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          if not exist lab\raster\rc41\out mkdir lab\raster\rc41\out
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\raster\rc41
+          cl %CFLAGS% lab\raster\rc41\ptar_rc41_math_stress.cpp /Fe:lab\raster\rc41\out\math_stress.exe /link /SUBSYSTEM:CONSOLE,6.03
+          if errorlevel 1 exit /b 11
+          cl %CFLAGS% lab\raster\rc41\ptar_rc41_framing_oracle.cpp /Fe:lab\raster\rc41\out\framing_oracle.exe /link /SUBSYSTEM:CONSOLE,6.03
+          if errorlevel 1 exit /b 12
+          cl %CFLAGS% lab\raster\rc41\ptar_rc41_warp_harness.cpp /Fe:lab\raster\rc41\out\warp_harness.exe d3d11.lib dxgi.lib /link /SUBSYSTEM:CONSOLE,6.03
+          if errorlevel 1 exit /b 13
+
+      - name: Run RC41 geometry stress
+        shell: cmd
+        run: |
+          lab\raster\rc41\out\math_stress.exe > lab\raster\rc41\out\MATH_STRESS.txt 2>&1
+          if errorlevel 1 (type lab\raster\rc41\out\MATH_STRESS.txt & exit /b 21)
+          type lab\raster\rc41\out\MATH_STRESS.txt
+
+      - name: Run RC41 framing oracle
+        shell: cmd
+        run: |
+          lab\raster\rc41\out\framing_oracle.exe > lab\raster\rc41\out\FRAMING_ORACLE.txt 2>&1
+          if errorlevel 1 (type lab\raster\rc41\out\FRAMING_ORACLE.txt & exit /b 22)
+          type lab\raster\rc41\out\FRAMING_ORACLE.txt
+
+      - name: Run RC41 WARP target-family gate
+        shell: cmd
+        run: |
+          lab\raster\rc41\out\warp_harness.exe > lab\raster\rc41\out\WARP_TARGET_CLASSIFIER.txt 2>&1
+          if errorlevel 1 (type lab\raster\rc41\out\WARP_TARGET_CLASSIFIER.txt & exit /b 23)
+          type lab\raster\rc41\out\WARP_TARGET_CLASSIFIER.txt
+
+      - name: Package RC41 evidence
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $o='lab/raster/rc41/out'
+          $summary=@(
+            'RC41_LAB_STATUS=PASS',
+            'STATIC_ARCHITECTURE=7/7 PASS',
+            (Get-Content "$o/MATH_STRESS.txt" -Raw).Trim(),
+            (Get-Content "$o/FRAMING_ORACLE.txt" -Raw).Trim(),
+            (Get-Content "$o/WARP_TARGET_CLASSIFIER.txt" -Raw).Trim()
+          )
+          $summary | Set-Content "$o/RC41_SUMMARY.txt" -Encoding ASCII
+          Copy-Item 'lab/raster/rc41/STATIC_ARCHITECTURE.txt' "$o/STATIC_ARCHITECTURE.txt" -Force
+          Compress-Archive -Path "$o/*.txt" -DestinationPath RC41_LOGICAL_NATIVE_SUBRASTER_EVIDENCE.zip -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_RC41_LOGICAL_NATIVE_SUBRASTER
+          path: RC41_LOGICAL_NATIVE_SUBRASTER_EVIDENCE.zip
+          if-no-files-found: error
+          retention-days: 7
