@@ -17,6 +17,7 @@ struct HookStats {
     uint64_t scissorMapped=0;
     uint64_t clearStateCalls=0;
     uint64_t executeCommandListCalls=0;
+    uint64_t primaryRefreshes=0;
 };
 
 class ContextHooks {
@@ -27,6 +28,7 @@ public:
     ContextHooks& operator=(const ContextHooks&) = delete;
 
     bool configure(const Contract& contract, ID3D11Resource* primaryResource) noexcept;
+    bool update_primary_resource(ID3D11Resource* primaryResource) noexcept;
     bool install(ID3D11DeviceContext* context) noexcept;
     void uninstall() noexcept;
     bool installed() const noexcept;
@@ -74,7 +76,7 @@ private:
     volatile LONG installed_=0;
     volatile LONG primaryBound_=0;
     volatile LONG64 omCalls_=0,omUavCalls_=0,viewportCalls_=0,scissorCalls_=0;
-    volatile LONG64 viewportMapped_=0,scissorMapped_=0,clearStateCalls_=0,executeCommandListCalls_=0;
+    volatile LONG64 viewportMapped_=0,scissorMapped_=0,clearStateCalls_=0,executeCommandListCalls_=0,primaryRefreshes_=0;
 };
 
 } // namespace ptar_rc41
