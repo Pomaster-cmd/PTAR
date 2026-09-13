@@ -26,6 +26,8 @@ jobs:
           if errorlevel 1 exit /b 1
           cl %CFLAGS% lab\borderless\ptar_borderless_input_stress.cpp /Fe:lab\borderless\out\input_stress.exe user32.lib %LFLAGS%
           if errorlevel 1 exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_event_parity.cpp /Fe:lab\borderless\out\event_parity.exe user32.lib %LFLAGS%
+          if errorlevel 1 exit /b 1
           cl %CFLAGS% lab\borderless\ptar_borderless_window_stress.cpp /Fe:lab\borderless\out\window_stress.exe user32.lib %LFLAGS%
           if errorlevel 1 exit /b 1
           cl %CFLAGS% lab\borderless\ptar_borderless_warp_stress.cpp /Fe:lab\borderless\out\warp_stress.exe user32.lib d3d11.lib dxgi.lib %LFLAGS%
@@ -44,6 +46,10 @@ jobs:
         shell: cmd
         run: lab\borderless\out\input_stress.exe > lab\borderless\out\INPUT_STRESS.txt 2>&1
 
+      - name: Pointer event and focus parity - 500k routed events
+        shell: cmd
+        run: lab\borderless\out\event_parity.exe > lab\borderless\out\EVENT_PARITY.txt 2>&1
+
       - name: Win32 takeover state stress - 20k hostile requests
         shell: cmd
         run: lab\borderless\out\window_stress.exe > lab\borderless\out\WINDOW_STRESS.txt 2>&1
@@ -60,7 +66,7 @@ jobs:
         if: always()
         shell: cmd
         run: |
-          for %%F in (GEOMETRY_STRESS.txt INPUT_STRESS.txt WINDOW_STRESS.txt WARP_STRESS.txt OCCLUSION_FOCUS_STRESS.txt) do if exist lab\borderless\out\%%F (echo ==== %%F ==== & type lab\borderless\out\%%F)
+          for %%F in (GEOMETRY_STRESS.txt INPUT_STRESS.txt EVENT_PARITY.txt WINDOW_STRESS.txt WARP_STRESS.txt OCCLUSION_FOCUS_STRESS.txt) do if exist lab\borderless\out\%%F (echo ==== %%F ==== & type lab\borderless\out\%%F)
 
       - name: Upload lab reports
         if: always()
