@@ -42,6 +42,15 @@ bool ContextHooks::configure(const Contract& contract,ID3D11Resource* primaryRes
     return true;
 }
 
+bool ContextHooks::update_primary_resource(ID3D11Resource* primaryResource) noexcept {
+    if(!primaryResource || !contract_.valid()) return false;
+    if(!classifier_.set_primary_resource(primaryResource)) return false;
+    add_counter(primaryRefreshes_);
+    if(context_) refresh_primary_from_context(context_);
+    else set_primary_bound(false);
+    return true;
+}
+
 bool ContextHooks::install(ID3D11DeviceContext* context) noexcept {
     if(!context || !contract_.valid() || InterlockedCompareExchange(&installed_,0,0)) return false;
     if(InterlockedCompareExchangePointer(reinterpret_cast<PVOID volatile*>(&g_owner),this,nullptr)!=nullptr) return false;
@@ -113,6 +122,7 @@ HookStats ContextHooks::stats() const noexcept {
     s.scissorMapped=(uint64_t)InterlockedCompareExchange64(const_cast<volatile LONG64*>(&scissorMapped_),0,0);
     s.clearStateCalls=(uint64_t)InterlockedCompareExchange64(const_cast<volatile LONG64*>(&clearStateCalls_),0,0);
     s.executeCommandListCalls=(uint64_t)InterlockedCompareExchange64(const_cast<volatile LONG64*>(&executeCommandListCalls_),0,0);
+    s.primaryRefreshes=(uint64_t)InterlockedCompareExchange64(const_cast<volatile LONG64*>(&primaryRefreshes_),0,0);
     return s;
 }
 
