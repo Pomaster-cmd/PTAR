@@ -1,0 +1,1 @@
+PASS active=1 render=682x512 presenter=1024x768 hooks=3 mouse=341,256 wheel=341,256

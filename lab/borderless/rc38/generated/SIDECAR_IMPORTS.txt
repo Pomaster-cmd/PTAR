@@ -1,0 +1,140 @@
+Microsoft (R) COFF/PE Dumper Version 14.44.35228.0
+Copyright (C) Microsoft Corporation.  All rights reserved.
+
+
+Dump of file ptar_borderless.dll
+
+File Type: DLL
+
+  Section contains the following imports:
+
+    USER32.dll
+             180011280 Import Address Table
+             18001A848 Import Name Table
+                     0 time date stamp
+                     0 Index of first forwarder reference
+
+                         3CB TrackMouseEvent
+                         195 GetMonitorInfoW
+                         29E MonitorFromWindow
+                         394 SetWindowLongPtrW
+                         393 SetWindowLongPtrA
+                         1F6 GetWindowLongPtrW
+                         1F5 GetWindowLongPtrA
+                          4F ClipCursor
+                          4E ClientToScreen
+                         13B GetClipCursor
+                         14A GetCursorPos
+                         341 SetCursorPos
+                         13A GetClientRect
+                         350 SetForegroundWindow
+                         25B IsWindowUnicode
+                         310 ReleaseCapture
+                         332 SetCapture
+                         12C GetCapture
+                         34E SetFocus
+                         398 SetWindowPos
+                         3B1 ShowWindow
+                         255 IsWindow
+                          22 CallWindowProcW
+                          21 CallWindowProcA
+                          AB DefWindowProcW
+                          AA DefWindowProcA
+                         328 SendMessageA
+                         191 GetMessagePos
+                         40E wsprintfA
+
+    KERNEL32.dll
+             180011000 Import Address Table
+             18001A5C8 Import Name Table
+                     0 time date stamp
+                     0 Index of first forwarder reference
+
+                         28D GetLastError
+                         65F WriteConsoleW
+                         569 SetFilePointerEx
+                         225 GetConsoleMode
+                         229 GetConsoleOutputCP
+                         1C8 FlushFileBuffers
+                         593 SetStdHandle
+                         383 HeapReAlloc
+                         385 HeapSize
+                         308 GetStringTypeW
+                         27A GetFileType
+                         303 GetStdHandle
+                         2E4 GetProcessHeap
+                         3E4 LCMapStringW
+                         397 InitializeCriticalSectionEx
+                         1C3 FlsFree
+                         1C6 FlsSetValue
+                          E6 CreateFileW
+                         660 WriteFile
+                          9D CloseHandle
+                         5C8 Sleep
+                         241 GetCurrentProcess
+                         10F CreateThread
+                         5EA TlsAlloc
+                         5EC TlsGetValue
+                         5EE TlsSetValue
+                         5EB TlsFree
+                         1C9 FlushInstructionCache
+                         28E GetLocalTime
+                         61A VirtualProtect
+                         142 DisableThreadLibraryCalls
+                         2A1 GetModuleFileNameW
+                         2A5 GetModuleHandleW
+                         509 RtlCaptureContext
+                         511 RtlLookupFunctionEntry
+                         518 RtlVirtualUnwind
+                         5FB UnhandledExceptionFilter
+                         5B8 SetUnhandledExceptionFilter
+                         5D8 TerminateProcess
+                         3B8 IsProcessorFeaturePresent
+                         481 QueryPerformanceCounter
+                         242 GetCurrentProcessId
+                         246 GetCurrentThreadId
+                         31A GetSystemTimeAsFileTime
+                         39A InitializeSListHead
+                         3B0 IsDebuggerPresent
+                         301 GetStartupInfoW
+                         1C4 FlsGetValue
+                         517 RtlUnwindEx
+                         39E InterlockedFlushSList
+                         578 SetLastError
+                         157 EnterCriticalSection
+                         3F0 LeaveCriticalSection
+                         12F DeleteCriticalSection
+                         396 InitializeCriticalSectionAndSpinCount
+                         1D4 FreeLibrary
+                         2DD GetProcAddress
+                         3F6 LoadLibraryExW
+                         153 EncodePointer
+                         498 RaiseException
+                         513 RtlPcToFileHeader
+                         186 ExitProcess
+                         2A4 GetModuleHandleExW
+                         37C HeapAlloc
+                         380 HeapFree
+                         19D FindClose
+                         1A3 FindFirstFileExW
+                         1B4 FindNextFileW
+                         3BE IsValidCodePage
+                         1DB GetACP
+                         2C6 GetOEMCP
+                         1EA GetCPInfo
+                         1FF GetCommandLineA
+                         200 GetCommandLineW
+                         423 MultiByteToWideChar
+                         64C WideCharToMultiByte
+                         262 GetEnvironmentStringsW
+                         1D3 FreeEnvironmentStringsW
+                         1C2 FlsAlloc
+
+  Summary
+
+        2000 .data
+        1000 .fptable
+        2000 .pdata
+        B000 .rdata
+        1000 .reloc
+       10000 .text
