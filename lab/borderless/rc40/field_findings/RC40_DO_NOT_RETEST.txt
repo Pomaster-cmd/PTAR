@@ -1,0 +1,1 @@
+RC38/RC39/RC40 window-authority variants are superseded by the RC40 field falsification. Do not request another hardware retest of these variants.
