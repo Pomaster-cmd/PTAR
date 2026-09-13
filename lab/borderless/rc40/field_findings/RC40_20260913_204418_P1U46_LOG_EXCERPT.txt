@@ -1,0 +1,14 @@
+OK: P1U46 combined creation effective render resolution 1280x720
+OK: USR native presenter backbuffer ready 1920x1080
+OK: USR dual-swapchain topology created: REAL low-res game swapchain + separate native presenter
+OK: P1U46 engine viewport/scissor hooks intentionally NOT installed; the game owns its complete render frame
+INFO: logical game presentation mode 1280x720
+INFO: actual engine-facing swapchain buffer 1280x720
+INFO: P1U46 presenter-only ASPECT FIT is active; game render size and input geometry remain untouched
+OK: GetBuffer(0) returns the REAL game-controlled USR render backbuffer
+OK: engine-facing game-selected backbuffer size 1280x720
+OK: USR DIRECT backbuffer sampling enabled 1280x720
+OK: P1U46 ASPECT FIT image rectangle 1920x1080
+OK: P1U46 ASPECT FIT offset X 0
+OK: P1U46 ASPECT FIT offset Y 0
+OK: presenter samples the REAL game backbuffer directly; per-frame CopyResource removed
