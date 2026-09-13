@@ -1,0 +1,101 @@
+name: Build RC34 RootAuthority Additive
+
+on:
+  push:
+    branches:
+      - build/rc34-rootauth-additive-20260913-final
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout build branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Materialize exact GitHub main base
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp build_tools/rc34_build.py /tmp/rc34_build.py
+          rm -rf /tmp/ptar_base /tmp/stage
+          mkdir -p /tmp/ptar_base /tmp/stage
+          git archive 009b8326d0c6f2d7869077ef621c712cca060479 | tar -x -C /tmp/ptar_base
+          test "$(sha256sum /tmp/ptar_base/payload/d3d11.dll | awk '{print $1}')" = "864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c"
+          test "$(sha256sum /tmp/ptar_base/04-COLLECT_RESULTS.bat | awk '{print $1}')" = "f4beae44bbe4b2cf99da3c419005ffc8bb46faa477d8f9b4ab1549704d1d759f"
+          test "$(sha256sum /tmp/ptar_base/diag/collect.ps1 | awk '{print $1}')" = "9c4877dc4cf739adad1d61cfa9014ae111968f08302f0a83c56283deac6e6cad"
+          test "$(sha256sum /tmp/ptar_base/06-DESINSTALLER_PTAR_COMPLET.bat | awk '{print $1}')" = "9063624508709f5104cd00c4745a3e78e06a431e2ec505a1bfe35d14a074295d"
+          test "$(sha256sum /tmp/ptar_base/_PTAR_UNINSTALL/PTAR_SAFE_UNINSTALL.ps1 | awk '{print $1}')" = "6a142afbefc20d2ecd4b3846b97c1434db3b78f19e719a44de7fb736a5e400e6"
+
+      - name: Build additive candidate without modifying base files
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 /tmp/rc34_build.py --base /tmp/ptar_base | tee /tmp/RC34_BUILD_SUMMARY.json
+
+      - name: Parse PowerShell 4-compatible additive scripts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $files=Get-ChildItem -LiteralPath /tmp/ptar_base/ROOT_AUTHORITY_RC34 -Filter *.ps1 -File
+          foreach($f in $files){
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile($f.FullName,[ref]$tokens,[ref]$errors)|Out-Null
+            if($errors.Count -ne 0){$errors|ForEach-Object{Write-Host $_};throw "PowerShell parse failed: $($f.Name)"}
+            Write-Host "[PASS] PS parse $($f.Name)"
+          }
+
+      - name: Verify base is still byte-identical and package complete
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          r=Path('/tmp/ptar_base')
+          ledger=r/'ROOT_AUTHORITY_RC34/BASE_TRACKED_SHA256.txt'
+          n=0
+          for line in ledger.read_text().splitlines():
+              if not line.strip(): continue
+              h,rel=line.split('  ',1)
+              got=hashlib.sha256((r/rel).read_bytes()).hexdigest()
+              assert got==h,(rel,h,got)
+              n+=1
+          req=['01-INSTALL_GW16.bat','02-VERIFY_INSTALL.bat','03-ARM_VISIBLE_FRAME_VERIFIER.bat','03-INSTALL_QSV_HELPER_WIN81.bat','04-COLLECT_RESULTS.bat','04-TEST_QSV_5S_MP4.bat','05-ROLLBACK_TEST.bat','06-DESINSTALLER_PTAR_COMPLET.bat','_PTAR_UNINSTALL/PTAR_SAFE_UNINSTALL.ps1','diag/collect.ps1','payload/d3d11.dll','ROOT_AUTHORITY_RC34/payload/d3d11.dll','00-INSTALL_ROOT_AUTHORITY_RC34.bat','00-VERIFY_ROOT_AUTHORITY_RC34.bat','00-ROLLBACK_ROOT_AUTHORITY_RC34.bat','00-DESINSTALLER_ROOT_AUTHORITY_RC34.bat']
+          for x in req: assert (r/x).is_file(),x
+          print('BASE_IDENTITY_PASS',n)
+          PY
+
+      - name: Create verified ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          NAME="PTAR_GW16H_ROOTAUTH1_RC34_GITHUB_BASE_PRESERVED_2026-09-13"
+          mkdir -p "/tmp/stage/$NAME"
+          cp -a /tmp/ptar_base/. "/tmp/stage/$NAME/"
+          cd /tmp/stage
+          zip -qr "$GITHUB_WORKSPACE/$NAME.zip" "$NAME"
+          unzip -t "$GITHUB_WORKSPACE/$NAME.zip" > "$GITHUB_WORKSPACE/ZIP_TEST.txt"
+          sha256sum "$GITHUB_WORKSPACE/$NAME.zip" > "$GITHUB_WORKSPACE/$NAME.zip.sha256.txt"
+          cp /tmp/RC34_BUILD_SUMMARY.json "$GITHUB_WORKSPACE/RC34_BUILD_SUMMARY.json"
+          cp "/tmp/ptar_base/ROOT_AUTHORITY_RC34/LAB_VALIDATION.txt" "$GITHUB_WORKSPACE/RC34_LAB_VALIDATION.txt"
+          find "/tmp/stage/$NAME" -type f | sort > "$GITHUB_WORKSPACE/RC34_FILE_LIST.txt"
+          echo "FILE_COUNT=$(wc -l < "$GITHUB_WORKSPACE/RC34_FILE_LIST.txt")" >> "$GITHUB_WORKSPACE/RC34_BUILD_SUMMARY.json"
+
+      - name: Upload complete candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_GW16H_ROOTAUTH1_RC34_GITHUB_BASE_PRESERVED
+          path: |
+            PTAR_GW16H_ROOTAUTH1_RC34_GITHUB_BASE_PRESERVED_2026-09-13.zip
+            PTAR_GW16H_ROOTAUTH1_RC34_GITHUB_BASE_PRESERVED_2026-09-13.zip.sha256.txt
+            RC34_BUILD_SUMMARY.json
+            RC34_LAB_VALIDATION.txt
+            RC34_FILE_LIST.txt
+            ZIP_TEST.txt
+          if-no-files-found: error
+          compression-level: 0
