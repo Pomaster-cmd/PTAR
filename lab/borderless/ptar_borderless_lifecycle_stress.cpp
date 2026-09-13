@@ -41,6 +41,11 @@ static LRESULT CALLBACK GameProc(HWND h,UINT m,WPARAM w,LPARAM l){
             // logical resizes. Re-showing an already visible owned presenter is
             // harmless; do not interpret this counter as an explicit restore count.
             ShowWindow(g_presenter,SW_SHOWNOACTIVATE);
+            // Windows may promote an owned window to WS_EX_TOPMOST while its owner
+            // is minimized. Production RC38 explicitly reasserts HWND_NOTOPMOST on
+            // restore; the lifecycle harness must exercise that same contract.
+            SetWindowPos(g_presenter,HWND_NOTOPMOST,0,0,0,0,
+                         SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_SHOWWINDOW);
             ++g_restoreMsg;
             ++g_presenterShow;
         }
@@ -87,7 +92,10 @@ static bool set_render(const RECT&mon,LONG w,LONG h){
 
 static bool set_output(const RECT&mon){
     ++g_outputSets;
-    const BOOL ok=SetWindowPos(g_presenter,nullptr,mon.left,mon.top,mon.right-mon.left,mon.bottom-mon.top,SWP_NOZORDER|SWP_NOACTIVATE);
+    // Match production RC38 authority: output placement also clears any OS-added
+    // topmost state instead of preserving the current Z-order.
+    const BOOL ok=SetWindowPos(g_presenter,HWND_NOTOPMOST,mon.left,mon.top,
+                               mon.right-mon.left,mon.bottom-mon.top,SWP_NOACTIVATE);
     pump();
     return !!ok;
 }
