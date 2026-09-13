@@ -63,10 +63,6 @@ static LRESULT CALLBACK GameProc(HWND h, UINT m, WPARAM w, LPARAM l) {
 
 static LRESULT CALLBACK PresenterProc(HWND h, UINT m, WPARAM w, LPARAM l) {
     if (m == WM_MOUSEACTIVATE) {
-        // Important borderless behavior: the presenter itself never becomes active,
-        // but a genuine click on the PTAR surface must be able to return focus to
-        // the game after Alt+Tab. Same-thread SetActiveWindow/SetFocus is deterministic;
-        // SetForegroundWindow is the production request used on real user activation.
         SetForegroundWindow(g_game);
         SetActiveWindow(g_game);
         SetFocus(g_game);
@@ -81,7 +77,7 @@ static LRESULT CALLBACK PresenterProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         return 0;
     }
     if (is_wheel(m)) {
-        POINT p{GET_X_LPARAM(l),GET_Y_LPARAM(l)}; // wheel lParam is screen-space
+        POINT p{GET_X_LPARAM(l),GET_Y_LPARAM(l)};
         POINT q = g_geo.physical_to_logical(p);
         q.x += g_geo.output.left;
         q.y += g_geo.output.top;
@@ -95,17 +91,12 @@ static LRESULT CALLBACK PresenterProc(HWND h, UINT m, WPARAM w, LPARAM l) {
     }
     if (m == WM_SETCURSOR) {
         ++g_setCursorRoutes;
-        // Preserve game cursor policy while keeping presenter activation policy.
         return SendMessageW(g_game,WM_SETCURSOR,reinterpret_cast<WPARAM>(g_game),l);
     }
     return DefWindowProcW(h,m,w,l);
 }
 
 static LRESULT CALLBACK DecoyProc(HWND h, UINT m, WPARAM w, LPARAM l) { return DefWindowProcW(h,m,w,l); }
-
-static bool eq(const Event& a,const Event& b) {
-    return a.msg==b.msg && a.w==b.w && a.x==b.x && a.y==b.y;
-}
 
 int main() {
     HINSTANCE hi = GetModuleHandleW(nullptr);
@@ -149,14 +140,12 @@ int main() {
         if(m==WM_XBUTTONDOWN||m==WM_XBUTTONUP||m==WM_XBUTTONDBLCLK) w=MAKEWPARAM(0,(rng()&1)?XBUTTON1:XBUTTON2);
         else w=WPARAM(rng()&0x001Fu);
 
-        Event expected{m,w,logical.x,logical.y};
         g_events.clear();
         SendMessageW(g_presenter,m,w,MAKELPARAM(presenterClient.x,presenterClient.y));
         if(g_events.size()!=1) {++failures;}
         else {
-            // Mapping is quantized by physical pixels: one logical pixel is the lab bound.
             const Event &got=g_events[0];
-            if(got.msg!=expected.msg||got.w!=expected.w||std::abs(got.x-expected.x)>1||std::abs(got.y-expected.y)>1) ++failures;
+            if(got.msg!=m||got.w!=w||std::abs(got.x-logical.x)>1||std::abs(got.y-logical.y)>1) ++failures;
         }
         ++pointerCases;
 
@@ -184,7 +173,7 @@ int main() {
         if((i%331)==0) {
             const unsigned long long before=g_setCursorRoutes;
             LRESULT sr=SendMessageW(g_presenter,WM_SETCURSOR,reinterpret_cast<WPARAM>(g_presenter),MAKELPARAM(HTCLIENT,WM_MOUSEMOVE));
-            if(!sr||g_setCursorRoutes<before+2) ++failures; // presenter + game counters
+            if(!sr||g_setCursorRoutes<before+2) ++failures;
             ++setCursorCases;
         }
         if((i%521)==0) {
