@@ -28,6 +28,8 @@ jobs:
           if errorlevel 1 exit /b 1
           cl %CFLAGS% lab\borderless\ptar_borderless_event_parity.cpp /Fe:lab\borderless\out\event_parity.exe user32.lib %LFLAGS%
           if errorlevel 1 exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_thread_affinity.cpp /Fe:lab\borderless\out\thread_affinity.exe user32.lib d3d11.lib dxgi.lib %LFLAGS%
+          if errorlevel 1 exit /b 1
           cl %CFLAGS% lab\borderless\ptar_borderless_window_stress.cpp /Fe:lab\borderless\out\window_stress.exe user32.lib %LFLAGS%
           if errorlevel 1 exit /b 1
           cl %CFLAGS% lab\borderless\ptar_borderless_warp_stress.cpp /Fe:lab\borderless\out\warp_stress.exe user32.lib d3d11.lib dxgi.lib %LFLAGS%
@@ -50,6 +52,10 @@ jobs:
         shell: cmd
         run: lab\borderless\out\event_parity.exe > lab\borderless\out\EVENT_PARITY.txt 2>&1
 
+      - name: UI-thread HWND affinity with worker-thread D3D - 2k presents each
+        shell: cmd
+        run: lab\borderless\out\thread_affinity.exe > lab\borderless\out\THREAD_AFFINITY.txt 2>&1
+
       - name: Win32 takeover state stress - 20k hostile requests
         shell: cmd
         run: lab\borderless\out\window_stress.exe > lab\borderless\out\WINDOW_STRESS.txt 2>&1
@@ -66,7 +72,7 @@ jobs:
         if: always()
         shell: cmd
         run: |
-          for %%F in (GEOMETRY_STRESS.txt INPUT_STRESS.txt EVENT_PARITY.txt WINDOW_STRESS.txt WARP_STRESS.txt OCCLUSION_FOCUS_STRESS.txt) do if exist lab\borderless\out\%%F (echo ==== %%F ==== & type lab\borderless\out\%%F)
+          for %%F in (GEOMETRY_STRESS.txt INPUT_STRESS.txt EVENT_PARITY.txt THREAD_AFFINITY.txt WINDOW_STRESS.txt WARP_STRESS.txt OCCLUSION_FOCUS_STRESS.txt) do if exist lab\borderless\out\%%F (echo ==== %%F ==== & type lab\borderless\out\%%F)
 
       - name: Upload lab reports
         if: always()
