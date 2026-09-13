@@ -6,6 +6,7 @@ on:
       - build/rc38-borderless-authority-20260913
     paths:
       - .github/workflows/rc38-lifecycle-stability.yml
+      - lab/borderless/rc38/ptar_borderless_lifecycle_diagnostic.cpp
   workflow_dispatch:
 
 permissions:
@@ -14,11 +15,11 @@ permissions:
 jobs:
   lifecycle-stability:
     runs-on: windows-2022
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build unchanged inherited lifecycle stress gate
+      - name: Build unchanged inherited lifecycle gate and diagnostic clone
         shell: cmd
         run: |
           call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
@@ -26,11 +27,13 @@ jobs:
           mkdir lab\borderless\lifecycle_stability 2>nul
           cl /nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 lab\borderless\ptar_borderless_lifecycle_stress.cpp /Fe:lab\borderless\lifecycle_stability\lifecycle_stress.exe user32.lib /link /SUBSYSTEM:CONSOLE,6.03
           if errorlevel 1 exit /b 1
+          cl /nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 lab\borderless\rc38\ptar_borderless_lifecycle_diagnostic.cpp /Fe:lab\borderless\lifecycle_stability\lifecycle_diagnostic.exe user32.lib /link /SUBSYSTEM:CONSOLE,6.03
+          if errorlevel 1 exit /b 1
 
-      - name: Run 10 independent lifecycle iterations
+      - name: Run 10 independent inherited lifecycle iterations
         shell: powershell
         run: |
-          $ErrorActionPreference='Stop'
+          $ErrorActionPreference='Continue'
           $dir='lab/borderless/lifecycle_stability'
           $summary=@()
           $pass=0;$fail=0
@@ -46,9 +49,32 @@ jobs:
           $summary += "FAIL_COUNT=$fail"
           $summary | Set-Content (Join-Path $dir 'SUMMARY.txt') -Encoding ASCII
           Get-Content (Join-Path $dir 'SUMMARY.txt')
-          # Characterization is evidence, not a release gate by itself: preserve all outcomes.
+          exit 0
+
+      - name: Run 10 diagnostic lifecycle iterations
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Continue'
+          $dir='lab/borderless/lifecycle_stability'
+          $summary=@()
+          $pass=0;$fail=0
+          for($i=1;$i -le 10;$i++){
+            $log=Join-Path $dir ("DIAG_{0:00}.txt" -f $i)
+            & (Join-Path $dir 'lifecycle_diagnostic.exe') *> $log
+            $rc=$LASTEXITCODE
+            $lines=Get-Content $log
+            if($rc -eq 0){$pass++}else{$fail++}
+            $summary += ("DIAG={0:00} RC={1}" -f $i,$rc)
+            $summary += $lines
+          }
+          $summary += "DIAG_PASS_COUNT=$pass"
+          $summary += "DIAG_FAIL_COUNT=$fail"
+          $summary | Set-Content (Join-Path $dir 'DIAG_SUMMARY.txt') -Encoding ASCII
+          Get-Content (Join-Path $dir 'DIAG_SUMMARY.txt')
+          exit 0
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: PTAR_RC38_LIFECYCLE_STABILITY
           path: lab/borderless/lifecycle_stability/*.txt
