@@ -1,0 +1,1 @@
+RC38 source fix is committed on this temporary unprotected branch. This marker triggers the post-fix Windows integration gates.
