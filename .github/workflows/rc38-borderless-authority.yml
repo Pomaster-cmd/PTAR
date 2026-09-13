@@ -8,7 +8,7 @@ on:
       - 'lab/borderless/rc38/generated/**'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   windows-rc38-lab:
@@ -16,19 +16,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build RC38 Win8.1 sidecar and integration host
+      - name: Build reproducible RC38 Win8.1 sidecar and integration host
         shell: cmd
         run: |
           call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
           if errorlevel 1 exit /b 1
           if not exist lab\borderless\rc38\out mkdir lab\borderless\rc38\out
           set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603
-          cl %CFLAGS% /LD lab\borderless\rc38\ptar_borderless_rc38.cpp /Fe:lab\borderless\rc38\out\ptar_borderless.dll user32.lib /link /SUBSYSTEM:WINDOWS,6.03
+          cl %CFLAGS% /LD lab\borderless\rc38\ptar_borderless_rc38.cpp /Fe:lab\borderless\rc38\out\ptar_borderless.dll user32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03
           if errorlevel 1 exit /b 1
           cl %CFLAGS% lab\borderless\rc38\ptar_borderless_host_test.cpp /Fe:lab\borderless\rc38\out\ptar_borderless_host_test.exe user32.lib /link /SUBSYSTEM:CONSOLE,6.03
           if errorlevel 1 exit /b 1
           dumpbin /imports lab\borderless\rc38\out\ptar_borderless.dll > lab\borderless\rc38\out\SIDECAR_IMPORTS.txt
           dumpbin /headers lab\borderless\rc38\out\ptar_borderless.dll > lab\borderless\rc38\out\SIDECAR_HEADERS.txt
+
+      - name: Verify RC38 sidecar reproducibility
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          cl /nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /LD lab\borderless\rc38\ptar_borderless_rc38.cpp /Fe:lab\borderless\rc38\out\ptar_borderless_repro.dll user32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03
+          if errorlevel 1 exit /b 1
+          fc /b lab\borderless\rc38\out\ptar_borderless.dll lab\borderless\rc38\out\ptar_borderless_repro.dll >nul
+          if errorlevel 1 exit /b 2
+          echo RC38_SIDECAR_REPRODUCIBILITY=PASS
 
       - name: Run RC38 integrated sidecar host test
         shell: cmd
@@ -103,26 +114,27 @@ jobs:
             if ($rc -ne 0) { throw ("{0} failed with exit code {1}" -f $t.Exe,$rc) }
           }
 
-      - name: Export deterministic sidecar payload as Base64 text
+      - name: Export and verify generated payload locally
         shell: powershell
         run: |
           $ErrorActionPreference='Stop'
           $out='lab/borderless/rc38/out/ptar_borderless.dll'
           $gen='lab/borderless/rc38/generated'
           New-Item -ItemType Directory -Force -Path $gen | Out-Null
-          [IO.File]::WriteAllText((Join-Path $gen 'ptar_borderless.dll.b64'), [Convert]::ToBase64String([IO.File]::ReadAllBytes($out)))
-          (Get-FileHash $out -Algorithm SHA256).Hash.ToLowerInvariant() | Set-Content -NoNewline (Join-Path $gen 'ptar_borderless.dll.sha256') -Encoding ASCII
-          (Get-Item $out).Length | Set-Content -NoNewline (Join-Path $gen 'ptar_borderless.dll.size') -Encoding ASCII
+          $bytes=[IO.File]::ReadAllBytes($out)
+          $b64=[Convert]::ToBase64String($bytes)
+          [IO.File]::WriteAllText((Join-Path $gen 'ptar_borderless.dll.b64'),$b64)
+          $sha=(Get-FileHash $out -Algorithm SHA256).Hash.ToLowerInvariant()
+          $sha | Set-Content -NoNewline (Join-Path $gen 'ptar_borderless.dll.sha256') -Encoding ASCII
+          $bytes.Length | Set-Content -NoNewline (Join-Path $gen 'ptar_borderless.dll.size') -Encoding ASCII
           Copy-Item 'lab/borderless/rc38/out/RC38_HOST_TEST.txt' (Join-Path $gen 'RC38_HOST_TEST.txt') -Force
           Copy-Item 'lab/borderless/rc38/out/SIDECAR_IMPORTS.txt' (Join-Path $gen 'SIDECAR_IMPORTS.txt') -Force
           Copy-Item 'lab/borderless/rc38/out/SIDECAR_HEADERS.txt' (Join-Path $gen 'SIDECAR_HEADERS.txt') -Force
-
-      - name: Publish verified generated payload on temporary branch
-        shell: cmd
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add lab/borderless/rc38/generated
-          git diff --cached --quiet && exit /b 0
-          git commit -m "lab: publish verified RC38 sidecar payload"
-          git push origin HEAD:build/rc38-borderless-authority-20260913
+          $roundtrip=[Convert]::FromBase64String((Get-Content (Join-Path $gen 'ptar_borderless.dll.b64') -Raw))
+          $tmp=Join-Path $env:RUNNER_TEMP 'ptar_borderless_roundtrip.dll'
+          [IO.File]::WriteAllBytes($tmp,$roundtrip)
+          if((Get-FileHash $tmp -Algorithm SHA256).Hash.ToLowerInvariant() -ne $sha){throw 'Base64 roundtrip hash mismatch'}
+          foreach($p in @('ptar_borderless.dll.b64','ptar_borderless.dll.sha256','ptar_borderless.dll.size','RC38_HOST_TEST.txt','SIDECAR_IMPORTS.txt','SIDECAR_HEADERS.txt')){if(-not(Test-Path (Join-Path $gen $p) -PathType Leaf)){throw ('Missing generated payload file: '+$p)}}
+          Write-Host ('RC38_LOCAL_EXPORT_SHA256='+$sha)
+          Write-Host 'RC38_GENERATED_PAYLOAD_READY=PASS'
+          Write-Host 'PUBLISH_OWNER=rc38-publish-payload.yml'
