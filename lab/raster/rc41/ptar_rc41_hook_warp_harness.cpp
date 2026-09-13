@@ -91,7 +91,10 @@ int main(){
         if(rc)break;
 
         HookStats s=hooks.stats();
-        if(s.omCalls<kStress+5u||s.viewportCalls<kStress+4u||s.scissorCalls<kStress+2u||s.viewportMapped==0||s.scissorMapped==0||s.clearStateCalls!=1u){rc=29;break;}
+        const uint64_t expectedMapped=uint64_t(kStress/2u)+1u;
+        if(s.omCalls!=uint64_t(kStress)+4u || s.omUavCalls!=1u ||
+           s.viewportCalls!=uint64_t(kStress)+3u || s.scissorCalls!=uint64_t(kStress)+2u ||
+           s.viewportMapped!=expectedMapped || s.scissorMapped!=expectedMapped || s.clearStateCalls!=1u){rc=29;break;}
 
         hooks.uninstall();
         if(hooks.installed()){rc=30;break;}
@@ -103,7 +106,7 @@ int main(){
 
         std::cout<<"RC41_HOOK_WARP=PASS feature_level=0x"<<std::hex<<static_cast<unsigned>(fl)<<std::dec
                  <<" stress="<<kStress<<" shadow_vtable=PASS restore=PASS primary_alias=PASS same_size_passthrough=PASS"
-                 <<" om="<<s.omCalls<<" vp="<<s.viewportCalls<<" vp_mapped="<<s.viewportMapped
+                 <<" om="<<s.omCalls<<" om_uav="<<s.omUavCalls<<" vp="<<s.viewportCalls<<" vp_mapped="<<s.viewportMapped
                  <<" sc="<<s.scissorCalls<<" sc_mapped="<<s.scissorMapped<<" clear="<<s.clearStateCalls<<"\n";
     }while(false);
 
