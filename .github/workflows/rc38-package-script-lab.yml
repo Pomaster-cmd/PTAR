@@ -1,0 +1,78 @@
+name: RC38 Package Script Lab
+
+on:
+  push:
+    branches:
+      - build/rc38-borderless-authority-20260913
+    paths:
+      - .github/workflows/rc38-package-script-lab.yml
+      - lab/borderless/rc38/package_scripts/scripts_exact.zip.b64
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  parse-and-contract:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Materialize exact RC38 package scripts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $b64=(Get-Content 'lab/borderless/rc38/package_scripts/scripts_exact.zip.b64' -Raw).Trim()
+          [IO.File]::WriteAllBytes((Join-Path $PWD 'scripts.zip'),[Convert]::FromBase64String($b64))
+          Expand-Archive -LiteralPath scripts.zip -DestinationPath scripts -Force
+          $names=(Get-ChildItem scripts\*.ps1 | Sort-Object Name | Select-Object -ExpandProperty Name)
+          if(($names -join ',') -ne 'install.ps1,rollback.ps1,uninstall_overlay.ps1,verify.ps1'){throw ('Unexpected script set: '+($names -join ','))}
+
+      - name: Parse scripts with Windows PowerShell engine
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $report=@()
+          foreach($p in Get-ChildItem scripts\*.ps1){
+            $tokens=$null;$errors=$null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($p.FullName,[ref]$tokens,[ref]$errors)
+            if($errors.Count -ne 0){$errors | Format-List *;throw "PowerShell parser errors in $($p.Name)"}
+            $report += "PASS PARSE $($p.Name)"
+          }
+          $report | Set-Content RC38_PACKAGE_SCRIPT_PARSE.txt -Encoding ASCII
+          Get-Content RC38_PACKAGE_SCRIPT_PARSE.txt
+
+      - name: Contract assertions
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $i=Get-Content scripts\install.ps1 -Raw
+          $v=Get-Content scripts\verify.ps1 -Raw
+          $r=Get-Content scripts\rollback.ps1 -Raw
+          $u=Get-Content scripts\uninstall_overlay.ps1 -Raw
+          $checks=@(
+            @($i.Contains('cb7202e5097b78c4965a8300a28a6004038d05bbfe1aaa25089e0a2c5f1b8abb'),'runtime hash'),
+            @($i.Contains('d7eef6d9a2c01e40fed34722c86cee36003a636d663a67174515af5086d274f8'),'sidecar hash'),
+            @($i.Contains('PTAR_RC37_CORETECH_LOWRES_GUI'),'RC37 migration'),
+            @(-not $i.Contains("Set-ItemProperty -LiteralPath $key -Name 'AffectGuiResolution'"),'no RC38 AffectGuiResolution apply'),
+            @($i.Contains('DLL locale inconnue, installation refusee'),'unknown runtime fail closed'),
+            @($i.Contains('Sidecar local inconnu'),'unknown sidecar fail closed'),
+            @($v.Contains('BASE GITHUB 107/107'),'107 base verifier'),
+            @($r.Contains('864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c'),'canonical rollback runtime'),
+            @($r.Contains('Sidecar actif inconnu/modifie, rollback refuse'),'unknown sidecar rollback refusal'),
+            @($u.Contains('d7eef6d9a2c01e40fed34722c86cee36003a636d663a67174515af5086d274f8'),'owned sidecar uninstall')
+          )
+          $report=@()
+          foreach($c in $checks){if(-not [bool]$c[0]){throw ('Contract FAIL: '+$c[1])};$report+=('PASS CONTRACT '+$c[1])}
+          $report | Set-Content RC38_PACKAGE_SCRIPT_CONTRACT.txt -Encoding ASCII
+          Get-Content RC38_PACKAGE_SCRIPT_CONTRACT.txt
+
+      - name: Upload script lab evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_RC38_PACKAGE_SCRIPT_LAB
+          path: |
+            RC38_PACKAGE_SCRIPT_PARSE.txt
+            RC38_PACKAGE_SCRIPT_CONTRACT.txt
+          retention-days: 7
