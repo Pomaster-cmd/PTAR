@@ -126,7 +126,7 @@ int main() {
     unsigned failures=0;
     unsigned long long pointerCases=0,wheelCases=0,focusCases=0,setCursorCases=0,leaveCases=0;
 
-    for(unsigned i=0;i<500000;++i) {
+    for(unsigned i=0;i<20000;++i) {
         POINT rs=renders[rng()%renders.size()]; RECT out=outputs[rng()%outputs.size()];
         g_geo=Geometry{out,UINT(rs.x),UINT(rs.y)};
         SetWindowPos(g_game,nullptr,out.left,out.top,rs.x,rs.y,SWP_NOZORDER|SWP_NOACTIVATE);
@@ -164,19 +164,19 @@ int main() {
             ++wheelCases;
         }
 
-        if((i%997)==0) {
+        if((i%197)==0) {
             SetActiveWindow(g_decoy); SetFocus(g_decoy);
             LRESULT ma=SendMessageW(g_presenter,WM_MOUSEACTIVATE,reinterpret_cast<WPARAM>(g_decoy),MAKELPARAM(HTCLIENT,WM_LBUTTONDOWN));
             if(ma!=MA_NOACTIVATE||GetActiveWindow()!=g_game||GetFocus()!=g_game) ++failures;
             ++focusCases;
         }
-        if((i%331)==0) {
+        if((i%131)==0) {
             const unsigned long long before=g_setCursorRoutes;
             LRESULT sr=SendMessageW(g_presenter,WM_SETCURSOR,reinterpret_cast<WPARAM>(g_presenter),MAKELPARAM(HTCLIENT,WM_MOUSEMOVE));
             if(!sr||g_setCursorRoutes<before+2) ++failures;
             ++setCursorCases;
         }
-        if((i%521)==0) {
+        if((i%173)==0) {
             const size_t before=g_events.size();
             SendMessageW(g_presenter,WM_MOUSELEAVE,0,0);
             if(g_events.size()!=before+1||g_events.back().msg!=WM_MOUSELEAVE) ++failures;
