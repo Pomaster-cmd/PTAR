@@ -7,9 +7,6 @@
 
 namespace ptar_lab {
 
-// Lab model for the bounded USER32 surface PTAR needs when the native presenter
-// physically owns hit-tested pointer input but the game must keep logical input
-// semantics. It deliberately leaves WM_INPUT / DirectInput relative motion alone.
 class InputVirtualizer {
 public:
     void configure(HWND game, HWND presenter, const Geometry& geometry) noexcept {
@@ -39,8 +36,6 @@ public:
         return _geometry.logical_to_physical(p);
     }
 
-    // Logical game capture -> physical presenter capture. The game-facing query
-    // still reports the game HWND so engines do not discover the presenter.
     HWND set_capture(HWND requested) noexcept {
         if (requested != _game) {
             _logicalCapture = false;
@@ -63,9 +58,8 @@ public:
 
     bool logical_capture_active() const noexcept { return _logicalCapture; }
 
-    // Prepare a TrackMouseEvent request issued by the game for the presenter.
-    // We return the rewritten request separately so production code can call the
-    // real API without mutating the game's caller-owned structure.
+    // Translate game TrackMouseEvent requests onto the physical presenter.
+    // The caller-owned structure is never modified in-place.
     bool rewrite_track_request(const TRACKMOUSEEVENT& logical, TRACKMOUSEEVENT& physical) noexcept {
         physical = logical;
         if (logical.hwndTrack != _game) return false;
@@ -75,12 +69,18 @@ public:
         return true;
     }
 
+    // TME_QUERY returns the physical presenter from USER32; hide that detail
+    // before returning to the game.
+    void logicalize_track_result(TRACKMOUSEEVENT& result) const noexcept {
+        if (result.hwndTrack == _presenter) result.hwndTrack = _game;
+    }
+
     DWORD tracked_flags() const noexcept { return _trackedFlags; }
     DWORD hover_time() const noexcept { return _hoverTime; }
 
-    // Thread-local message-position override used only while a routed pointer
-    // callback is executing on the game WndProc. Outside that scope it falls
-    // through to USER32 GetMessagePos.
+    // GetMessagePos is thread-queue based and otherwise exposes the native
+    // presenter position while a routed callback is executing. Scope the
+    // logical screen position only around that synchronous game callback.
     class RoutedMessageScope {
     public:
         explicit RoutedMessageScope(POINT logicalScreen) noexcept
