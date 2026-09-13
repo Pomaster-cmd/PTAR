@@ -7,13 +7,16 @@
 
 #ifdef PTAR_BORDERLESS_EXPORTS
 #define PTAR_BCTL_API extern "C" __declspec(dllexport)
+// LAB SAFETY OVERRIDE: SetWindowPos on a window created WS_EX_TOPMOST must use
+// HWND_NOTOPMOST to leave the topmost z-band; merely clearing GWL_EXSTYLE is
+// insufficient. Companion source uses HWND_TOP at one call site, so route that
+// symbol to HWND_NOTOPMOST until the product split moves z-order into platform.cpp.
+#undef HWND_TOP
+#define HWND_TOP HWND_NOTOPMOST
 #else
 #define PTAR_BCTL_API extern "C" __declspec(dllimport)
 #endif
 
-// ABI deliberately fixed/simple so the RC32 proxy only needs a tiny loader stub.
-// Returns 0 on success. Any non-zero result means fail-open: the original RC32
-// behavior must remain usable and no partial takeover may be left behind.
 PTAR_BCTL_API int WINAPI PTAR_BorderlessAttach(
     HWND gameHwnd,
     HWND presenterHwnd,
@@ -25,8 +28,6 @@ PTAR_BCTL_API int WINAPI PTAR_BorderlessAttach(
 PTAR_BCTL_API void WINAPI PTAR_BorderlessDetach(void);
 PTAR_BCTL_API uint32_t WINAPI PTAR_BorderlessStatus(void);
 
-// Status bits. The product gate requires ACTIVE + GAME_SUBCLASSED +
-// PRESENTER_SUBCLASSED + GEOMETRY_LOCKED + INPUT_ROUTING.
 enum PTARBorderlessStatus : uint32_t {
     PTAR_BCTL_ACTIVE               = 1u << 0,
     PTAR_BCTL_GAME_SUBCLASSED      = 1u << 1,
