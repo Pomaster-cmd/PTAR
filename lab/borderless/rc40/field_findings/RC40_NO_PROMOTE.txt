@@ -1,0 +1,1 @@
+Do not promote RC40 to main/SOURCE. Hardware validation failed the intended framing contract.
