@@ -1,0 +1,46 @@
+name: RC38 Export Sidecar Artifact
+
+on:
+  push:
+    branches:
+      - build/rc38-borderless-authority-20260913
+    paths:
+      - .github/workflows/rc38-export-sidecar-artifact.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout RC38 branch
+        uses: actions/checkout@v4
+
+      - name: Decode and verify compiled Win8.1 sidecar
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          base64 -d lab/borderless/rc38/generated/ptar_borderless.dll.b64 > out/ptar_borderless.dll
+          expected_sha="$(tr -d '\r\n ' < lab/borderless/rc38/generated/ptar_borderless.dll.sha256)"
+          expected_size="$(tr -d '\r\n ' < lab/borderless/rc38/generated/ptar_borderless.dll.size)"
+          actual_sha="$(sha256sum out/ptar_borderless.dll | awk '{print $1}')"
+          actual_size="$(wc -c < out/ptar_borderless.dll | tr -d ' ')"
+          test "$actual_sha" = "$expected_sha"
+          test "$actual_size" = "$expected_size"
+          cp lab/borderless/rc38/generated/ptar_borderless.dll.sha256 out/
+          cp lab/borderless/rc38/generated/ptar_borderless.dll.size out/
+          cp lab/borderless/rc38/generated/RC38_HOST_TEST.txt out/
+          cp lab/borderless/rc38/generated/SIDECAR_IMPORTS.txt out/
+          cp lab/borderless/rc38/generated/SIDECAR_HEADERS.txt out/
+          printf 'branch=%s\ncommit=%s\nsha256=%s\nsize=%s\n' "${GITHUB_REF_NAME}" "${GITHUB_SHA}" "$actual_sha" "$actual_size" > out/RC38_EXPORT_PROVENANCE.txt
+
+      - name: Upload verified sidecar artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_RC38_VERIFIED_SIDECAR
+          path: out/
+          if-no-files-found: error
+          retention-days: 7
