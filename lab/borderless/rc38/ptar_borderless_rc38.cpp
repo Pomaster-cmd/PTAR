@@ -40,7 +40,7 @@ static void logline(const char* s){
     DWORD wr=0; WriteFile(h,line,(DWORD)n,&wr,nullptr); CloseHandle(h);
 }
 static void logfmt(const char* tag,LONG_PTR a,LONG_PTR b=0,LONG_PTR c=0,LONG_PTR d=0){
-    char x[512]{}; wsprintfA(x,"%s %lld %lld %lld %lld",tag,(long long)a,(long long)b,(long long)c,(long long)d); logline(x);
+    char x[512]{}; wsprintfA(x,"%s %I64d %I64d %I64d %I64d",tag,(long long)a,(long long)b,(long long)c,(long long)d); logline(x);
 }
 
 static bool client_size(HWND h,UINT& w,UINT& hh){RECT r{};if(!GetClientRect(h,&r))return false;w=(UINT)(r.right-r.left);hh=(UINT)(r.bottom-r.top);return true;}
@@ -101,7 +101,7 @@ static void enforce_geometry(){
     LONG_PTR pde=(pes | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW) & ~(LONG_PTR)(WS_EX_TRANSPARENT|WS_EX_TOPMOST|WS_EX_APPWINDOW);
     if(ps!=pds) SetWindowLongPtrW(g_presenter,GWL_STYLE,pds);
     if(pes!=pde) SetWindowLongPtrW(g_presenter,GWL_EXSTYLE,pde);
-    SetWindowPos(g_presenter,HWND_TOP,g_monitor.left,g_monitor.top,(int)g_outputW,(int)g_outputH,SWP_NOACTIVATE|SWP_FRAMECHANGED|SWP_SHOWWINDOW);
+    SetWindowPos(g_presenter,HWND_NOTOPMOST,g_monitor.left,g_monitor.top,(int)g_outputW,(int)g_outputH,SWP_NOACTIVATE|SWP_FRAMECHANGED|SWP_SHOWWINDOW);
     InterlockedExchange(&g_internal,0);
 }
 
@@ -116,7 +116,7 @@ static LRESULT CALLBACK GameProc(HWND h,UINT m,WPARAM w,LPARAM l){
             ss->styleNew=(ss->styleNew & (WS_VISIBLE|WS_DISABLED|WS_CLIPSIBLINGS|WS_CLIPCHILDREN))|WS_POPUP;
         } else if(m==WM_SIZE){
             if(w==SIZE_MINIMIZED) ShowWindow(g_presenter,SW_HIDE);
-            else {ShowWindow(g_presenter,SW_SHOWNOACTIVATE);SetWindowPos(g_presenter,HWND_TOP,g_monitor.left,g_monitor.top,(int)g_outputW,(int)g_outputH,SWP_NOACTIVATE|SWP_SHOWWINDOW);}
+            else {ShowWindow(g_presenter,SW_SHOWNOACTIVATE);SetWindowPos(g_presenter,HWND_NOTOPMOST,g_monitor.left,g_monitor.top,(int)g_outputW,(int)g_outputH,SWP_NOACTIVATE|SWP_SHOWWINDOW);}
         } else if((m==WM_MOUSEWHEEL||m==WM_MOUSEHWHEEL)){
             DWORD routed=0;
             if(!tls_get_pos(routed)) l=logical_screen_lparam(l);
