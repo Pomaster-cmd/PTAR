@@ -38,6 +38,8 @@ jobs:
           if errorlevel 1 exit /b 1
           cl %CFLAGS% lab\borderless\ptar_borderless_window_stress.cpp /Fe:lab\borderless\out\window_stress.exe user32.lib %LFLAGS%
           if errorlevel 1 exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_takeover_harness.cpp /Fe:lab\borderless\out\takeover_harness.exe user32.lib gdi32.lib d3d11.lib dxgi.lib %LFLAGS%
+          if errorlevel 1 exit /b 1
           cl %CFLAGS% lab\borderless\ptar_borderless_warp_stress.cpp /Fe:lab\borderless\out\warp_stress.exe user32.lib d3d11.lib dxgi.lib %LFLAGS%
           if errorlevel 1 exit /b 1
           cl %CFLAGS% lab\borderless\ptar_borderless_occlusion_focus_stress.cpp /Fe:lab\borderless\out\occlusion_focus_stress.exe user32.lib d3d11.lib dxgi.lib %LFLAGS%
@@ -78,6 +80,10 @@ jobs:
         shell: cmd
         run: lab\borderless\out\window_stress.exe > lab\borderless\out\WINDOW_STRESS.txt 2>&1
 
+      - name: Integrated takeover harness - 20k transitions and 320k pointer probes
+        shell: cmd
+        run: lab\borderless\out\takeover_harness.exe > lab\borderless\out\TAKEOVER_HARNESS.txt 2>&1
+
       - name: D3D11 WARP dual-swapchain stress - 12k transitions
         shell: cmd
         run: lab\borderless\out\warp_stress.exe > lab\borderless\out\WARP_STRESS.txt 2>&1
@@ -90,7 +96,7 @@ jobs:
         if: always()
         shell: cmd
         run: |
-          for %%F in (GEOMETRY_STRESS.txt INPUT_STRESS.txt EVENT_PARITY.txt USER32_VIRTUALIZATION.txt THREAD_AFFINITY.txt DPI_POLICY.txt LIFECYCLE_STRESS.txt WINDOW_STRESS.txt WARP_STRESS.txt OCCLUSION_FOCUS_STRESS.txt) do if exist lab\borderless\out\%%F (echo ==== %%F ==== & type lab\borderless\out\%%F)
+          for %%F in (GEOMETRY_STRESS.txt INPUT_STRESS.txt EVENT_PARITY.txt USER32_VIRTUALIZATION.txt THREAD_AFFINITY.txt DPI_POLICY.txt LIFECYCLE_STRESS.txt WINDOW_STRESS.txt TAKEOVER_HARNESS.txt WARP_STRESS.txt OCCLUSION_FOCUS_STRESS.txt) do if exist lab\borderless\out\%%F (echo ==== %%F ==== & type lab\borderless\out\%%F)
 
       - name: Upload lab reports
         if: always()
