@@ -1,0 +1,55 @@
+name: RC38 Lifecycle Stability Characterization
+
+on:
+  push:
+    branches:
+      - build/rc38-borderless-authority-20260913
+    paths:
+      - .github/workflows/rc38-lifecycle-stability.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lifecycle-stability:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build unchanged inherited lifecycle stress gate
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          mkdir lab\borderless\lifecycle_stability 2>nul
+          cl /nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 lab\borderless\ptar_borderless_lifecycle_stress.cpp /Fe:lab\borderless\lifecycle_stability\lifecycle_stress.exe user32.lib /link /SUBSYSTEM:CONSOLE,6.03
+          if errorlevel 1 exit /b 1
+
+      - name: Run 10 independent lifecycle iterations
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dir='lab/borderless/lifecycle_stability'
+          $summary=@()
+          $pass=0;$fail=0
+          for($i=1;$i -le 10;$i++){
+            $log=Join-Path $dir ("ITER_{0:00}.txt" -f $i)
+            & (Join-Path $dir 'lifecycle_stress.exe') *> $log
+            $rc=$LASTEXITCODE
+            $last=(Get-Content $log | Select-Object -Last 1)
+            if($rc -eq 0){$pass++}else{$fail++}
+            $summary += ("ITER={0:00} RC={1} {2}" -f $i,$rc,$last)
+          }
+          $summary += "PASS_COUNT=$pass"
+          $summary += "FAIL_COUNT=$fail"
+          $summary | Set-Content (Join-Path $dir 'SUMMARY.txt') -Encoding ASCII
+          Get-Content (Join-Path $dir 'SUMMARY.txt')
+          # Characterization is evidence, not a release gate by itself: preserve all outcomes.
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_RC38_LIFECYCLE_STABILITY
+          path: lab/borderless/lifecycle_stability/*.txt
+          retention-days: 7
