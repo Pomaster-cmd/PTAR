@@ -1,0 +1,1 @@
+Ignore the late sequence of marker-only commits when reviewing functional diffs. They do not touch production/runtime sources.
