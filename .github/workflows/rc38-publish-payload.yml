@@ -15,15 +15,20 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
-      - name: Build Win8.1 RC38 sidecar
+      - name: Build reproducible Win8.1 RC38 sidecar
         shell: cmd
         run: |
           call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
           if errorlevel 1 exit /b 1
           if not exist lab\borderless\rc38\out mkdir lab\borderless\rc38\out
           set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603
-          cl %CFLAGS% /LD lab\borderless\rc38\ptar_borderless_rc38.cpp /Fe:lab\borderless\rc38\out\ptar_borderless.dll user32.lib /link /SUBSYSTEM:WINDOWS,6.03
+          cl %CFLAGS% /LD lab\borderless\rc38\ptar_borderless_rc38.cpp /Fe:lab\borderless\rc38\out\ptar_borderless.dll user32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03
           if errorlevel 1 exit /b 1
+          cl %CFLAGS% /LD lab\borderless\rc38\ptar_borderless_rc38.cpp /Fe:lab\borderless\rc38\out\ptar_borderless_repro.dll user32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03
+          if errorlevel 1 exit /b 1
+          fc /b lab\borderless\rc38\out\ptar_borderless.dll lab\borderless\rc38\out\ptar_borderless_repro.dll >nul
+          if errorlevel 1 exit /b 2
+          echo RC38_SIDECAR_REPRODUCIBILITY=PASS
           cl %CFLAGS% lab\borderless\rc38\ptar_borderless_host_test.cpp /Fe:lab\borderless\rc38\out\ptar_borderless_host_test.exe user32.lib /link /SUBSYSTEM:CONSOLE,6.03
           if errorlevel 1 exit /b 1
           pushd lab\borderless\rc38\out
@@ -39,12 +44,18 @@ jobs:
           $ErrorActionPreference='Stop'
           $out='lab/borderless/rc38/out/ptar_borderless.dll';$gen='lab/borderless/rc38/generated'
           New-Item -ItemType Directory -Force $gen | Out-Null
-          [IO.File]::WriteAllText((Join-Path $gen 'ptar_borderless.dll.b64'),[Convert]::ToBase64String([IO.File]::ReadAllBytes($out)))
-          (Get-FileHash $out -Algorithm SHA256).Hash.ToLowerInvariant() | Set-Content -NoNewline (Join-Path $gen 'ptar_borderless.dll.sha256') -Encoding ASCII
-          (Get-Item $out).Length | Set-Content -NoNewline (Join-Path $gen 'ptar_borderless.dll.size') -Encoding ASCII
+          $bytes=[IO.File]::ReadAllBytes($out)
+          [IO.File]::WriteAllText((Join-Path $gen 'ptar_borderless.dll.b64'),[Convert]::ToBase64String($bytes))
+          $sha=(Get-FileHash $out -Algorithm SHA256).Hash.ToLowerInvariant()
+          $sha | Set-Content -NoNewline (Join-Path $gen 'ptar_borderless.dll.sha256') -Encoding ASCII
+          $bytes.Length | Set-Content -NoNewline (Join-Path $gen 'ptar_borderless.dll.size') -Encoding ASCII
           Copy-Item 'lab/borderless/rc38/out/RC38_HOST_TEST.txt' (Join-Path $gen 'RC38_HOST_TEST.txt') -Force
           Copy-Item 'lab/borderless/rc38/out/SIDECAR_IMPORTS.txt' (Join-Path $gen 'SIDECAR_IMPORTS.txt') -Force
           Copy-Item 'lab/borderless/rc38/out/SIDECAR_HEADERS.txt' (Join-Path $gen 'SIDECAR_HEADERS.txt') -Force
+          $tmp=Join-Path $env:RUNNER_TEMP 'ptar_borderless_publish_roundtrip.dll'
+          [IO.File]::WriteAllBytes($tmp,[Convert]::FromBase64String((Get-Content (Join-Path $gen 'ptar_borderless.dll.b64') -Raw)))
+          if((Get-FileHash $tmp -Algorithm SHA256).Hash.ToLowerInvariant() -ne $sha){throw 'Base64 roundtrip hash mismatch'}
+          Write-Host ('RC38_PUBLISH_SHA256='+$sha)
       - name: Publish with fast-forward reconciliation
         shell: bash
         run: |
@@ -53,6 +64,6 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add lab/borderless/rc38/generated
           git diff --cached --quiet && exit 0
-          git commit -m "lab: publish verified RC38 sidecar payload"
+          git commit -m "lab: publish reproducible verified RC38 sidecar payload"
           git pull --rebase origin build/rc38-borderless-authority-20260913
           git push origin HEAD:build/rc38-borderless-authority-20260913
