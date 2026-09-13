@@ -26,6 +26,8 @@ jobs:
           $all=(Get-ChildItem $root -File | Get-Content -Raw) -join "`n"
           $contract=Get-Content "$root/ptar_rc41_contract.h" -Raw
           $warp=Get-Content "$root/ptar_rc41_warp_harness.cpp" -Raw
+          $hooks=Get-Content "$root/ptar_rc41_context_hooks.h" -Raw
+          $hookcpp=Get-Content "$root/ptar_rc41_context_hooks.cpp" -Raw
           $checks=[ordered]@{
             'logical and physical spaces are distinct'=($contract.Contains('SizeU logical') -and $contract.Contains('SizeU physical'))
             'viewport mapping is primary-family gated'=$contract.Contains('primaryFamilyBound')
@@ -34,9 +36,13 @@ jobs:
             'offscreen targets remain passthrough'=$warp.Contains('offscreen_passthrough=PASS')
             'RC41 contains no new HWND geometry policy'=(-not $all.Contains('SetWindowPos(') -and -not $all.Contains('SetWindowLongPtr'))
             'RC41 contains no USER32 virtualization'=(-not $all.Contains('GetCursorPos(') -and -not $all.Contains('ClipCursor('))
+            'D3D11 hook slots are explicit'=($hooks.Contains('kSlotOMSetRenderTargets=33') -and $hooks.Contains('kSlotOMSetRenderTargetsAndUAV=34') -and $hooks.Contains('kSlotRSSetViewports=44') -and $hooks.Contains('kSlotRSSetScissorRects=45'))
+            'hook is instance-local shadow vtable'=($hooks.Contains('shadowVtable_') -and $hookcpp.Contains('InterlockedCompareExchangePointer'))
+            'ClearState invalidates target state'=($hooks.Contains('kSlotClearState=110') -and $hookcpp.Contains('hook_clear_state'))
+            'command-list execution reclassifies target state'=($hooks.Contains('kSlotExecuteCommandList=58') -and $hookcpp.Contains('refresh_primary_from_context(ctx)'))
           }
           foreach($k in $checks.Keys){ if(-not $checks[$k]){ throw "RC41 CONTRACT FAIL: $k" }; Write-Host "PASS $k" }
-          'RC41_STATIC_ARCHITECTURE=7/7 PASS' | Set-Content "$root/STATIC_ARCHITECTURE.txt" -Encoding ASCII
+          'RC41_STATIC_ARCHITECTURE=11/11 PASS' | Set-Content "$root/STATIC_ARCHITECTURE.txt" -Encoding ASCII
 
       - name: Build RC41 lab gates
         shell: cmd
@@ -51,6 +57,8 @@ jobs:
           if errorlevel 1 exit /b 12
           cl %CFLAGS% lab\raster\rc41\ptar_rc41_warp_harness.cpp /Fe:lab\raster\rc41\out\warp_harness.exe d3d11.lib dxgi.lib /link /SUBSYSTEM:CONSOLE,6.03
           if errorlevel 1 exit /b 13
+          cl %CFLAGS% lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc41\ptar_rc41_context_hooks.cpp lab\raster\rc41\ptar_rc41_hook_warp_harness.cpp /Fe:lab\raster\rc41\out\hook_warp_harness.exe d3d11.lib dxgi.lib /link /SUBSYSTEM:CONSOLE,6.03
+          if errorlevel 1 exit /b 14
 
       - name: Run RC41 geometry stress
         shell: cmd
@@ -73,6 +81,13 @@ jobs:
           if errorlevel 1 (type lab\raster\rc41\out\WARP_TARGET_CLASSIFIER.txt & exit /b 23)
           type lab\raster\rc41\out\WARP_TARGET_CLASSIFIER.txt
 
+      - name: Run RC41 actual hook WARP stress
+        shell: cmd
+        run: |
+          lab\raster\rc41\out\hook_warp_harness.exe > lab\raster\rc41\out\HOOK_WARP_STRESS.txt 2>&1
+          if errorlevel 1 (type lab\raster\rc41\out\HOOK_WARP_STRESS.txt & exit /b 24)
+          type lab\raster\rc41\out\HOOK_WARP_STRESS.txt
+
       - name: Package RC41 evidence
         shell: powershell
         run: |
@@ -80,10 +95,11 @@ jobs:
           $o='lab/raster/rc41/out'
           $summary=@(
             'RC41_LAB_STATUS=PASS',
-            'STATIC_ARCHITECTURE=7/7 PASS',
+            'STATIC_ARCHITECTURE=11/11 PASS',
             (Get-Content "$o/MATH_STRESS.txt" -Raw).Trim(),
             (Get-Content "$o/FRAMING_ORACLE.txt" -Raw).Trim(),
-            (Get-Content "$o/WARP_TARGET_CLASSIFIER.txt" -Raw).Trim()
+            (Get-Content "$o/WARP_TARGET_CLASSIFIER.txt" -Raw).Trim(),
+            (Get-Content "$o/HOOK_WARP_STRESS.txt" -Raw).Trim()
           )
           $summary | Set-Content "$o/RC41_SUMMARY.txt" -Encoding ASCII
           Copy-Item 'lab/raster/rc41/STATIC_ARCHITECTURE.txt' "$o/STATIC_ARCHITECTURE.txt" -Force
