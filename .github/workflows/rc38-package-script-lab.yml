@@ -6,7 +6,7 @@ on:
       - build/rc38-borderless-authority-20260913
     paths:
       - .github/workflows/rc38-package-script-lab.yml
-      - lab/borderless/rc38/package_scripts/scripts_exact.zip.b64
+      - lab/borderless/rc38/package_scripts/scripts_exact.zip
   workflow_dispatch:
 
 permissions:
@@ -23,15 +23,11 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference='Stop'
-          $b64=((Get-Content 'lab/borderless/rc38/package_scripts/scripts_exact.zip.b64' -Raw) -replace '\s','').Trim()
-          switch ($b64.Length % 4) {
-            0 { }
-            2 { $b64 += '==' }
-            3 { $b64 += '=' }
-            default { throw ('Invalid base64 remainder: '+($b64.Length % 4)) }
-          }
-          [IO.File]::WriteAllBytes((Join-Path $PWD 'scripts.zip'),[Convert]::FromBase64String($b64))
-          Expand-Archive -LiteralPath scripts.zip -DestinationPath scripts -Force
+          $zip='lab/borderless/rc38/package_scripts/scripts_exact.zip'
+          if(-not(Test-Path -LiteralPath $zip -PathType Leaf)){throw 'Missing exact binary script fixture'}
+          $h=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($h -ne 'db2d63537d4950f54e6c1079008a0a4cb819e19eae38d53162cf72bf90b4ca4f'){throw ('Fixture SHA mismatch: '+$h)}
+          Expand-Archive -LiteralPath $zip -DestinationPath scripts -Force
           $names=(Get-ChildItem scripts\*.ps1 | Sort-Object Name | Select-Object -ExpandProperty Name)
           if(($names -join ',') -ne 'install.ps1,rollback.ps1,uninstall_overlay.ps1,verify.ps1'){throw ('Unexpected script set: '+($names -join ','))}
 
