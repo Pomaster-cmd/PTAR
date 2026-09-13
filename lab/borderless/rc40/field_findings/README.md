@@ -1,0 +1,1 @@
+RC40 hardware evidence is preserved here so future candidates do not repeat the disproven window-authority hypothesis. RC41+ must use a logical-native / physical-subraster contract and must pass a dedicated framing oracle before hardware delivery.
