@@ -28,9 +28,13 @@ jobs:
           if errorlevel 1 exit /b 1
           cl %CFLAGS% lab\borderless\ptar_borderless_event_parity.cpp /Fe:lab\borderless\out\event_parity.exe user32.lib %LFLAGS%
           if errorlevel 1 exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_user32_virtualization.cpp /Fe:lab\borderless\out\user32_virtualization.exe user32.lib %LFLAGS%
+          if errorlevel 1 exit /b 1
           cl %CFLAGS% lab\borderless\ptar_borderless_thread_affinity.cpp /Fe:lab\borderless\out\thread_affinity.exe user32.lib d3d11.lib dxgi.lib %LFLAGS%
           if errorlevel 1 exit /b 1
           cl %CFLAGS% lab\borderless\ptar_borderless_dpi_policy.cpp /Fe:lab\borderless\out\dpi_policy.exe user32.lib gdi32.lib shcore.lib %LFLAGS%
+          if errorlevel 1 exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_lifecycle_stress.cpp /Fe:lab\borderless\out\lifecycle_stress.exe user32.lib %LFLAGS%
           if errorlevel 1 exit /b 1
           cl %CFLAGS% lab\borderless\ptar_borderless_window_stress.cpp /Fe:lab\borderless\out\window_stress.exe user32.lib %LFLAGS%
           if errorlevel 1 exit /b 1
@@ -54,6 +58,10 @@ jobs:
         shell: cmd
         run: lab\borderless\out\event_parity.exe > lab\borderless\out\EVENT_PARITY.txt 2>&1
 
+      - name: USER32 capture tracking and GetMessagePos virtualization - 12k transitions
+        shell: cmd
+        run: lab\borderless\out\user32_virtualization.exe > lab\borderless\out\USER32_VIRTUALIZATION.txt 2>&1
+
       - name: UI-thread HWND affinity with worker-thread D3D - 2k presents each
         shell: cmd
         run: lab\borderless\out\thread_affinity.exe > lab\borderless\out\THREAD_AFFINITY.txt 2>&1
@@ -61,6 +69,10 @@ jobs:
       - name: Windows 8.1 DPI safety policy - 500k matrix probes
         shell: cmd
         run: lab\borderless\out\dpi_policy.exe > lab\borderless\out\DPI_POLICY.txt 2>&1
+
+      - name: Lifecycle z-order minimize and focus-return stress - 6k cycles
+        shell: cmd
+        run: lab\borderless\out\lifecycle_stress.exe > lab\borderless\out\LIFECYCLE_STRESS.txt 2>&1
 
       - name: Win32 takeover state stress - 20k hostile requests
         shell: cmd
@@ -78,7 +90,7 @@ jobs:
         if: always()
         shell: cmd
         run: |
-          for %%F in (GEOMETRY_STRESS.txt INPUT_STRESS.txt EVENT_PARITY.txt THREAD_AFFINITY.txt DPI_POLICY.txt WINDOW_STRESS.txt WARP_STRESS.txt OCCLUSION_FOCUS_STRESS.txt) do if exist lab\borderless\out\%%F (echo ==== %%F ==== & type lab\borderless\out\%%F)
+          for %%F in (GEOMETRY_STRESS.txt INPUT_STRESS.txt EVENT_PARITY.txt USER32_VIRTUALIZATION.txt THREAD_AFFINITY.txt DPI_POLICY.txt LIFECYCLE_STRESS.txt WINDOW_STRESS.txt WARP_STRESS.txt OCCLUSION_FOCUS_STRESS.txt) do if exist lab\borderless\out\%%F (echo ==== %%F ==== & type lab\borderless\out\%%F)
 
       - name: Upload lab reports
         if: always()
