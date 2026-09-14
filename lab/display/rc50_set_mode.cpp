@@ -4,7 +4,7 @@
 #include <cstdlib>
 
 int wmain(int argc,wchar_t** argv){
-    if(argc!=3){std::fwprintf(stderr,L"usage: rc50_set_mode WIDTH HEIGHT\n");return 2;}
+    if(argc!=3){fwprintf(stderr,L"usage: rc50_set_mode WIDTH HEIGHT\n");return 2;}
     const DWORD wantW=(DWORD)_wtoi(argv[1]),wantH=(DWORD)_wtoi(argv[2]);
     if(!wantW||!wantH)return 3;
     DEVMODEW chosen{};bool found=false;
