@@ -1,0 +1,93 @@
+name: RC50 Inherited RC42 Raster Gate
+
+on:
+  push:
+    branches: [lab/rc50-top-level-zorder-20260914]
+    paths:
+      - .github/workflows/rc50-inherited-rc42-raster-gate.yml
+      - lab/raster/rc41/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inherited-raster:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Static RC42 contract remains intact
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $h=Get-Content 'lab/raster/rc41/ptar_rc41_context_hooks.h' -Raw
+          $c=Get-Content 'lab/raster/rc41/ptar_rc41_context_hooks.cpp' -Raw
+          $w=Get-Content 'lab/raster/rc41/ptar_rc41_hook_warp_harness.cpp' -Raw
+          $checks=[ordered]@{
+            'requested raster cache'=($h.Contains('requestedViewports_') -and $h.Contains('requestedScissors_'))
+            'primary transition reconcile'=($c.Contains('reconcile_cached_raster_state(ctx,now)') -and $c.Contains('if(old!=now)'))
+            'unbound viewport preserved'=($c.Contains('viewportCallsUnbound_') -and $c.Contains('origViewports_(ctx,count,viewports)'))
+            'primary viewport mapped'=($c.Contains('mapped_viewport(self->contract_,viewports[i])'))
+            'command list recapture'=($c.Contains('capture_raster_state_from_context(ctx)') -and $c.Contains('hook_execute_command_list'))
+            'clearstate cache clear'=($c.Contains('clear_cached_raster_state()'))
+            'prebind regression present'=($w.Contains('prebind_reconcile=PASS') -and $w.Contains('unbind_restore=PASS'))
+            'no HWND policy in raster'=(-not $c.Contains('SetWindowPos(') -and -not $c.Contains('SetWindowLongPtr'))
+          }
+          foreach($k in $checks.Keys){if(-not $checks[$k]){throw "RC42 inherited contract FAIL: $k"};Write-Host "PASS $k"}
+          Write-Host 'RC50_INHERITED_RC42_STATIC=8/8 PASS'
+
+      - name: Build and run RC42 WARP + production host gates
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          if not exist lab\raster\rc41\rc50_gate mkdir lab\raster\rc41\rc50_gate
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\raster\rc41
+          cl %CFLAGS% lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc41\ptar_rc41_context_hooks.cpp lab\raster\rc41\ptar_rc41_hook_warp_harness.cpp /Fe:lab\raster\rc41\rc50_gate\hook_warp.exe d3d11.lib dxgi.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 11
+          cl %CFLAGS% lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc41\ptar_rc41_context_hooks.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_swapchain_warp_harness.cpp /Fe:lab\raster\rc41\rc50_gate\swapchain_warp.exe user32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 12
+          cl %CFLAGS% lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc41\ptar_rc41_context_hooks.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_resource_warp_harness.cpp /Fe:lab\raster\rc41\rc50_gate\resource_warp.exe user32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 13
+          cl %CFLAGS% /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc41\ptar_rc41_context_hooks.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fe:lab\raster\rc41\rc50_gate\ptar_rc42.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 14
+          copy /y lab\raster\rc41\rc50_gate\ptar_rc42.dll lab\raster\rc41\rc50_gate\ptar_rc41.dll >nul
+          cl %CFLAGS% lab\raster\rc41\ptar_rc41_prod_host.cpp /Fe:lab\raster\rc41\rc50_gate\prod_host.exe user32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 15
+          pushd lab\raster\rc41\rc50_gate
+          hook_warp.exe > HOOK_WARP.txt 2>&1 || (type HOOK_WARP.txt & popd & exit /b 21)
+          findstr /C:"RC42_HOOK_WARP=PASS" HOOK_WARP.txt >nul || (type HOOK_WARP.txt & popd & exit /b 22)
+          swapchain_warp.exe > SWAPCHAIN_WARP.txt 2>&1 || (type SWAPCHAIN_WARP.txt & popd & exit /b 23)
+          findstr /C:"RC41_SWAPCHAIN_WARP=PASS" SWAPCHAIN_WARP.txt >nul || (type SWAPCHAIN_WARP.txt & popd & exit /b 24)
+          if exist RC41_RESOURCE_WARP_RESULT.txt del /q RC41_RESOURCE_WARP_RESULT.txt
+          resource_warp.exe > RESOURCE_WARP_STDOUT.txt 2>&1 || (type RESOURCE_WARP_STDOUT.txt & popd & exit /b 25)
+          findstr /C:"RC41_RESOURCE_WARP=PASS" RC41_RESOURCE_WARP_RESULT.txt >nul || (type RC41_RESOURCE_WARP_RESULT.txt & popd & exit /b 26)
+          prod_host.exe > PROD_HOST.txt 2>&1 || (type PROD_HOST.txt & popd & exit /b 27)
+          findstr /C:"RC41_PROD_HOST=PASS" PROD_HOST.txt >nul || (type PROD_HOST.txt & popd & exit /b 28)
+          type HOOK_WARP.txt
+          type SWAPCHAIN_WARP.txt
+          type RC41_RESOURCE_WARP_RESULT.txt
+          type PROD_HOST.txt
+          popd
+
+      - name: Verify exact RC42 production sidecar hash and reproducibility
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o='lab/raster/rc41/rc50_gate'
+          $h=(Get-FileHash "$o/ptar_rc42.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($h -ne '7ffe7aa1b9afa42d5f22557cae29a4f65e17379c2a2f181f879427277839f1ca'){throw "RC42 sidecar drift $h"}
+          Copy-Item "$o/ptar_rc42.dll" "$o/ptar_rc42_first.dll" -Force
+          @(
+            'RC50_INHERITED_RC42_RASTER=PASS',
+            'HOOK_WARP=PASS',
+            'SWAPCHAIN_WARP=PASS',
+            'RESOURCE_WARP=PASS',
+            'PRODUCTION_HOST=PASS',
+            "RC42_SIDECAR_SHA256=$h"
+          ) | Set-Content "$o/RC50_RC42_SUMMARY.txt" -Encoding ASCII
+          Get-Content "$o/RC50_RC42_SUMMARY.txt"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_RC50_INHERITED_RC42_RASTER_GATE
+          path: |
+            lab/raster/rc41/rc50_gate/*.txt
+            lab/raster/rc41/rc50_gate/ptar_rc42.dll
+          retention-days: 7
