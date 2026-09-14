@@ -21,78 +21,42 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference='Stop'
-          $root='lab/raster/rc41/package_scripts'
-          $joined=''
-          foreach($name in @('part01.b64','part02.b64','part03.b64','part04.b64','part05.b64')){
-            $joined += (Get-Content -LiteralPath "$root/fixture_parts/$name" -Raw).Trim()
-          }
-          $zip="$root/rc41_exact.zip"
-          [IO.File]::WriteAllBytes($zip,[Convert]::FromBase64String($joined))
+          $root='lab/raster/rc41/package_scripts';$joined=''
+          foreach($name in @('part01.b64','part02.b64','part03.b64','part04.b64','part05.b64')){$joined += (Get-Content -LiteralPath "$root/fixture_parts/$name" -Raw).Trim()}
+          $zip="$root/rc41_exact.zip";[IO.File]::WriteAllBytes($zip,[Convert]::FromBase64String($joined))
           $h=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
           if($h -ne 'd12ac6a05f21477e720e909be37139545c033008ef7bfafddf518f418ca7c43d'){throw "RC41 fixture drift $h"}
           Expand-Archive $zip "$root/rc41_exact" -Force
-          Write-Host "RC41_FIXTURE=PASS $h"
 
       - name: Generate exact RC41B scripts and verify hashes
         shell: powershell
         run: |
           $ErrorActionPreference='Stop'
-          $src='lab/raster/rc41/package_scripts/rc41_exact'
-          $out='lab/raster/rc41b/package_scripts/out'
+          $src='lab/raster/rc41/package_scripts/rc41_exact';$out='lab/raster/rc41b/package_scripts/out'
           python lab/raster/rc41b/package_scripts/build_rc41b_scripts.py $src $out
           if($LASTEXITCODE -ne 0){throw 'RC41B transformer failed'}
           $expected=[ordered]@{
-            'install.ps1'='b5708dcacc6994cab8371764a30e15c05c537f929c37999bf829cfdfff4d6c02'
-            'verify.ps1'='43443826ff574a05e7aef3b9d85fb94509a56df3937156d464aec87c1dcbaebf'
-            'rollback.ps1'='82a0a3a764c46aa08c5969bd5ac076d1f65a1ea346c694d6675088b68e07d0d3'
-            'uninstall_overlay.ps1'='90f14c7249db1d37bc97068130d3536844d39a628968223b1c173d4ed058a259'
+            'install.ps1'='3b0a3a13a598cdb321faec7d394882bd4c0a4563fe57d65157f38db28a32dd5e'
+            'verify.ps1'='089a9a9155d7af3853fc216b4db2e0dbd4bdc660fc753fd22001be32f52f3734'
+            'rollback.ps1'='e57e89a14c828a8038296850dea8f1232fd2327efd6c62274be102b0310e04dc'
+            'uninstall_overlay.ps1'='75e3c263e8dddc262541e682b47ddaf632681159ce983f542a2b46d49dabf635'
             'collect_rc41.ps1'='e162b125175e549eb3e99b071757c5a3e4e490e8a983a59171b0c67ad4384b5f'
           }
-          foreach($name in $expected.Keys){
-            $h=(Get-FileHash "$out/$name" -Algorithm SHA256).Hash.ToLowerInvariant()
-            if($h -ne $expected[$name]){throw "$name hash mismatch $h"}
-            Write-Host "PASS HASH $name $h"
-          }
+          foreach($name in $expected.Keys){$h=(Get-FileHash "$out/$name" -Algorithm SHA256).Hash.ToLowerInvariant();if($h -ne $expected[$name]){throw "$name hash mismatch $h"};Write-Host "PASS HASH $name $h"}
 
       - name: Parse RC41B scripts with Windows PowerShell
         shell: powershell
         run: |
-          $ErrorActionPreference='Stop'
-          $root='lab/raster/rc41b/package_scripts/out'
-          foreach($name in @('install.ps1','verify.ps1','rollback.ps1','uninstall_overlay.ps1','collect_rc41.ps1')){
-            $tokens=$null;$errors=$null
-            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path "$root/$name"),[ref]$tokens,[ref]$errors)
-            if($errors.Count){$errors|ForEach-Object{Write-Host "PARSE_ERROR $name $($_.Message)"};throw "PowerShell parse failure $name"}
-            Write-Host "PASS PARSE $name"
-          }
+          $ErrorActionPreference='Stop';$root='lab/raster/rc41b/package_scripts/out'
+          foreach($name in @('install.ps1','verify.ps1','rollback.ps1','uninstall_overlay.ps1','collect_rc41.ps1')){$tokens=$null;$errors=$null;[void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path "$root/$name"),[ref]$tokens,[ref]$errors);if($errors.Count){$errors|ForEach-Object{Write-Host "PARSE_ERROR $name $($_.Message)"};throw "PowerShell parse failure $name"};Write-Host "PASS PARSE $name"}
 
       - name: Validate RC41B package safety contracts
         shell: powershell
         run: |
-          $ErrorActionPreference='Stop'
-          $root='lab/raster/rc41b/package_scripts/out'
-          $i=Get-Content "$root/install.ps1" -Raw
-          $v=Get-Content "$root/verify.ps1" -Raw
-          $r=Get-Content "$root/rollback.ps1" -Raw
-          $u=Get-Content "$root/uninstall_overlay.ps1" -Raw
-          $c=Get-Content "$root/collect_rc41.ps1" -Raw
-          $carrier='ed32aabe51a43c3ec0b8d1b7dbd363bd0ac49ff0d5d6e22b2b39f9f41b8cc6c8'
-          $rc41='15a8f276816f3123a79a2d8e6932b6bf42b3826288ea5f016c124afec99fbbcf'
-          $checks=[ordered]@{
-            'install exact RC41B carrier'=$i.Contains($carrier)
-            'verify exact RC41B carrier'=$v.Contains($carrier)
-            'install exact unchanged RC41 sidecar'=$i.Contains($rc41)
-            'rollback recognizes RC41B carrier'=$r.Contains($carrier)
-            'uninstall recognizes RC41B carrier'=$u.Contains($carrier)
-            'collector captures bootstrap log'=$c.Contains('ptar_rc41_bootstrap.log')
-            'collector emits RC41B zip'=$c.Contains('PTAR_RC41B_RESULTS_')
-            'unknown runtime refusal retained'=$i.Contains('DLL locale inconnue')
-            'unknown carrier refusal retained'=$i.Contains('Sidecar borderless local inconnu')
-            'unknown raster refusal retained'=$i.Contains('Sidecar RC41 local inconnu')
-            'transaction rollback retained'=$i.Contains('Installation transaction annulee')
-            'canonical 107-file verification retained'=$v.Contains('BASE GITHUB 107/107 fichiers byte-identiques')
-            'no GUI resolution force'=(-not $i.Contains('-Name AffectGuiResolution -Type DWord -Value 1'))
-          }
+          $ErrorActionPreference='Stop';$root='lab/raster/rc41b/package_scripts/out'
+          $i=Get-Content "$root/install.ps1" -Raw;$v=Get-Content "$root/verify.ps1" -Raw;$r=Get-Content "$root/rollback.ps1" -Raw;$u=Get-Content "$root/uninstall_overlay.ps1" -Raw;$c=Get-Content "$root/collect_rc41.ps1" -Raw
+          $carrier='3fca95b75a1dbf41434dd45858300e9d64312a2138f2e0799c8ab1bae3ee3beb';$rc41='15a8f276816f3123a79a2d8e6932b6bf42b3826288ea5f016c124afec99fbbcf'
+          $checks=[ordered]@{'install exact RC41B carrier'=$i.Contains($carrier);'verify exact RC41B carrier'=$v.Contains($carrier);'install exact unchanged RC41 sidecar'=$i.Contains($rc41);'rollback recognizes RC41B carrier'=$r.Contains($carrier);'uninstall recognizes RC41B carrier'=$u.Contains($carrier);'collector captures bootstrap log'=$c.Contains('ptar_rc41_bootstrap.log');'collector emits RC41B zip'=$c.Contains('PTAR_RC41B_RESULTS_');'unknown runtime refusal retained'=$i.Contains('DLL locale inconnue');'unknown carrier refusal retained'=$i.Contains('Sidecar borderless local inconnu');'unknown raster refusal retained'=$i.Contains('Sidecar RC41 local inconnu');'transaction rollback retained'=$i.Contains('Installation transaction annulee');'canonical 107-file verification retained'=$v.Contains('BASE GITHUB 107/107 fichiers byte-identiques');'no GUI resolution force'=(-not $i.Contains('-Name AffectGuiResolution -Type DWord -Value 1'))}
           foreach($k in $checks.Keys){if(-not $checks[$k]){throw "CONTRACT FAIL $k"};Write-Host "PASS $k"}
           'RC41B_PACKAGE_SCRIPTS=13/13 PASS' | Set-Content RC41B_PACKAGE_SCRIPT_CONTRACT.txt -Encoding ASCII
 
