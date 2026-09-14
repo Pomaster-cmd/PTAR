@@ -1,0 +1,117 @@
+name: RC51 Presenter Sync Stress
+
+on:
+  push:
+    branches: [lab/rc51-presenter-swapchain-contract-20260914]
+    paths:
+      - lab/presenter/rc51/ptar_borderless_rc51_prod.cpp
+      - lab/presenter/rc51/build_rc51_candidate.py
+      - lab/presenter/rc51/ptar_rc51_auto_stress_host.cpp
+      - .github/workflows/rc51-presenter-sync-stress.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-stress:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate guarded RC51 candidate
+        shell: cmd
+        run: |
+          python lab\presenter\rc51\build_rc51_candidate.py lab\presenter\rc51\ptar_borderless_rc51_generated.cpp || exit /b 10
+          findstr /C:"RC51_PRESENTER_RESYNC_PASS" lab\presenter\rc51\ptar_borderless_rc51_generated.cpp >nul || exit /b 11
+          findstr /C:"RC51_PRESENTER_PRESENT_HOOK_INSTALLED" lab\presenter\rc51\ptar_borderless_rc51_generated.cpp >nul || exit /b 12
+          findstr /C:"SetParent(" lab\presenter\rc51\ptar_borderless_rc51_generated.cpp >nul && exit /b 13 || ver >nul
+          findstr /C:"GWLP_HWNDPARENT" lab\presenter\rc51\ptar_borderless_rc51_generated.cpp >nul && exit /b 14 || ver >nul
+          echo RC51_GENERATED_STATIC=PASS
+
+      - name: Reconstruct exact P1U46 runtime and adapt runner geometry
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';Add-Type -AssemblyName System.Windows.Forms
+          $o='lab/presenter/rc51/stress';New-Item -ItemType Directory -Force $o | Out-Null
+          $base=(Get-FileHash payload/d3d11.dll -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($base -ne '864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c'){throw "canonical runtime drift $base"}
+          python lab/borderless/rc48/rebuild_exact_field_runtime.py payload/d3d11.dll "$o/d3d11.dll"
+          if($LASTEXITCODE -ne 0){throw 'runtime reconstruction failed'}
+          $runtime=(Get-FileHash "$o/d3d11.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($runtime -ne '6f1686992bef971c9995df9f0cb91b93c6946988e12a837e5de956df37c9082b'){throw "field runtime mismatch $runtime"}
+          Copy-Item "$o/d3d11.dll" "$o/win81_nis_dx11_x64.dll" -Force
+          $b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds;$ow=[int]$b.Width;$oh=[int]$b.Height;$rw=[int][math]::Floor($ow*2/3);$rh=[int][math]::Floor($oh*2/3)
+          $ini=Get-Content payload/win81_nis.ini -Raw
+          $ini=[regex]::Replace($ini,'(?m)^OutputWidth=.*$',"OutputWidth=$ow")
+          $ini=[regex]::Replace($ini,'(?m)^OutputHeight=.*$',"OutputHeight=$oh")
+          $ini=[regex]::Replace($ini,'(?m)^RenderWidth=.*$',"RenderWidth=$rw")
+          $ini=[regex]::Replace($ini,'(?m)^RenderHeight=.*$',"RenderHeight=$rh")
+          Set-Content "$o/win81_nis.ini" $ini -Encoding ASCII
+          "OUTPUT=${ow}x${oh} RENDER=${rw}x${rh} RUNTIME=$runtime" | Set-Content 'lab/presenter/rc51/STRESS_GEOMETRY.txt' -Encoding ASCII
+          Get-Content 'lab/presenter/rc51/STRESS_GEOMETRY.txt'
+
+      - name: Build RC51 twice RC42 and autonomous stress host
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603
+          cl %CFLAGS% /LD lab\presenter\rc51\ptar_borderless_rc51_generated.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fe:lab\presenter\rc51\stress\ptar_borderless.dll user32.lib advapi32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 20
+          cl %CFLAGS% /LD lab\presenter\rc51\ptar_borderless_rc51_generated.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fe:lab\presenter\rc51\stress\ptar_borderless_repro.dll user32.lib advapi32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 21
+          cl %CFLAGS% /I lab\raster\rc41 /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc41\ptar_rc41_context_hooks.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fe:lab\presenter\rc51\stress\ptar_rc42.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 22
+          copy /y lab\presenter\rc51\stress\ptar_rc42.dll lab\presenter\rc51\stress\ptar_rc41.dll >nul
+          cl %CFLAGS% lab\presenter\rc51\ptar_rc51_auto_stress_host.cpp /Fe:lab\presenter\rc51\stress\Warhammer.exe user32.lib advapi32.lib gdi32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:WINDOWS,6.03 || exit /b 23
+
+      - name: Verify exact inherited hashes and RC51 reproducibility
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o='lab/presenter/rc51/stress'
+          $runtime=(Get-FileHash "$o/d3d11.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $raster=(Get-FileHash "$o/ptar_rc42.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $a=(Get-FileHash "$o/ptar_borderless.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $b=(Get-FileHash "$o/ptar_borderless_repro.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($runtime -ne '6f1686992bef971c9995df9f0cb91b93c6946988e12a837e5de956df37c9082b'){throw "runtime drift $runtime"}
+          if($raster -ne '7ffe7aa1b9afa42d5f22557cae29a4f65e17379c2a2f181f879427277839f1ca'){throw "RC42 drift $raster"}
+          if($a -ne $b){throw "RC51 /Brepro mismatch $a $b"}
+          @("RUNTIME=$runtime","RASTER=$raster","RC51=$a","RC51_REPRO=$b","REPRODUCIBLE=PASS") | Set-Content 'lab/presenter/rc51/STRESS_COMPONENTS.txt' -Encoding ASCII
+          Get-Content 'lab/presenter/rc51/STRESS_COMPONENTS.txt'
+
+      - name: Run autonomous mode resize minimize stress
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o=(Resolve-Path 'lab/presenter/rc51/stress').Path
+          $p=Start-Process -FilePath "$o/Warhammer.exe" -WorkingDirectory $o -PassThru
+          if(-not $p.WaitForExit(300000)){Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue;throw 'RC51 stress timeout'}
+          $rc=$p.ExitCode;Write-Host "RC51_STRESS_EXIT=$rc"
+          $ev=Join-Path $o 'RC51_AUTO_STRESS.txt';if(Test-Path $ev){$txt=[IO.File]::ReadAllText($ev,[Text.Encoding]::Unicode);Write-Host $txt}else{throw 'RC51 stress evidence missing'}
+          foreach($n in @('win81_nis.log','ptar_borderless_rc38.log','ptar_rc41.log','ptar_rc41_bootstrap.log')){$f=Join-Path $o $n;if(Test-Path $f){Write-Host "===== $n tail =====";Get-Content $f -Tail 200}}
+          if($rc -ne 0){throw "RC51 stress host failed rc=$rc"}
+          foreach($marker in @('MODE_CYCLES=60 PASS','WINDOW_RESIZE_STRESS=PASS','MINIMIZE_RESTORE_PIXELS=PASS','RC51_AUTO_STRESS=PASS')){if(-not $txt.Contains($marker)){throw "missing $marker"}}
+          $side=Join-Path $o 'ptar_borderless_rc38.log'
+          if(-not (Test-Path $side)){throw 'RC51 controller log missing'}
+          $st=Get-Content $side -Raw
+          if($st.Contains('FAIL RC51 presenter resync')){throw 'RC51 resync failure logged'}
+          if(-not $st.Contains('RC51_PRESENTER_PRESENT_HOOK_INSTALLED')){throw 'RC51 present hook never installed'}
+          if(-not $st.Contains('RC51_PRESENTER_RESYNC_PASS')){throw 'RC51 resync path never exercised'}
+          $runtimeLog=Join-Path $o 'win81_nis.log'
+          if(Test-Path $runtimeLog){
+            $bad=(Select-String -Path $runtimeLog -SimpleMatch 'natural game ResizeBuffers failed').Count
+            if($bad -ne 0){throw "natural game ResizeBuffers failures=$bad"}
+          }
+          Write-Host 'RC51_INTEGRATED_STRESS=PASS'
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PTAR_RC51_PRESENTER_SYNC_STRESS
+          path: |
+            lab/presenter/rc51/STRESS_GEOMETRY.txt
+            lab/presenter/rc51/STRESS_COMPONENTS.txt
+            lab/presenter/rc51/stress/*.txt
+            lab/presenter/rc51/stress/*.log
+            lab/presenter/rc51/stress/ptar_borderless.dll
+            lab/presenter/rc51/ptar_borderless_rc51_generated.cpp
+          if-no-files-found: warn
+          retention-days: 7
