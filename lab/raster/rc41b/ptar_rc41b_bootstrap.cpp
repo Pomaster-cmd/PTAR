@@ -34,6 +34,9 @@ static void write_log(const wchar_t* logPath,const char* text) noexcept {
 static void log_u32(const wchar_t* logPath,const char* tag,DWORD a,DWORD b=0,DWORD c=0,DWORD d=0) noexcept {
     char x[768]{};wsprintfA(x,"%s %lu %lu %lu %lu",tag,(unsigned long)a,(unsigned long)b,(unsigned long)c,(unsigned long)d);write_log(logPath,x);
 }
+static void log_i32_u32(const wchar_t* logPath,const char* tag,int a,DWORD b) noexcept {
+    char x[768]{};wsprintfA(x,"%s rc=%d gle=%lu",tag,a,(unsigned long)b);write_log(logPath,x);
+}
 static void log_ptr(const wchar_t* logPath,const char* tag,const void* p,DWORD err=0) noexcept {
     char x[768]{};wsprintfA(x,"%s ptr=0x%p gle=%lu",tag,p,(unsigned long)err);write_log(logPath,x);
 }
@@ -65,25 +68,30 @@ static bool query_and_log(const wchar_t* logPath,QueryFn query,RC41BState& state
 }
 
 static DWORD WINAPI bootstrap_worker(LPVOID) noexcept {
+    wchar_t gamePath[MAX_PATH]{};
     wchar_t ownerPath[MAX_PATH]{};
     wchar_t dllPath[MAX_PATH]{};
     wchar_t logPath[MAX_PATH]{};
+    if(!GetModuleFileNameW(nullptr,gamePath,MAX_PATH))return 99;
     if(!g_owner||!GetModuleFileNameW(g_owner,ownerPath,MAX_PATH))return 100;
-    if(!RC41B_BuildSiblingPath(ownerPath,L"ptar_rc41.dll",dllPath,MAX_PATH))return 101;
-    if(!RC41B_BuildSiblingPath(ownerPath,L"ptar_rc41_bootstrap.log",logPath,MAX_PATH))return 102;
+    if(!RC41B_BuildSiblingPath(gamePath,L"ptar_rc41.dll",dllPath,MAX_PATH))return 101;
+    if(!RC41B_BuildSiblingPath(gamePath,L"ptar_rc41_bootstrap.log",logPath,MAX_PATH))return 102;
+    write_log(logPath,"RC41B_WORKER_STARTED");
+    log_wide(logPath,"GAME_EXE",gamePath);
+    log_wide(logPath,"BOOTSTRAP_OWNER",ownerPath);
     return (DWORD)RC41B_RunLoaderWithPathsForTest(g_runtime,dllPath,logPath,20,250);
 }
 }
 
-bool RC41B_BuildSiblingPath(const wchar_t* modulePath,const wchar_t* leafName,wchar_t* out,size_t outCount) noexcept {
+bool RC41B_BuildSiblingPath(const wchar_t* modulePath,const wchar_t* leafName,wchar_t* out,std::size_t outCount) noexcept {
     if(!modulePath||!leafName||!out||outCount<4)return false;
-    const size_t n=wcslen(modulePath),leaf=wcslen(leafName);
+    const std::size_t n=wcslen(modulePath),leaf=wcslen(leafName);
     if(n+1>outCount)return false;
     const wchar_t* slash=wcsrchr(modulePath,L'\\');
     const wchar_t* slash2=wcsrchr(modulePath,L'/');
     if(!slash || (slash2&&slash2>slash))slash=slash2;
     if(!slash)return false;
-    const size_t prefix=(size_t)(slash-modulePath)+1;
+    const std::size_t prefix=(std::size_t)(slash-modulePath)+1;
     if(prefix+leaf+1>outCount)return false;
     wmemcpy(out,modulePath,prefix);wmemcpy(out+prefix,leafName,leaf+1);return true;
 }
@@ -101,7 +109,7 @@ int RC41B_RunLoaderWithPathsForTest(HMODULE runtimeModule,const wchar_t* dllPath
     log_ptr(logPath,"RUNTIME_MODULE",runtimeModule,0);
     log_wide(logPath,"RC41_DLL_ABSOLUTE",dllPath);
     const DWORD attr=g_hooks.getFileAttributesW?g_hooks.getFileAttributesW(dllPath):INVALID_FILE_ATTRIBUTES;
-    log_u32(logPath,"RC41_DLL_INITIAL_ATTR",attr,attr==INVALID_FILE_ATTRIBUTES?1u:0u);
+    log_u32(logPath,"RC41_DLL_INITIAL_ATTR",attr,attr==INVALID_FILE_ATTRIBUTES?0u:1u);
 
     HMODULE sidecar=nullptr;
     AutoStartFn autoStart=nullptr;
@@ -135,7 +143,7 @@ int RC41B_RunLoaderWithPathsForTest(HMODULE runtimeModule,const wchar_t* dllPath
         SetLastError(ERROR_SUCCESS);
         const int autoRc=autoStart(runtimeModule);
         const DWORD autoGle=g_hooks.getLastError?g_hooks.getLastError():GetLastError();
-        log_u32(logPath,"PTAR_RC41_AutoStart rc/gle",(DWORD)autoRc,autoGle,0,0);
+        log_i32_u32(logPath,"PTAR_RC41_AutoStart",autoRc,autoGle);
         RC41BState state{};
         if(query_and_log(logPath,query,state)){
             write_log(logPath,"RC41B_ACTIVATION_PROVEN logical=1920x1080 physical=1280x720");
@@ -151,7 +159,21 @@ void RC41B_StartBootstrap(HMODULE ownerModule,HMODULE runtimeModule) noexcept {
     if(!ownerModule||!runtimeModule)return;
     if(InterlockedCompareExchange(&g_workerStarted,1,0)!=0)return;
     g_owner=ownerModule;g_runtime=runtimeModule;
+
+    wchar_t ownerPath[MAX_PATH]{};
+    wchar_t dispatchLog[MAX_PATH]{};
+    if(GetModuleFileNameW(ownerModule,ownerPath,MAX_PATH) &&
+       RC41B_BuildSiblingPath(ownerPath,L"ptar_rc41_bootstrap.log",dispatchLog,MAX_PATH)){
+        write_log(dispatchLog,"RC41B_DISPATCH_AFTER_RC40_ACTIVE");
+    }
+
+    SetLastError(ERROR_SUCCESS);
     HANDLE th=CreateThread(nullptr,0,bootstrap_worker,nullptr,0,nullptr);
-    if(!th){InterlockedExchange(&g_workerStarted,0);return;}
+    if(!th){
+        const DWORD gle=GetLastError();
+        if(dispatchLog[0])log_u32(dispatchLog,"RC41B_CREATE_THREAD_FAILED",gle,0,0,0);
+        InterlockedExchange(&g_workerStarted,0);
+        return;
+    }
     CloseHandle(th);
 }
