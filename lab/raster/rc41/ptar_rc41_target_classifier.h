@@ -16,7 +16,8 @@ public:
     bool set_primary_resource(ID3D11Resource* resource) noexcept;
     void clear_primary() noexcept;
     bool is_primary(ID3D11RenderTargetView* rtv) const noexcept;
-    bool any_primary(UINT count, ID3D11RenderTargetView* const* rtvs) const noexcept;
+    bool is_primary(ID3D11DepthStencilView* dsv) const noexcept;
+    bool any_primary(UINT count, ID3D11RenderTargetView* const* rtvs,ID3D11DepthStencilView* dsv=nullptr) const noexcept;
 
 private:
     mutable SRWLOCK lock_;
