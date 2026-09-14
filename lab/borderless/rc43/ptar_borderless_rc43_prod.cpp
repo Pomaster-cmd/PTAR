@@ -21,6 +21,10 @@ struct PTARBorderlessModeState {
 
 static void rc43_starting_clear() noexcept { InterlockedExchange(&g_rc43Starting,0); }
 
+static void rc43_log_style(const char* tag,LONG_PTR oldStyle,LONG_PTR newStyle) noexcept {
+    logfmt(tag,oldStyle,newStyle,InterlockedCompareExchange(&g_active,0,0),InterlockedCompareExchange(&g_rc43Installed,0,0));
+}
+
 static void rc43_hide_presenter() noexcept {
     if(!IsWindow(g_presenter)) return;
     InterlockedExchange(&g_internal,1);
@@ -49,8 +53,12 @@ static void rc43_enter_borderless_pre() noexcept {
 
 static LRESULT CALLBACK RC43GameProc(HWND h,UINT m,WPARAM w,LPARAM l){
     const bool internal=InterlockedCompareExchange(&g_internal,0,0)!=0;
+
+    // The requested style is visible here before the inherited RC40 GameProc can
+    // clamp it back to WS_POPUP. This is therefore the authoritative mode switch.
     if(!internal && m==WM_STYLECHANGING && l && w==GWL_STYLE){
         STYLESTRUCT* ss=reinterpret_cast<STYLESTRUCT*>(l);
+        rc43_log_style("RC43_STYLE_CHANGING",ss->styleOld,ss->styleNew);
         const ptar_rc43::RequestedWindowMode requested=ptar_rc43::classify_style(ss->styleNew);
         if(requested==ptar_rc43::RequestedWindowMode::Windowed && InterlockedCompareExchange(&g_active,0,0)){
             rc43_enter_windowed();
@@ -58,11 +66,39 @@ static LRESULT CALLBACK RC43GameProc(HWND h,UINT m,WPARAM w,LPARAM l){
         }
         if(requested==ptar_rc43::RequestedWindowMode::Borderless && !InterlockedCompareExchange(&g_active,0,0)){
             rc43_enter_borderless_pre();
+            return GameProc(h,m,w,l);
+        }
+    }
+
+    // Defensive second observation point. Some engines/frameworks complete a style
+    // mutation through a path where the useful intent is only stable at STYLECHANGED.
+    if(!internal && m==WM_STYLECHANGED && w==GWL_STYLE){
+        const LONG_PTR now=GetWindowLongPtrW(h,GWL_STYLE);
+        rc43_log_style("RC43_STYLE_CHANGED",now,now);
+        const ptar_rc43::RequestedWindowMode requested=ptar_rc43::classify_style(now);
+        if(requested==ptar_rc43::RequestedWindowMode::Windowed){
+            if(InterlockedCompareExchange(&g_active,0,0)) rc43_enter_windowed();
+            return call_next(g_gameNext,h,m,w,l);
+        }
+        if(requested==ptar_rc43::RequestedWindowMode::Borderless){
+            if(!InterlockedCompareExchange(&g_active,0,0)) rc43_enter_borderless_pre();
             const LRESULT r=GameProc(h,m,w,l);
             enforce_geometry();
             return r;
         }
     }
+
+    // If a framework mutates style and geometry as one transaction, WINDOWPOSCHANGING
+    // is a final safe fallback for borderless re-entry after the new style is committed.
+    if(!internal && !InterlockedCompareExchange(&g_active,0,0) && m==WM_WINDOWPOSCHANGING){
+        const LONG_PTR now=GetWindowLongPtrW(h,GWL_STYLE);
+        if(ptar_rc43::is_borderless_request(now)){
+            rc43_log_style("RC43_BORDERLESS_REENTRY_WINDOWPOS",now,now);
+            rc43_enter_borderless_pre();
+            return GameProc(h,m,w,l);
+        }
+    }
+
     if(InterlockedCompareExchange(&g_active,0,0)) return GameProc(h,m,w,l);
     return call_next(g_gameNext,h,m,w,l);
 }
