@@ -20,6 +20,7 @@ struct FakeState {
     UINT baseDescCalls=0,derivedDescCalls=0,desc1Calls=0;
 };
 
+static int fail(int rc){std::cerr<<"RC41_DUAL_INTERFACE=FAIL rc="<<rc<<"\n";return rc;}
 static RawIface* raw(void* self){return reinterpret_cast<RawIface*>(self);}
 static HRESULT STDMETHODCALLTYPE fq(void* self,REFIID iid,void** out){
     if(!out)return E_POINTER;*out=nullptr;RawIface* r=raw(self);FakeState* s=r->state;
@@ -55,24 +56,25 @@ int main(){
     auto* base=reinterpret_cast<IDXGISwapChain*>(&s.base);
     auto* derived=reinterpret_cast<IDXGISwapChain1*>(&s.derived);
     void** baseBefore=s.base.vtable;void** derivedBefore=s.derived.vtable;
-    HMODULE game=GetModuleHandleW(nullptr),runtime=GetModuleHandleW(L"kernel32.dll"),sidecar=GetModuleHandleW(L"user32.dll");
+    HMODULE game=GetModuleHandleW(nullptr),runtime=GetModuleHandleW(L"kernel32.dll"),sidecar=GetModuleHandleW(L"ntdll.dll");
     SwapchainHooks hooks;
-    if(!hooks.configure(Contract{{1920,1080},{1280,720}},game,runtime,sidecar))return 10;
-    if(!hooks.install(base)||!hooks.installed()||!hooks.distinct_interfaces())return 11;
-    if(s.base.vtable==baseBefore||s.derived.vtable==derivedBefore)return 12;
+    if(!game||!runtime||!sidecar)return fail(9);
+    if(!hooks.configure(Contract{{1920,1080},{1280,720}},game,runtime,sidecar))return fail(10);
+    if(!hooks.install(base)||!hooks.installed()||!hooks.distinct_interfaces())return fail(11);
+    if(s.base.vtable==baseBefore||s.derived.vtable==derivedBefore)return fail(12);
 
-    DXGI_SWAP_CHAIN_DESC bd{};if(FAILED(base->GetDesc(&bd))||bd.BufferDesc.Width!=1920||bd.BufferDesc.Height!=1080||s.baseDescCalls!=1)return 13;
-    DXGI_SWAP_CHAIN_DESC dd{};if(FAILED(derived->GetDesc(&dd))||dd.BufferDesc.Width!=1920||dd.BufferDesc.Height!=1080||s.derivedDescCalls!=1)return 14;
-    DXGI_SWAP_CHAIN_DESC1 d1{};if(FAILED(derived->GetDesc1(&d1))||d1.Width!=1920||d1.Height!=1080||s.desc1Calls!=1)return 15;
-    if(FAILED(base->ResizeBuffers(2,1920,1080,DXGI_FORMAT_UNKNOWN,0))||s.baseResizeW!=1280||s.baseResizeH!=720)return 16;
-    if(FAILED(derived->ResizeBuffers(2,0,0,DXGI_FORMAT_UNKNOWN,0))||s.derivedResizeW!=1280||s.derivedResizeH!=720)return 17;
+    DXGI_SWAP_CHAIN_DESC bd{};if(FAILED(base->GetDesc(&bd))||bd.BufferDesc.Width!=1920||bd.BufferDesc.Height!=1080||s.baseDescCalls!=1)return fail(13);
+    DXGI_SWAP_CHAIN_DESC dd{};if(FAILED(derived->GetDesc(&dd))||dd.BufferDesc.Width!=1920||dd.BufferDesc.Height!=1080||s.derivedDescCalls!=1)return fail(14);
+    DXGI_SWAP_CHAIN_DESC1 d1{};if(FAILED(derived->GetDesc1(&d1))||d1.Width!=1920||d1.Height!=1080||s.desc1Calls!=1)return fail(15);
+    if(FAILED(base->ResizeBuffers(2,1920,1080,DXGI_FORMAT_UNKNOWN,0))||s.baseResizeW!=1280||s.baseResizeH!=720)return fail(16);
+    if(FAILED(derived->ResizeBuffers(2,0,0,DXGI_FORMAT_UNKNOWN,0))||s.derivedResizeW!=1280||s.derivedResizeH!=720)return fail(17);
 
-    DXGI_SWAP_CHAIN_DESC physical{};if(FAILED(hooks.physical_desc(&physical))||physical.BufferDesc.Width!=1280||physical.BufferDesc.Height!=720)return 18;
-    DXGI_SWAP_CHAIN_DESC1 physical1{};if(FAILED(hooks.physical_desc1(&physical1))||physical1.Width!=1280||physical1.Height!=720)return 19;
-    SwapchainHookStats st=hooks.stats();if(st.getDescVirtualized!=2||st.getDesc1Virtualized!=1||st.resizeRemapped!=2||st.distinctInterfaceInstalls!=1)return 20;
+    DXGI_SWAP_CHAIN_DESC physical{};if(FAILED(hooks.physical_desc(&physical))||physical.BufferDesc.Width!=1280||physical.BufferDesc.Height!=720)return fail(18);
+    DXGI_SWAP_CHAIN_DESC1 physical1{};if(FAILED(hooks.physical_desc1(&physical1))||physical1.Width!=1280||physical1.Height!=720)return fail(19);
+    SwapchainHookStats st=hooks.stats();if(st.getDescVirtualized!=2||st.getDesc1Virtualized!=1||st.resizeRemapped!=2||st.distinctInterfaceInstalls!=1)return fail(20);
 
-    hooks.uninstall();if(hooks.installed()||s.base.vtable!=baseBefore||s.derived.vtable!=derivedBefore)return 21;
-    DXGI_SWAP_CHAIN_DESC restored{};if(FAILED(base->GetDesc(&restored))||restored.BufferDesc.Width!=1280||restored.BufferDesc.Height!=720)return 22;
+    hooks.uninstall();if(hooks.installed()||s.base.vtable!=baseBefore||s.derived.vtable!=derivedBefore)return fail(21);
+    DXGI_SWAP_CHAIN_DESC restored{};if(FAILED(base->GetDesc(&restored))||restored.BufferDesc.Width!=1280||restored.BufferDesc.Height!=720)return fail(22);
     std::cout<<"RC41_DUAL_INTERFACE=PASS base_ptr_distinct=1 base_getdesc=PASS derived_getdesc=PASS getdesc1=PASS resize_base=1280x720 resize_derived=1280x720 physical_bypass=PASS restore_both=PASS refs="<<s.refs<<"\n";
     return 0;
 }
