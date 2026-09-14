@@ -1,0 +1,86 @@
+name: RC41 Production Sidecar Lab
+
+on:
+  push:
+    branches:
+      - build/rc41-logical-native-subraster-20260913
+    paths:
+      - lab/raster/rc41/ptar_rc41_contract.h
+      - lab/raster/rc41/ptar_rc41_target_classifier.*
+      - lab/raster/rc41/ptar_rc41_context_hooks.*
+      - lab/raster/rc41/ptar_rc41_swapchain_policy.*
+      - lab/raster/rc41/ptar_rc41_swapchain_hooks.*
+      - lab/raster/rc41/ptar_rc41_prod.cpp
+      - lab/raster/rc41/ptar_rc41_prod_host.cpp
+      - .github/workflows/rc41-production-sidecar.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-rc41-production:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build reproducible Win8.1 RC41 sidecar and host
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          if not exist lab\raster\rc41\prod_out mkdir lab\raster\rc41\prod_out
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\raster\rc41
+          cl %CFLAGS% /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc41\ptar_rc41_context_hooks.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fe:lab\raster\rc41\prod_out\ptar_rc41.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03
+          if errorlevel 1 exit /b 11
+          copy /y lab\raster\rc41\prod_out\ptar_rc41.dll lab\raster\rc41\prod_out\ptar_rc41_first.dll >nul
+          cl %CFLAGS% lab\raster\rc41\ptar_rc41_prod_host.cpp /Fe:lab\raster\rc41\prod_out\prod_host.exe user32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:CONSOLE,6.03
+          if errorlevel 1 exit /b 12
+          dumpbin /exports lab\raster\rc41\prod_out\ptar_rc41.dll > lab\raster\rc41\prod_out\EXPORTS.txt
+          dumpbin /imports lab\raster\rc41\prod_out\ptar_rc41.dll > lab\raster\rc41\prod_out\IMPORTS.txt
+          dumpbin /headers lab\raster\rc41\prod_out\ptar_rc41.dll > lab\raster\rc41\prod_out\HEADERS.txt
+          findstr /C:"PTAR_RC41_AutoStart" lab\raster\rc41\prod_out\EXPORTS.txt >nul || exit /b 21
+          findstr /C:"PTAR_RC41_Attach" lab\raster\rc41\prod_out\EXPORTS.txt >nul || exit /b 22
+          findstr /C:"PTAR_RC41_Query" lab\raster\rc41\prod_out\EXPORTS.txt >nul || exit /b 23
+          findstr /C:"PTAR_RC41_Detach" lab\raster\rc41\prod_out\EXPORTS.txt >nul || exit /b 24
+          findstr /C:"subsystem version 6.03" lab\raster\rc41\prod_out\HEADERS.txt >nul || exit /b 25
+
+      - name: Verify same-target reproducibility
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\raster\rc41
+          cl %CFLAGS% /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc41\ptar_rc41_context_hooks.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fe:lab\raster\rc41\prod_out\ptar_rc41.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03
+          if errorlevel 1 exit /b 31
+          fc /b lab\raster\rc41\prod_out\ptar_rc41_first.dll lab\raster\rc41\prod_out\ptar_rc41.dll >nul
+          if errorlevel 1 exit /b 32
+          echo RC41_PRODUCTION_SAME_TARGET_REPRODUCIBILITY=PASS
+
+      - name: Run production-sidecar WARP host
+        shell: cmd
+        run: |
+          pushd lab\raster\rc41\prod_out
+          prod_host.exe > PROD_HOST.txt 2>&1
+          if errorlevel 1 (type PROD_HOST.txt & popd & exit /b 41)
+          type PROD_HOST.txt
+          popd
+
+      - name: Package production evidence
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $o='lab/raster/rc41/prod_out'
+          $hash=(Get-FileHash "$o/ptar_rc41.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $size=(Get-Item "$o/ptar_rc41.dll").Length
+          @("RC41_PRODUCTION_SIDECAR=PASS","SHA256=$hash","SIZE=$size",(Get-Content "$o/PROD_HOST.txt" -Raw).Trim()) | Set-Content "$o/PROD_SUMMARY.txt" -Encoding ASCII
+          Write-Host "RC41_PROD_SHA256=$hash"
+          Write-Host "RC41_PROD_SIZE=$size"
+          Compress-Archive -Path "$o/ptar_rc41.dll","$o/EXPORTS.txt","$o/IMPORTS.txt","$o/HEADERS.txt","$o/PROD_HOST.txt","$o/PROD_SUMMARY.txt" -DestinationPath RC41_PRODUCTION_SIDECAR_EVIDENCE.zip -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_RC41_PRODUCTION_SIDECAR
+          path: RC41_PRODUCTION_SIDECAR_EVIDENCE.zip
+          if-no-files-found: error
+          retention-days: 7
