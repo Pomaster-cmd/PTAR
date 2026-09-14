@@ -1,0 +1,22 @@
+RC53 GUI SCALE RATIONALE
+
+Field evidence from PTAR_RC52_RESULTS_20260914_195909 + screenshot:
+- RC52 raster sidecar active: fbc5373ac008f6dadf9d9bf4a66772062693d0af744d514cc8f99fb9aa08b52d
+- RC51 carrier active: 59e699536998054ae38cc5a30e03375c9cd206220667debe87070962609dd26c
+- RC41 contract active: logical 1920x1080 / physical 1280x720
+- RC51 presenter resync PASS to 1280x720
+- World image now fills the complete 1280x720 client.
+- Game GUI remains approximately 2/3 of the expected physical-window size.
+
+The remaining symptom is therefore not presenter geometry or world-raster geometry. The game UI still behaves as a 1920x1080 logical GUI and is then displayed inside the 1280x720 physical client (scale 2/3).
+
+NeoCore's engine exposes the persisted option AffectGuiResolution. Historical PTAR RC37 already tracked that exact value. Public NeoCore-family troubleshooting documentation identifies AffectGuiResolution=1 as the engine-side GUI-resolution correction for GUI-resolution conflicts.
+
+RC53 candidate policy:
+- preserve RC51 carrier exactly;
+- preserve RC52 raster exactly;
+- preserve WindowStyle exactly;
+- set only HKCU\Software\NeoCore Games\Warhammer Martyr\Options\AffectGuiResolution=1 transactionally;
+- save original existence/value and restore it on rollback/uninstall when still owned by RC53;
+- do not touch Resolution, WindowStyle or any other game setting;
+- collector records the active AffectGuiResolution value for field proof.
