@@ -49,40 +49,53 @@ int main(){
         void** during=*reinterpret_cast<void***>(ctx);
         if(during==before){rc=17;break;}
 
+        // RC42 regression: the engine may program logical raster state BEFORE it binds
+        // the remapped primary-family target. Binding that target must reconcile the
+        // already-live state immediately; otherwise a 1920x1080 viewport is clipped by
+        // the physical 1280x720 target and the 3D scene appears zoomed/cropped.
+        D3D11_VIEWPORT preVp{150.0f,90.0f,900.0f,600.0f,0.0f,1.0f};
+        D3D11_RECT preSc{150,90,1050,690};
+        ctx->RSSetViewports(1,&preVp);ctx->RSSetScissorRects(1,&preSc);
+        if(!query_vp(ctx,150.0f,90.0f,900.0f,600.0f)||!query_sc(ctx,150,90,1050,690)){rc=18;break;}
+
         ID3D11RenderTargetView* bind=primaryAlias;
         ctx->OMSetRenderTargets(1,&bind,nullptr);
-        if(!hooks.primary_bound()){rc=18;break;}
+        if(!hooks.primary_bound()){rc=19;break;}
+        if(!query_vp(ctx,100.0f,60.0f,600.0f,400.0f)||!query_sc(ctx,100,60,700,460)){rc=20;break;}
+
         D3D11_VIEWPORT logical{300.0f,160.0f,520.0f,180.0f,0.0f,1.0f};
         ctx->RSSetViewports(1,&logical);
-        if(!query_vp(ctx,200.0f,106.666664f,346.666656f,120.0f)){rc=19;break;}
+        if(!query_vp(ctx,200.0f,106.666664f,346.666656f,120.0f)){rc=21;break;}
         D3D11_RECT sc{301,161,821,341};ctx->RSSetScissorRects(1,&sc);
-        if(!query_sc(ctx,200,107,548,228)){rc=20;break;}
+        if(!query_sc(ctx,200,107,548,228)){rc=22;break;}
 
         ctx->OMSetRenderTargetsAndUnorderedAccessViews(D3D11_KEEP_RENDER_TARGETS_AND_DEPTH_STENCIL,nullptr,nullptr,0,D3D11_KEEP_UNORDERED_ACCESS_VIEWS,nullptr,nullptr);
-        if(!hooks.primary_bound()){rc=21;break;}
+        if(!hooks.primary_bound()){rc=23;break;}
 
         bind=sameRtv;ctx->OMSetRenderTargets(1,&bind,nullptr);
-        if(hooks.primary_bound()){rc=22;break;}
+        if(hooks.primary_bound()){rc=24;break;}
+        // Leaving primary-family rendering must restore the engine's logical state.
+        if(!query_vp(ctx,300.0f,160.0f,520.0f,180.0f)||!query_sc(ctx,301,161,821,341)){rc=25;break;}
         ctx->RSSetViewports(1,&logical);
-        if(!query_vp(ctx,300.0f,160.0f,520.0f,180.0f)){rc=23;break;}
+        if(!query_vp(ctx,300.0f,160.0f,520.0f,180.0f)){rc=26;break;}
         ctx->RSSetScissorRects(1,&sc);
-        if(!query_sc(ctx,301,161,821,341)){rc=24;break;}
+        if(!query_sc(ctx,301,161,821,341)){rc=27;break;}
 
         bind=offRtv;ctx->OMSetRenderTargets(1,&bind,nullptr);
-        if(hooks.primary_bound()){rc=25;break;}
+        if(hooks.primary_bound()){rc=28;break;}
 
         bind=primaryRtv;ctx->OMSetRenderTargets(1,&bind,nullptr);
         ctx->ClearState();
-        if(hooks.primary_bound()){rc=26;break;}
+        if(hooks.primary_bound()){rc=29;break;}
         ctx->RSSetViewports(1,&logical);
-        if(!query_vp(ctx,300.0f,160.0f,520.0f,180.0f)){rc=27;break;}
+        if(!query_vp(ctx,300.0f,160.0f,520.0f,180.0f)){rc=30;break;}
 
         constexpr uint32_t kStress=200000;
         for(uint32_t i=0;i<kStress;++i){
             bind=(i&1u)?primaryAlias:sameRtv;
             ctx->OMSetRenderTargets(1,&bind,nullptr);
             const bool primary=(i&1u)!=0;
-            if(hooks.primary_bound()!=primary){rc=28;break;}
+            if(hooks.primary_bound()!=primary){rc=31;break;}
             D3D11_VIEWPORT v{float(i%1500u),float(i%800u),320.0f,180.0f,0.0f,1.0f};
             ctx->RSSetViewports(1,&v);
             D3D11_RECT sr{LONG(i%1200u),LONG(i%600u),LONG(i%1200u+300u),LONG(i%600u+150u)};
@@ -93,26 +106,29 @@ int main(){
         HookStats s=hooks.stats();
         const uint64_t expectedMapped=uint64_t(kStress/2u)+1u;
         if(s.omCalls!=uint64_t(kStress)+4u || s.omUavCalls!=1u ||
-           s.viewportCalls!=uint64_t(kStress)+3u || s.scissorCalls!=uint64_t(kStress)+2u ||
-           s.viewportMapped!=expectedMapped || s.scissorMapped!=expectedMapped || s.clearStateCalls!=1u){rc=29;break;}
+           s.viewportCalls!=uint64_t(kStress)+4u || s.scissorCalls!=uint64_t(kStress)+3u ||
+           s.viewportMapped!=expectedMapped || s.scissorMapped!=expectedMapped || s.clearStateCalls!=1u){rc=32;break;}
+        if(s.primaryBindTransitions<kStress || s.viewportStateReapplies<kStress || s.scissorStateReapplies<kStress ||
+           s.viewportCallsUnbound==0 || s.scissorCallsUnbound==0){rc=33;break;}
 
         hooks.uninstall();
-        if(hooks.installed()){rc=30;break;}
+        if(hooks.installed()){rc=34;break;}
         void** after=*reinterpret_cast<void***>(ctx);
-        if(after!=before){rc=31;break;}
+        if(after!=before){rc=35;break;}
         bind=primaryRtv;ctx->OMSetRenderTargets(1,&bind,nullptr);
         ctx->RSSetViewports(1,&logical);
-        if(!query_vp(ctx,300.0f,160.0f,520.0f,180.0f)){rc=32;break;}
+        if(!query_vp(ctx,300.0f,160.0f,520.0f,180.0f)){rc=36;break;}
 
-        std::cout<<"RC41_HOOK_WARP=PASS feature_level=0x"<<std::hex<<static_cast<unsigned>(fl)<<std::dec
-                 <<" stress="<<kStress<<" shadow_vtable=PASS restore=PASS primary_alias=PASS same_size_passthrough=PASS"
+        std::cout<<"RC42_HOOK_WARP=PASS feature_level=0x"<<std::hex<<static_cast<unsigned>(fl)<<std::dec
+                 <<" stress="<<kStress<<" prebind_reconcile=PASS unbind_restore=PASS shadow_vtable=PASS restore=PASS primary_alias=PASS same_size_passthrough=PASS"
                  <<" om="<<s.omCalls<<" om_uav="<<s.omUavCalls<<" vp="<<s.viewportCalls<<" vp_mapped="<<s.viewportMapped
-                 <<" sc="<<s.scissorCalls<<" sc_mapped="<<s.scissorMapped<<" clear="<<s.clearStateCalls<<"\n";
+                 <<" sc="<<s.scissorCalls<<" sc_mapped="<<s.scissorMapped<<" transitions="<<s.primaryBindTransitions
+                 <<" vp_reapply="<<s.viewportStateReapplies<<" sc_reapply="<<s.scissorStateReapplies<<" clear="<<s.clearStateCalls<<"\n";
     }while(false);
 
     ctx->ClearState();
     safe_release(offRtv);safe_release(offTex);safe_release(sameRtv);safe_release(sameTex);
     safe_release(primaryAlias);safe_release(primaryRtv);safe_release(primaryTex);safe_release(ctx);safe_release(dev);
-    if(rc)std::cerr<<"RC41_HOOK_WARP=FAIL rc="<<rc<<"\n";
+    if(rc)std::cerr<<"RC42_HOOK_WARP=FAIL rc="<<rc<<"\n";
     return rc;
 }
