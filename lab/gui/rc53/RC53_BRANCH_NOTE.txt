@@ -1,0 +1,1 @@
+RC53 staged from certified RC52 raster + RC51 presenter chain. No changes to main or SOURCE. Candidate changes only package-managed AffectGuiResolution=1, with transactional restore.
