@@ -1,0 +1,115 @@
+name: RC52 Package Script Lab
+
+on:
+  push:
+    branches: [lab/rc52-raster-state-quarantine-20260914]
+    paths:
+      - lab/raster/rc52/package_scripts/**
+      - .github/workflows/rc52-package-script-lab.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-rc52-package-scripts:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct certified RC41 script fixture
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$root='lab/raster/rc41/package_scripts';$joined=''
+          foreach($name in @('part01.b64','part02.b64','part03.b64','part04.b64','part05.b64')){$joined += (Get-Content -LiteralPath "$root/fixture_parts/$name" -Raw).Trim()}
+          $zip="$root/rc41_exact.zip";[IO.File]::WriteAllBytes($zip,[Convert]::FromBase64String($joined))
+          $h=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant();if($h -ne 'd12ac6a05f21477e720e909be37139545c033008ef7bfafddf518f418ca7c43d'){throw "RC41 fixture drift $h"}
+          Expand-Archive $zip "$root/rc41_exact" -Force
+
+      - name: Regenerate certified RC41B to RC51 chain
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$b='lab/raster/rc52/package_scripts'
+          python lab/raster/rc41b/package_scripts/build_rc41b_scripts.py lab/raster/rc41/package_scripts/rc41_exact "$b/rc41b"; if($LASTEXITCODE){throw 'RC41B transformer failed'}
+          python lab/raster/rc42/package_scripts/build_rc42_scripts.py "$b/rc41b" "$b/rc42"; if($LASTEXITCODE){throw 'RC42 transformer failed'}
+          python lab/borderless/rc43/package_scripts/build_rc43_scripts.py "$b/rc42" "$b/rc43"; if($LASTEXITCODE){throw 'RC43 transformer failed'}
+          python lab/borderless/rc44/package_scripts/build_rc44_scripts.py "$b/rc43" "$b/rc44"; if($LASTEXITCODE){throw 'RC44 transformer failed'}
+          python lab/borderless/rc45/package_scripts/build_rc45_scripts.py "$b/rc44" "$b/rc45"; if($LASTEXITCODE){throw 'RC45 transformer failed'}
+          python lab/borderless/rc46/package_scripts/build_rc46_scripts.py "$b/rc45" "$b/rc46"; if($LASTEXITCODE){throw 'RC46 transformer failed'}
+          python lab/borderless/rc47/package_scripts/build_rc47_scripts.py "$b/rc46" "$b/rc47"; if($LASTEXITCODE){throw 'RC47 transformer failed'}
+          python lab/borderless/rc48/package_scripts/build_rc48_scripts.py "$b/rc47" "$b/rc48"; if($LASTEXITCODE){throw 'RC48 transformer failed'}
+          python lab/presenter/rc51/package_scripts/build_rc51_scripts.py "$b/rc48" "$b/rc51"; if($LASTEXITCODE){throw 'RC51 transformer failed'}
+          $expected=[ordered]@{
+            'install.ps1'='35ca1d6ef15a2ce70dfcb2882257322c9c354432839b3183091219edddd6b4db'
+            'verify.ps1'='b67234455bd64d175a0d7ba478d83d6079dc94bad6351db09de028a3cc95baaf'
+            'rollback.ps1'='859c96a002ba9bc268e98fcde394283d5a53991c6e060fcc5e41f7225d856c16'
+            'uninstall_overlay.ps1'='400ad627c6eb3b6f550717724248e3d38a46dbb18381f4e150e4f81eb526069a'
+            'collect_rc41.ps1'='dc5adf130dbb73b54cb68dbec2431bfbb6b03e5d303ed3793a46c883c306717a'
+          }
+          foreach($name in $expected.Keys){$h=(Get-FileHash "$b/rc51/$name" -Algorithm SHA256).Hash.ToLowerInvariant();if($h -ne $expected[$name]){throw "RC51 source drift $name $h"};Write-Host "PASS RC51 SOURCE $name $h"}
+
+      - name: Generate RC52 scripts and record exact hashes
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$root='lab/raster/rc52/package_scripts';$out="$root/out"
+          python "$root/build_rc52_scripts.py" "$root/rc51" $out
+          if($LASTEXITCODE -ne 0){throw 'RC52 transformer failed'}
+          $lines=@()
+          foreach($name in @('install.ps1','verify.ps1','rollback.ps1','uninstall_overlay.ps1','collect_rc41.ps1')){$h=(Get-FileHash "$out/$name" -Algorithm SHA256).Hash.ToLowerInvariant();$lines += "$name=$h";Write-Host "RC52_SCRIPT_SHA256 $name $h"}
+          $lines | Set-Content RC52_SCRIPT_SHA256.txt -Encoding ASCII
+
+      - name: Parse RC52 scripts with Windows PowerShell
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$root='lab/raster/rc52/package_scripts/out'
+          foreach($name in @('install.ps1','verify.ps1','rollback.ps1','uninstall_overlay.ps1','collect_rc41.ps1')){
+            $tokens=$null;$errors=$null;[void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path "$root/$name"),[ref]$tokens,[ref]$errors)
+            if($errors.Count){$errors|ForEach-Object{Write-Host "PARSE_ERROR $name $($_.Message)"};throw "PowerShell parse failure $name"};Write-Host "PASS PARSE $name"
+          }
+
+      - name: Validate RC52 package safety contracts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$root='lab/raster/rc52/package_scripts/out'
+          $i=Get-Content "$root/install.ps1" -Raw;$v=Get-Content "$root/verify.ps1" -Raw;$r=Get-Content "$root/rollback.ps1" -Raw;$u=Get-Content "$root/uninstall_overlay.ps1" -Raw;$c=Get-Content "$root/collect_rc41.ps1" -Raw
+          $carrier='59e699536998054ae38cc5a30e03375c9cd206220667debe87070962609dd26c';$oldRaster='7ffe7aa1b9afa42d5f22557cae29a4f65e17379c2a2f181f879427277839f1ca';$newRaster='fbc5373ac008f6dadf9d9bf4a66772062693d0af744d514cc8f99fb9aa08b52d'
+          $checks=[ordered]@{
+            'install exact RC51 carrier retained'=$i.Contains("`$ExpectedBorderless='$carrier'")
+            'install exact RC52 raster'=$i.Contains("`$ExpectedRaster='$newRaster'")
+            'upgrade accepts RC42 raster'=($i.Contains($oldRaster) -and $i.Contains($newRaster))
+            'verify exact RC52 raster'=$v.Contains("`$ExpectedRaster='$newRaster'")
+            'package marker RC52'=$i.Contains("package='PTAR_RC52_RASTER_STATE_QUARANTINE'")
+            'mode marker RC52'=$i.Contains('MODE=RC52_PRESENTER_SYNC_WITH_RASTER_STATE_QUARANTINE')
+            'install marker RC52'=$i.Contains('INSTALL_RC52=PASS')
+            'verify marker RC52'=$v.Contains('VERIFY_RC52_RASTER_STATE_QUARANTINE=PASS')
+            'rollback accepts old and new raster'=($r.Contains($oldRaster) -and $r.Contains($newRaster) -and $r.Contains('KnownRaster'))
+            'uninstall accepts old and new raster'=($u.Contains($oldRaster) -and $u.Contains($newRaster) -and $u.Contains('rasterExpected'))
+            'collector emits RC52 zip'=$c.Contains('PTAR_RC52_RESULTS_')
+            'collector writes RC52 payload hashes'=$c.Contains('RC52_ACTIVE_PAYLOAD_SHA256.txt')
+            'collector labels RC52 raster'=$c.Contains('RC52_RASTER_SIDECAR_SHA256=')
+            'collector includes borderless log'=$c.Contains('ptar_borderless_rc38.log')
+            'collector includes raster log'=$c.Contains('ptar_rc41.log')
+            'collector includes bootstrap log'=$c.Contains('ptar_rc41_bootstrap.log')
+            'no WindowStyle force'=(-not $i.Contains('Set-ItemProperty -LiteralPath $key -Name WindowStyle -Type DWord -Value 1'))
+            'WindowStyle remains passive'=($i.Contains('WINDOWSTYLE_PRESERVED=') -and $i.Contains('$m.windowstyle.applied=$false'))
+            'no AffectGuiResolution force'=(-not $i.Contains('-Name AffectGuiResolution -Type DWord -Value 1'))
+            'unknown runtime refusal retained'=$i.Contains('DLL locale inconnue')
+            'unknown carrier refusal retained'=$i.Contains('Sidecar borderless local inconnu')
+            'unknown raster refusal retained'=$i.Contains('Sidecar RC41 local inconnu')
+            'transaction rollback retained'=$i.Contains('Installation transaction annulee')
+            'canonical 107 verification retained'=$v.Contains('BASE GITHUB 107/107 fichiers byte-identiques')
+            'carrier remains unchanged'=$v.Contains($carrier)
+          }
+          foreach($k in $checks.Keys){if(-not $checks[$k]){throw "CONTRACT FAIL $k"};Write-Host "PASS $k"}
+          'RC52_PACKAGE_SCRIPTS=25/25 PASS' | Set-Content RC52_PACKAGE_SCRIPT_CONTRACT.txt -Encoding ASCII
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_RC52_PACKAGE_SCRIPT_LAB
+          path: |
+            RC52_PACKAGE_SCRIPT_CONTRACT.txt
+            RC52_SCRIPT_SHA256.txt
+            lab/raster/rc52/package_scripts/out/*.ps1
+          if-no-files-found: error
+          retention-days: 14
