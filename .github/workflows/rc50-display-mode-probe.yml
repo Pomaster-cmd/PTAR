@@ -1,0 +1,32 @@
+name: RC50 Display Mode Probe
+
+on:
+  push:
+    branches: [lab/rc50-top-level-zorder-20260914]
+    paths:
+      - lab/display/rc50_display_modes.cpp
+      - .github/workflows/rc50-display-mode-probe.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-display-modes:
+    runs-on: windows-2022
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and enumerate modes
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          cl /nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 lab\display\rc50_display_modes.cpp /Fe:lab\display\rc50_display_modes.exe user32.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 2
+          lab\display\rc50_display_modes.exe > lab\display\RC50_DISPLAY_MODES.txt || exit /b 3
+          type lab\display\RC50_DISPLAY_MODES.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_RC50_DISPLAY_MODES
+          path: lab/display/RC50_DISPLAY_MODES.txt
+          retention-days: 7
