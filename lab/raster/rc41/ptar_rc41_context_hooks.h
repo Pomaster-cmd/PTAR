@@ -18,6 +18,11 @@ struct HookStats {
     uint64_t clearStateCalls=0;
     uint64_t executeCommandListCalls=0;
     uint64_t primaryRefreshes=0;
+    uint64_t primaryBindTransitions=0;
+    uint64_t viewportStateReapplies=0;
+    uint64_t scissorStateReapplies=0;
+    uint64_t viewportCallsUnbound=0;
+    uint64_t scissorCallsUnbound=0;
 };
 
 class ContextHooks {
@@ -43,6 +48,7 @@ private:
     static constexpr size_t kSlotRSSetViewports=44;
     static constexpr size_t kSlotRSSetScissorRects=45;
     static constexpr size_t kSlotClearState=110;
+    static constexpr UINT kRasterSlots=D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
 
     using FnOMSetRenderTargets=void (STDMETHODCALLTYPE*)(ID3D11DeviceContext*,UINT,ID3D11RenderTargetView* const*,ID3D11DepthStencilView*);
     using FnOMSetRenderTargetsAndUAV=void (STDMETHODCALLTYPE*)(ID3D11DeviceContext*,UINT,ID3D11RenderTargetView* const*,ID3D11DepthStencilView*,UINT,UINT,ID3D11UnorderedAccessView* const*,const UINT*);
@@ -59,6 +65,11 @@ private:
     static void STDMETHODCALLTYPE hook_clear_state(ID3D11DeviceContext*);
 
     void refresh_primary_from_context(ID3D11DeviceContext*) noexcept;
+    void capture_raster_state_from_context(ID3D11DeviceContext*) noexcept;
+    void reconcile_cached_raster_state(ID3D11DeviceContext*, bool primaryBound) noexcept;
+    void cache_viewports(UINT count,const D3D11_VIEWPORT* viewports,bool valuesArePhysical) noexcept;
+    void cache_scissors(UINT count,const D3D11_RECT* rects,bool valuesArePhysical) noexcept;
+    void clear_cached_raster_state() noexcept;
     void set_primary_bound(bool value) noexcept;
     void add_counter(volatile LONG64& counter, LONG64 delta=1) noexcept;
 
@@ -75,8 +86,19 @@ private:
     FnClearState origClearState_=nullptr;
     volatile LONG installed_=0;
     volatile LONG primaryBound_=0;
+
+    SRWLOCK rasterStateLock_=SRWLOCK_INIT;
+    D3D11_VIEWPORT requestedViewports_[kRasterSlots]{};
+    D3D11_RECT requestedScissors_[kRasterSlots]{};
+    UINT requestedViewportCount_=0;
+    UINT requestedScissorCount_=0;
+    bool haveViewportState_=false;
+    bool haveScissorState_=false;
+
     volatile LONG64 omCalls_=0,omUavCalls_=0,viewportCalls_=0,scissorCalls_=0;
     volatile LONG64 viewportMapped_=0,scissorMapped_=0,clearStateCalls_=0,executeCommandListCalls_=0,primaryRefreshes_=0;
+    volatile LONG64 primaryBindTransitions_=0,viewportStateReapplies_=0,scissorStateReapplies_=0;
+    volatile LONG64 viewportCallsUnbound_=0,scissorCallsUnbound_=0;
 };
 
 } // namespace ptar_rc41
