@@ -64,8 +64,12 @@ jobs:
           pushd lab\raster\rc41\prod_out
           if exist RC41_PROD_HOST_RESULT.txt del /q RC41_PROD_HOST_RESULT.txt
           prod_host.exe > PROD_HOST_STDOUT.txt 2>&1
-          if errorlevel 1 (type PROD_HOST_STDOUT.txt & popd & exit /b 41)
-          if not exist RC41_PROD_HOST_RESULT.txt (type PROD_HOST_STDOUT.txt & popd & exit /b 42)
+          set RC=%ERRORLEVEL%
+          echo RC41_PROD_HOST_EXIT=%RC%
+          if not "%RC%"=="0" type PROD_HOST_STDOUT.txt
+          if not "%RC%"=="0" popd & exit /b 41
+          if not exist RC41_PROD_HOST_RESULT.txt type PROD_HOST_STDOUT.txt
+          if not exist RC41_PROD_HOST_RESULT.txt popd & exit /b 42
           type RC41_PROD_HOST_RESULT.txt
           findstr /C:"RC41_PROD_HOST=PASS" RC41_PROD_HOST_RESULT.txt >nul || (popd & exit /b 43)
           copy /y RC41_PROD_HOST_RESULT.txt PROD_HOST.txt >nul
