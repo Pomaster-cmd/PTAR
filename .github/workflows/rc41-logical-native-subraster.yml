@@ -133,10 +133,15 @@ jobs:
       - name: Run RC41 selective resource-family bridge gate
         shell: cmd
         run: |
-          lab\raster\rc41\out\resource_warp_harness.exe > lab\raster\rc41\out\RESOURCE_WARP_STRESS.txt 2>&1
-          if errorlevel 1 (type lab\raster\rc41\out\RESOURCE_WARP_STRESS.txt & exit /b 27)
-          type lab\raster\rc41\out\RESOURCE_WARP_STRESS.txt
-          findstr /C:"RC41_RESOURCE_WARP=PASS" lab\raster\rc41\out\RESOURCE_WARP_STRESS.txt >nul || exit /b 28
+          pushd lab\raster\rc41\out
+          if exist RC41_RESOURCE_WARP_RESULT.txt del /q RC41_RESOURCE_WARP_RESULT.txt
+          resource_warp_harness.exe > RESOURCE_WARP_STDOUT.txt 2>&1
+          if errorlevel 1 (type RESOURCE_WARP_STDOUT.txt & popd & exit /b 27)
+          if not exist RC41_RESOURCE_WARP_RESULT.txt (type RESOURCE_WARP_STDOUT.txt & popd & exit /b 28)
+          type RC41_RESOURCE_WARP_RESULT.txt
+          findstr /C:"RC41_RESOURCE_WARP=PASS" RC41_RESOURCE_WARP_RESULT.txt >nul || (popd & exit /b 29)
+          copy /y RC41_RESOURCE_WARP_RESULT.txt RESOURCE_WARP_STRESS.txt >nul
+          popd
 
       - name: Package RC41 evidence
         shell: powershell
