@@ -77,7 +77,7 @@ static void dump_log(){
 }
 static int fail(int rc,const char* tag,QueryFn q,HWND g,HWND p,const RegBackup& b){
     ModeState s{};query(q,s);RECT gr{},pr{},gc{};if(g){GetWindowRect(g,&gr);client_screen(g,gc);}if(p)GetWindowRect(p,&pr);
-    std::printf("RC48_RELEASE_GATE=FAIL rc=%d tag=%s installed=%u mode=%u pref=%ld dispatched=%llu gstyle=0x%llx pstyle=0x%llx parent=%p owner=%p grect=%ld,%ld,%ld,%ld gclient=%ld,%ld,%ld,%ld prect=%ld,%ld,%ld,%ld\n",rc,tag,s.installed,s.borderlessActive,s.windowStylePreference,g_dispatched,(unsigned long long)(g?GetWindowLongPtrW(g,GWL_STYLE):0),(unsigned long long)(p?GetWindowLongPtrW(p,GWL_STYLE):0),p?GetParent(p):nullptr,p?GetWindow(p,GW_OWNER):nullptr,gr.left,gr.top,gr.right,gr.bottom,gc.left,gc.top,gc.right,gc.bottom,pr.left,pr.top,pr.right,pr.bottom);dump_log();restore_pref(b);return rc;
+    std::printf("RC48_RELEASE_GATE=FAIL rc=%d tag=%s installed=%u mode=%u pref=%ld dispatched=%llu gstyle=0x%llx pstyle=0x%llx parent=%p owner=%p grect=%ld,%ld,%ld,%ld gclient=%ld,%ld,%ld,%ld prect=%ld,%ld,%ld,%ld\n",rc,tag,s.installed,s.borderlessActive,s.windowStylePreference,g_dispatched,(unsigned long long)(g?GetWindowLongPtrW(g,GWL_STYLE):0),(unsigned long long)(p?GetWindowLongPtrW(p,GWL_STYLE):0),p?GetParent(p):nullptr,p?GetWindow(p,GW_OWNER):nullptr,gr.left,gr.top,gr.right,gr.bottom,gc.left,gc.top,gc.right,gc.bottom,pr.left,pr.top,pr.right,pr.bottom);dump_log();std::fflush(stdout);restore_pref(b);return rc;
 }
 template<class T>static void rel(T*& p){if(p){p->Release();p=nullptr;}}
 
@@ -129,7 +129,7 @@ int wmain(){
 
     DXGI_SWAP_CHAIN_DESC got{};if(FAILED(swap->GetDesc(&got))||got.OutputWindow!=presenter)return fail(30,"swap-output-window",q,game,presenter,rb);
     ModeState final{};if(!query(q,final)||!final.installed||final.borderlessActive||final.windowStylePreference!=0)return fail(31,"final-state",q,game,presenter,rb);
-    std::printf("RC48_RELEASE_GATE=PASS d3d_windowed_frames=%u direct_pairs=%u direct_transitions=%u max_direct_borderless_ms=%u max_direct_windowed_ms=%u registry_borderless_ms=%u registry_windowed_ms=%u queue_windowed=%llu queue_modes=%llu dispatched=%llu child_composition=PASS black_parent_repaint=PASS swap_output_stable=PASS final_windowed=PASS feature_level=0x%x\n",kWindowedFrames,kPairs,kPairs*2u,maxTop,maxChild,regB,regW,queueServiceWindowed,queueServiceModes,g_dispatched,(unsigned)fl);
+    std::printf("RC48_RELEASE_GATE=PASS d3d_windowed_frames=%u direct_pairs=%u direct_transitions=%u max_direct_borderless_ms=%u max_direct_windowed_ms=%u registry_borderless_ms=%u registry_windowed_ms=%u queue_windowed=%llu queue_modes=%llu dispatched=%llu child_composition=PASS black_parent_repaint=PASS swap_output_stable=PASS final_windowed=PASS feature_level=0x%x\n",kWindowedFrames,kPairs,kPairs*2u,maxTop,maxChild,regB,regW,queueServiceWindowed,queueServiceModes,g_dispatched,(unsigned)fl);std::fflush(stdout);
 
     restore_pref(rb);rel(rtv);rel(bb);rel(swap);rel(ctx);rel(dev);FreeLibrary(dll);DestroyWindow(presenter);DestroyWindow(game);DeleteObject(g_black);return 0;
 }
