@@ -61,6 +61,9 @@ static bool rc48_make_child(bool countRepair) noexcept {
         SetWindowLongPtrW(g_presenter,GWL_STYLE,desired);
         changed=true;
     }
+    // A concurrent Borderless transition must win; never attach the presenter as
+    // a child after the controller has switched modes.
+    if(!rc48_windowed_mode()) return false;
     if(GetParent(g_presenter)!=g_game){
         SetLastError(ERROR_SUCCESS);
         SetParent(g_presenter,g_game);
@@ -70,12 +73,14 @@ static bool rc48_make_child(bool countRepair) noexcept {
         }
         changed=true;
     }
+    if(!rc48_windowed_mode()) return false;
     LONG_PTR ex=GetWindowLongPtrW(g_presenter,GWL_EXSTYLE);
     const LONG_PTR desiredEx=(ex|WS_EX_NOACTIVATE) & ~(LONG_PTR)(WS_EX_TRANSPARENT|WS_EX_TOPMOST|WS_EX_APPWINDOW|WS_EX_TOOLWINDOW);
     if(ex!=desiredEx){SetWindowLongPtrW(g_presenter,GWL_EXSTYLE,desiredEx);changed=true;}
-    RECT c{};if(GetClientRect(g_game,&c)){
+    RECT c{};if(GetClientRect(g_game,&c) && rc48_windowed_mode()){
         SetWindowPos(g_presenter,HWND_TOP,0,0,c.right-c.left,c.bottom-c.top,SWP_NOACTIVATE|SWP_FRAMECHANGED|SWP_SHOWWINDOW);
     }
+    if(!rc48_windowed_mode()) return false;
     InterlockedExchange(&g_rc48IsChild,1);
     if(changed){
         InterlockedIncrement64(&g_rc48ChildAttach);
@@ -85,14 +90,16 @@ static bool rc48_make_child(bool countRepair) noexcept {
     return true;
 }
 
-static bool rc48_restore_top_level(bool countRepair) noexcept {
+static bool rc48_restore_top_level(bool countRepair,bool force=false) noexcept {
     if(!IsWindow(g_presenter)) return false;
+    // Prevent the invariant worker from undoing a Windowed transition based on a
+    // stale mode sample. Only detach while Borderless is still authoritative,
+    // except during process detach where force=true restores a neutral HWND.
+    if(!force && rc48_windowed_mode()) return true;
     rc48_capture_original();
     const LONG_PTR cur=GetWindowLongPtrW(g_presenter,GWL_STYLE);
     bool changed=false;
     if(cur&WS_CHILD || GetParent(g_presenter)==g_game){
-        // SetParent does not fix styles. For child -> top-level the documented
-        // sequence is detach to desktop first, then restore WS_POPUP/style.
         SetLastError(ERROR_SUCCESS);
         SetParent(g_presenter,nullptr);
         if(GetParent(g_presenter)==g_game){
@@ -101,6 +108,7 @@ static bool rc48_restore_top_level(bool countRepair) noexcept {
         }
         changed=true;
     }
+    if(!force && rc48_windowed_mode()) return false;
     LONG_PTR desired=g_rc48OriginalStyle;
     desired=(desired & ~(LONG_PTR)WS_CHILD) | WS_POPUP;
     if(GetWindowLongPtrW(g_presenter,GWL_STYLE)!=desired){SetWindowLongPtrW(g_presenter,GWL_STYLE,desired);changed=true;}
@@ -117,7 +125,6 @@ static bool rc48_restore_top_level(bool countRepair) noexcept {
 }
 
 static LONG_PTR WINAPI RC48_SetWindowLongPtrW(HWND h,int index,LONG_PTR value){
-    // Calls for WNDPROC and game HWND must retain exact RC46 semantics.
     if(h!=g_presenter || !IsWindow(h)) return SetWindowLongPtrW(h,index,value);
     rc48_capture_original();
     if(index==GWL_STYLE){
@@ -125,8 +132,8 @@ static LONG_PTR WINAPI RC48_SetWindowLongPtrW(HWND h,int index,LONG_PTR value){
             LONG_PTR desired=(value & (WS_VISIBLE|WS_DISABLED|WS_CLIPSIBLINGS|WS_CLIPCHILDREN)) |
                              WS_CHILD | WS_CLIPSIBLINGS | WS_CLIPCHILDREN;
             const LONG_PTR prior=SetWindowLongPtrW(h,index,desired);
-            if(GetParent(h)!=g_game && IsWindow(g_game)) SetParent(h,g_game);
-            InterlockedExchange(&g_rc48IsChild,1);
+            if(rc48_windowed_mode() && GetParent(h)!=g_game && IsWindow(g_game)) SetParent(h,g_game);
+            if(rc48_windowed_mode()) InterlockedExchange(&g_rc48IsChild,1);
             return prior;
         }
         if(GetWindowLongPtrW(h,GWL_STYLE)&WS_CHILD || GetParent(h)==g_game) rc48_restore_top_level(false);
@@ -143,7 +150,7 @@ static BOOL WINAPI RC48_SetWindowPos(HWND h,HWND after,int x,int y,int cx,int cy
     if(h!=g_presenter || !IsWindow(h)) return SetWindowPos(h,after,x,y,cx,cy,flags);
     if(rc48_windowed_mode() && IsWindow(g_game)){
         rc48_make_child(false);
-        RECT c{};if(GetClientRect(g_game,&c)){
+        RECT c{};if(rc48_windowed_mode() && GetClientRect(g_game,&c)){
             InterlockedIncrement64(&g_rc48WindowedSetPos);
             return SetWindowPos(h,HWND_TOP,0,0,c.right-c.left,c.bottom-c.top,
                                 (flags|SWP_NOACTIVATE|SWP_SHOWWINDOW)&~(SWP_NOMOVE|SWP_NOSIZE|SWP_NOZORDER));
@@ -171,7 +178,7 @@ static DWORD WINAPI RC48InvariantWorker(LPVOID){
             const LONG_PTR s=GetWindowLongPtrW(g_presenter,GWL_STYLE);
             if(last!=1 || (s&WS_CHILD) || GetParent(g_presenter)==g_game) rc48_restore_top_level(last==1);
         }
-        last=mode;
+        last=InterlockedCompareExchange(&g_rc45Borderless,0,0);
         Sleep(25);
     }
     return 0;
@@ -188,7 +195,7 @@ BOOL WINAPI DllMain(HINSTANCE h,DWORD reason,LPVOID reserved){
     }
     if(reason==DLL_PROCESS_DETACH){
         InterlockedExchange(&g_rc48Stop,1);
-        if(IsWindow(g_presenter)) rc48_restore_top_level(false);
+        if(IsWindow(g_presenter)) rc48_restore_top_level(false,true);
         return DllMain_RC46_INTERNAL(h,reason,reserved);
     }
     return DllMain_RC46_INTERNAL(h,reason,reserved);
