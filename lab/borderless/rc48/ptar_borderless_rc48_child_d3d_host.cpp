@@ -45,20 +45,6 @@ static bool exact_top(HWND g,HWND p,const RECT& mon){
     if(r.left!=mon.left||r.top!=mon.top||r.right!=mon.right||r.bottom!=mon.bottom)return false;
     return GetWindow(p,GW_OWNER)==g;
 }
-static bool sync_mode(HWND game,QueryFn q,bool borderless,UINT syncMsg,const RECT& mon,unsigned timeout=4000){
-    if(!syncMsg)return false;
-    SendMessageW(game,syncMsg,borderless?1u:0u,0);
-    DWORD st=GetTickCount();
-    do{
-        ModeState s{};
-        if(query(q,s)&&s.installed&&((s.borderlessActive!=0)==borderless)){
-            if(borderless){if(exact_top(game,(HWND)0,mon)){} /* compile-time shape marker only */}
-            return true;
-        }
-        pump(1);
-    }while(GetTickCount()-st<timeout);
-    return false;
-}
 static int fail(int rc,const char* what,QueryFn q,HWND g,HWND p,const RegBackup& b){ModeState s{};query(q,s);RECT gr{},pr{};GetWindowRect(g,&gr);GetWindowRect(p,&pr);std::printf("RC48_CHILD_D3D=FAIL rc=%d what=%s mode=%u gstyle=0x%llx pstyle=0x%llx parent=%p owner=%p grect=%ld,%ld,%ld,%ld prect=%ld,%ld,%ld,%ld gle=%lu\n",rc,what,s.borderlessActive,(unsigned long long)GetWindowLongPtrW(g,GWL_STYLE),(unsigned long long)GetWindowLongPtrW(p,GWL_STYLE),GetParent(p),GetWindow(p,GW_OWNER),gr.left,gr.top,gr.right,gr.bottom,pr.left,pr.top,pr.right,pr.bottom,(unsigned long)GetLastError());restore(b);return rc;}
 template<class T>static void rel(T*&p){if(p){p->Release();p=nullptr;}}
 
