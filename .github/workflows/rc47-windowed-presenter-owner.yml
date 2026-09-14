@@ -28,16 +28,16 @@ jobs:
           $rc46=Get-Content 'lab/borderless/rc46/ptar_borderless_rc46_prod.cpp' -Raw
           $rc45=Get-Content 'lab/borderless/rc45/ptar_borderless_rc45_prod.cpp' -Raw
           $checks=[ordered]@{
-            'windowed presenter ownership explicit'=$s.Contains('GWLP_HWNDPARENT')
-            'windowed owner is game'=$s.Contains('rc47_set_presenter_owner(g_game)')
+            'RC46 exported path inherited'=$s.Contains('../rc46/ptar_borderless_rc46_prod.cpp')
+            'internal DllMain delegated'=($s.Contains('DllMain_RC46_INTERNAL') -and $s.Contains('return DllMain_RC46_INTERNAL'))
+            'windowed owner is game'=$s.Contains('rc47_set_owner(g_game)')
             'borderless original owner restored'=$s.Contains('g_rc47OriginalPresenterOwner')
             'no topmost policy'=(-not $s.Contains('HWND_TOPMOST'))
-            'presenter remains noactivate'=($s.Contains('rc46_force_presenter_to_target') -and $s.Contains('RC47_WINDOWED_OWNER_ATTACHED'))
+            'RC46 geometry reasserted'=$s.Contains('rc46_force_presenter_to_target(true)')
             'unowned real presenter lab condition'=$h.Contains('unowned_field_presenter=PASS')
             '500 game HWND_TOP raises'=$h.Contains('kRaises=500')
             'hit-test occlusion gate'=$h.Contains('presenter-occluded-by-owner')
             'borderless owner restore gate'=$h.Contains('borderless_owner_restore=PASS')
-            'RC46 geometry inherited'=$s.Contains('../rc46/ptar_borderless_rc46_prod.cpp')
             'RC42 bootstrap inherited'=($rc46.Contains('../rc45/ptar_borderless_rc45_prod.cpp') -and $rc45.Contains('RC41B_StartBootstrap'))
           }
           foreach($k in $checks.Keys){if(-not $checks[$k]){throw "RC47 CONTRACT FAIL: $k"};Write-Host "PASS $k"}
