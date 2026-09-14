@@ -2,7 +2,7 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
-#include <dxgi.h>
+#include <dxgi1_2.h>
 #include <cstdint>
 #include "ptar_rc41_contract.h"
 
