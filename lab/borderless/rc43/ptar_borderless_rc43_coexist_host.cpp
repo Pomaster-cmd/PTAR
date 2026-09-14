@@ -64,10 +64,9 @@ int wmain(){
     const LONG_PTR windowed=WS_OVERLAPPEDWINDOW|WS_VISIBLE;
     // Exact field style observed in PTAR_RC43_RESULTS_20260914_115205.zip:
     // 0x14CF0000 -> 0x14000000 on the Windowed -> Borderless switch.
+    static_assert((ULONG_PTR)(WS_VISIBLE|WS_CLIPSIBLINGS)==0x14000000ull,"unexpected Win32 style constants");
     const LONG_PTR fieldFrameless=WS_VISIBLE|WS_CLIPSIBLINGS;
     const LONG initialX=mi.rcMonitor.left+47,initialY=mi.rcMonitor.top+39,initialW=533,initialH=401;
-
-    if((ULONG_PTR)fieldFrameless!=0x14000000ull){std::printf("RC44_FIELD_STYLE_CONSTANT_MISMATCH=0x%llx\n",(unsigned long long)fieldFrameless);return 9;}
 
     HWND game=CreateWindowExW(0,wc.lpszClassName,L"game",windowed,initialX,initialY,initialW,initialH,nullptr,nullptr,inst,nullptr);
     HWND presenter=CreateWindowExW(WS_EX_TOOLWINDOW,wc.lpszClassName,L"presenter",WS_POPUP|WS_VISIBLE,mi.rcMonitor.left,mi.rcMonitor.top,outW,outH,game,nullptr,inst,nullptr);
