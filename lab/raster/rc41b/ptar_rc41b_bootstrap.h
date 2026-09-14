@@ -2,6 +2,7 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#include <cstddef>
 #include <cstdint>
 
 struct RC41BState {
@@ -41,6 +42,6 @@ int RC41B_RunLoaderWithPathsForTest(HMODULE runtimeModule,
 bool RC41B_BuildSiblingPath(const wchar_t* modulePath,
                             const wchar_t* leafName,
                             wchar_t* out,
-                            size_t outCount) noexcept;
+                            std::size_t outCount) noexcept;
 void RC41B_SetTestHooks(const RC41BTestHooks* hooks) noexcept;
 void RC41B_ResetTestHooks() noexcept;
