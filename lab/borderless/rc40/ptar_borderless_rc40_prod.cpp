@@ -1,4 +1,5 @@
 #include "../rc38/ptar_borderless_rc38.cpp"
+#include "../../raster/rc41b/ptar_rc41b_bootstrap.h"
 
 static volatile LONG g_prodStarting=0;
 static volatile LONG g_prodStableMode=0;
@@ -22,6 +23,7 @@ static DWORD WINAPI StableWorker(LPVOID){
     prod_starting_clear();
     UINT gw=0,gh=0,pw=0,ph=0;client_size(g_game,gw,gh);client_size(g_presenter,pw,ph);
     logfmt("ACTIVE_RC40_POSTWNDPROC game/presenter",(LONG_PTR)((gw<<16)^gh),(LONG_PTR)((pw<<16)^ph),g_iatHooks);
+    RC41B_StartBootstrap(g_self,GetModuleHandleW(L"d3d11.dll"));
     return 0;
 }
 
