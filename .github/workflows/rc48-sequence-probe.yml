@@ -1,0 +1,49 @@
+name: RC48 Direct To Registry Sequence
+
+on:
+  push:
+    branches: [build/rc48-windowed-child-presenter-20260914]
+    paths:
+      - lab/borderless/rc48/ptar_rc48_sequence_probe.cpp
+      - lab/borderless/rc48/ptar_borderless_rc48_prod.cpp
+      - .github/workflows/rc48-sequence-probe.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-sequence:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build RC48 and sequence probe
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          if not exist lab\borderless\rc48\seqout mkdir lab\borderless\rc48\seqout
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603
+          cl %CFLAGS% /LD lab\borderless\rc48\ptar_borderless_rc48_prod.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fe:lab\borderless\rc48\seqout\ptar_borderless.dll user32.lib advapi32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 11
+          cl %CFLAGS% lab\borderless\rc48\ptar_rc48_sequence_probe.cpp /Fe:lab\borderless\rc48\seqout\sequence_probe.exe user32.lib advapi32.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 12
+      - name: Run direct-to-registry boundary probe
+        shell: cmd
+        timeout-minutes: 10
+        run: |
+          pushd lab\borderless\rc48\seqout
+          sequence_probe.exe > SEQUENCE.txt 2>&1
+          if errorlevel 1 (type SEQUENCE.txt & popd & exit /b 21)
+          type SEQUENCE.txt
+          findstr /C:"RC48_SEQUENCE=PASS" SEQUENCE.txt >nul || (popd & exit /b 22)
+          findstr /C:"direct_pairs=2500" SEQUENCE.txt >nul || (popd & exit /b 23)
+          findstr /C:"direct_transitions=5000" SEQUENCE.txt >nul || (popd & exit /b 24)
+          popd
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PTAR_RC48_SEQUENCE_PROBE
+          path: |
+            lab/borderless/rc48/seqout/SEQUENCE.txt
+            lab/borderless/rc48/seqout/ptar_borderless_rc38.log
+          if-no-files-found: warn
+          retention-days: 7
