@@ -71,10 +71,10 @@ jobs:
           $p=Start-Process -FilePath "$o/Warhammer.exe" -WorkingDirectory $o -PassThru
           if(-not $p.WaitForExit(120000)){Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue;throw 'RC51 host timeout'}
           $rc=$p.ExitCode;Write-Host "RC51_HOST_EXIT=$rc"
-          $host=Join-Path $o 'RC51_CONTRACT_HOST.txt';if(Test-Path $host){Get-Content $host}
+          $hostFile=Join-Path $o 'RC51_CONTRACT_HOST.txt';if(Test-Path $hostFile){Get-Content $hostFile}
           foreach($n in @('win81_nis.log','ptar_borderless_rc38.log','ptar_rc41.log','ptar_rc41_bootstrap.log')){$f=Join-Path $o $n;if(Test-Path $f){Write-Host "===== $n =====";Get-Content $f -Tail 180}}
           if($rc -ne 0){throw "RC51 contract host failed rc=$rc"}
-          $t=Get-Content $host -Raw
+          $t=Get-Content $hostFile -Raw
           foreach($marker in @('WINDOWED_NATIVE_SWAPCHAIN_MISMATCH=PASS','WINDOWED_CONTRACT_MATCHED=PASS','WINDOWED_PIXELS_AFTER_RESYNC=PASS','BORDERLESS_PIXELS_AFTER_RESYNC=PASS','WINDOWED_REENTRY_PIXELS=PASS','RC51_PRESENTER_SWAPCHAIN_CONTRACT=PASS')){if(-not $t.Contains($marker)){throw "missing $marker"}}
           Write-Host 'RC51_CONTRACT_ORACLE=PASS'
 
