@@ -36,7 +36,7 @@ jobs:
           if errorlevel 1 exit /b 20
           set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\raster\rc41
           mkdir lab\gui\rc54\build 2>nul
-          cl %CFLAGS% /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\gui\rc54\generated\ptar_rc41_context_hooks_rc54.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\gui\rc54\generated\ptar_rc41_swapchain_hooks_rc54.cpp lab\gui\rc54\generated\ptar_rc41_prod_rc54.cpp /Fo:lab\gui\rc54\build\ /Fe:lab\gui\rc54\build\ptar_rc41.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 21
+          cl %CFLAGS% /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\gui\rc54\generated\ptar_rc41_context_hooks_rc54.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\gui\rc54\generated\ptar_rc41_swapchain_hooks_rc54.cpp lab\gui\rc54\generated\ptar_rc41_prod_rc54.cpp /Fo:lab\gui\rc54\build\ /Fe:lab\gui\rc54\build\ptar_rc41.dll user32.lib gdi32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 21
           cl %CFLAGS% lab\raster\rc52\ptar_rc52_raster_state_host.cpp lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\gui\rc54\generated\ptar_rc41_context_hooks_rc54.cpp /Fo:lab\gui\rc54\build\ /Fe:lab\gui\rc54\build\raster_host.exe d3d11.lib user32.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 22
           cl %CFLAGS% lab\raster\rc41\ptar_rc41_prod_host.cpp /Fo:lab\gui\rc54\build\prod_host.obj /Fe:lab\gui\rc54\build\prod_host.exe d3d11.lib dxgi.lib user32.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 23
           certutil -hashfile lab\gui\rc54\build\ptar_rc41.dll SHA256
