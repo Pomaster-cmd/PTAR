@@ -62,10 +62,13 @@ jobs:
         shell: cmd
         run: |
           pushd lab\raster\rc41\prod_out
-          prod_host.exe > PROD_HOST.txt 2>&1
-          if errorlevel 1 (type PROD_HOST.txt & popd & exit /b 41)
-          type PROD_HOST.txt
-          findstr /C:"RC41_PROD_HOST=PASS" PROD_HOST.txt >nul || (popd & exit /b 42)
+          if exist RC41_PROD_HOST_RESULT.txt del /q RC41_PROD_HOST_RESULT.txt
+          prod_host.exe > PROD_HOST_STDOUT.txt 2>&1
+          if errorlevel 1 (type PROD_HOST_STDOUT.txt & popd & exit /b 41)
+          if not exist RC41_PROD_HOST_RESULT.txt (type PROD_HOST_STDOUT.txt & popd & exit /b 42)
+          type RC41_PROD_HOST_RESULT.txt
+          findstr /C:"RC41_PROD_HOST=PASS" RC41_PROD_HOST_RESULT.txt >nul || (popd & exit /b 43)
+          copy /y RC41_PROD_HOST_RESULT.txt PROD_HOST.txt >nul
           popd
 
       - name: Package production evidence
@@ -81,7 +84,7 @@ jobs:
           @("RC41_PRODUCTION_SIDECAR=PASS","SHA256=$hash","SIZE=$size",$host.Trim()) | Set-Content "$o/PROD_SUMMARY.txt" -Encoding ASCII
           Write-Host "RC41_PROD_SHA256=$hash"
           Write-Host "RC41_PROD_SIZE=$size"
-          Compress-Archive -Path "$o/ptar_rc41.dll","$o/EXPORTS.txt","$o/IMPORTS.txt","$o/HEADERS.txt","$o/PROD_HOST.txt","$o/PROD_SUMMARY.txt" -DestinationPath RC41_PRODUCTION_SIDECAR_EVIDENCE.zip -Force
+          Compress-Archive -Path "$o/ptar_rc41.dll","$o/EXPORTS.txt","$o/IMPORTS.txt","$o/HEADERS.txt","$o/PROD_HOST.txt","$o/PROD_HOST_STDOUT.txt","$o/PROD_SUMMARY.txt" -DestinationPath RC41_PRODUCTION_SIDECAR_EVIDENCE.zip -Force
 
       - uses: actions/upload-artifact@v4
         with:
