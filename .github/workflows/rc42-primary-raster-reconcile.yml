@@ -84,17 +84,22 @@ jobs:
           findstr /C:"RC41_PROD_HOST=PASS" PROD_HOST.txt >nul || (popd & exit /b 34)
           popd
 
-      - name: Verify RC42 reproducibility and package evidence
+      - name: Rebuild RC42 same target
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          del /q lab\raster\rc41\rc42_out\ptar_rc42.dll
+          cl /nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\raster\rc41 /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc41\ptar_rc41_context_hooks.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fe:lab\raster\rc41\rc42_out\ptar_rc42.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 41
+          fc /b lab\raster\rc41\rc42_out\ptar_rc42_first.dll lab\raster\rc41\rc42_out\ptar_rc42.dll >nul || exit /b 42
+          echo RC42_SAME_TARGET_REPRODUCIBILITY=PASS
+
+      - name: Package RC42 evidence
         shell: powershell
         run: |
           $ErrorActionPreference='Stop'
           $o='lab/raster/rc41/rc42_out'
-          $first=(Get-FileHash "$o/ptar_rc42_first.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
-          Remove-Item "$o/ptar_rc42.dll" -Force
-          cmd /c 'call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" && set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\raster\rc41 && cl %CFLAGS% /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc41\ptar_rc41_context_hooks.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fe:lab\raster\rc41\rc42_out\ptar_rc42.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03'
-          if($LASTEXITCODE -ne 0){throw 'RC42 rebuild failed'}
-          $second=(Get-FileHash "$o/ptar_rc42.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
-          if($first -ne $second){throw "RC42 reproducibility mismatch $first $second"}
+          $hash=(Get-FileHash "$o/ptar_rc42.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
           @(
             'RC42_PRIMARY_RASTER_RECONCILE=PASS',
             'STATIC_CONTRACT=8/8 PASS',
@@ -103,7 +108,8 @@ jobs:
             'INHERITED_SWAPCHAIN_WARP=PASS',
             'INHERITED_RESOURCE_WARP=PASS',
             'PRODUCTION_HOST=PASS',
-            "RC42_SIDECAR_SHA256=$second"
+            'SAME_TARGET_REPRODUCIBILITY=PASS',
+            "RC42_SIDECAR_SHA256=$hash"
           ) | Set-Content "$o/RC42_SUMMARY.txt" -Encoding ASCII
           Get-Content "$o/RC42_SUMMARY.txt"
           Compress-Archive -Path RC42_STATIC_CONTRACT.txt,"$o/*.txt","$o/ptar_rc42.dll" -DestinationPath RC42_PRIMARY_RASTER_RECONCILE_EVIDENCE.zip -Force
