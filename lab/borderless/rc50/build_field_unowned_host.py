@@ -45,6 +45,14 @@ s=s.replace(anchor,insert,1)
 
 old = 'last=swap->Present(1,0);pump();if(FAILED(last))'
 new = '''last=swap->Present(1,0);pump();
+        // Hold the exact field invariant throughout the run. This prevents modern
+        // Windows/P1U46 owner behavior from accidentally rescuing a candidate that
+        // would still fail on the user's Win8.1 unowned presenter topology.
+        if(GetWindow(presenter,GW_OWNER)!=nullptr){
+            SetWindowLongPtrW(presenter,GWLP_HWNDPARENT,0);
+            SetWindowPos(presenter,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_FRAMECHANGED|SWP_SHOWWINDOW);
+            pump();
+        }
         // Reproduce the field pressure: the opaque game window repeatedly wins a
         // top-level z-order transaction. The candidate must make the independent
         // P1U46 presenter visible again without owner/parent/WS_CHILD mutation.
