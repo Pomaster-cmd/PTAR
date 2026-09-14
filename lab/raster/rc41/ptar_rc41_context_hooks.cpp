@@ -19,11 +19,36 @@ static D3D11_VIEWPORT mapped_viewport(const Contract& c,const D3D11_VIEWPORT& in
     return r;
 }
 
+static D3D11_VIEWPORT unmapped_viewport(const Contract& c,const D3D11_VIEWPORT& in) noexcept {
+    const ViewportF v{in.TopLeftX,in.TopLeftY,in.Width,in.Height,in.MinDepth,in.MaxDepth};
+    const ViewportF o=unmap_viewport(c,v,true);
+    D3D11_VIEWPORT r{};
+    r.TopLeftX=o.x; r.TopLeftY=o.y; r.Width=o.w; r.Height=o.h;
+    r.MinDepth=o.minDepth; r.MaxDepth=o.maxDepth;
+    return r;
+}
+
 static D3D11_RECT mapped_scissor(const Contract& c,const D3D11_RECT& in) noexcept {
     const RectI r{in.left,in.top,in.right,in.bottom};
     const RectI o=map_scissor(c,r,true);
     D3D11_RECT q{o.l,o.t,o.r,o.b};
     return q;
+}
+
+static D3D11_RECT unmapped_scissor(const Contract& c,const D3D11_RECT& in) noexcept {
+    const RectI r{in.left,in.top,in.right,in.bottom};
+    const RectI o=unmap_scissor_cover(c,r,true);
+    D3D11_RECT q{o.l,o.t,o.r,o.b};
+    return q;
+}
+
+static bool viewport_exceeds_physical(const Contract& c,const D3D11_VIEWPORT& v) noexcept {
+    return v.TopLeftX+v.Width>float(c.physical.w)+0.5f ||
+           v.TopLeftY+v.Height>float(c.physical.h)+0.5f;
+}
+
+static bool scissor_exceeds_physical(const Contract& c,const D3D11_RECT& r) noexcept {
+    return r.right>(LONG)c.physical.w || r.bottom>(LONG)c.physical.h;
 }
 
 ContextHooks::ContextHooks() noexcept = default;
@@ -39,6 +64,7 @@ bool ContextHooks::configure(const Contract& contract,ID3D11Resource* primaryRes
     if(!classifier_.set_primary_resource(primaryResource)) return false;
     contract_=contract;
     set_primary_bound(false);
+    clear_cached_raster_state();
     return true;
 }
 
@@ -46,8 +72,10 @@ bool ContextHooks::update_primary_resource(ID3D11Resource* primaryResource) noex
     if(!primaryResource || !contract_.valid()) return false;
     if(!classifier_.set_primary_resource(primaryResource)) return false;
     add_counter(primaryRefreshes_);
-    if(context_) refresh_primary_from_context(context_);
-    else set_primary_bound(false);
+    if(context_){
+        refresh_primary_from_context(context_);
+        reconcile_cached_raster_state(context_,primary_bound());
+    } else set_primary_bound(false);
     return true;
 }
 
@@ -94,6 +122,8 @@ bool ContextHooks::install(ID3D11DeviceContext* context) noexcept {
     }
     InterlockedExchange(&installed_,1);
     refresh_primary_from_context(context_);
+    capture_raster_state_from_context(context_);
+    reconcile_cached_raster_state(context_,primary_bound());
     return true;
 }
 
@@ -104,6 +134,7 @@ void ContextHooks::uninstall() noexcept {
         reinterpret_cast<PVOID volatile*>(context_),originalVtable_,shadowVtable_);
     InterlockedCompareExchangePointer(reinterpret_cast<PVOID volatile*>(&g_owner),nullptr,this);
     set_primary_bound(false);
+    clear_cached_raster_state();
     ID3D11DeviceContext* old=context_;
     context_=nullptr; originalVtable_=nullptr;
     old->Release();
@@ -123,10 +154,90 @@ HookStats ContextHooks::stats() const noexcept {
     s.clearStateCalls=(uint64_t)InterlockedCompareExchange64(const_cast<volatile LONG64*>(&clearStateCalls_),0,0);
     s.executeCommandListCalls=(uint64_t)InterlockedCompareExchange64(const_cast<volatile LONG64*>(&executeCommandListCalls_),0,0);
     s.primaryRefreshes=(uint64_t)InterlockedCompareExchange64(const_cast<volatile LONG64*>(&primaryRefreshes_),0,0);
+    s.primaryBindTransitions=(uint64_t)InterlockedCompareExchange64(const_cast<volatile LONG64*>(&primaryBindTransitions_),0,0);
+    s.viewportStateReapplies=(uint64_t)InterlockedCompareExchange64(const_cast<volatile LONG64*>(&viewportStateReapplies_),0,0);
+    s.scissorStateReapplies=(uint64_t)InterlockedCompareExchange64(const_cast<volatile LONG64*>(&scissorStateReapplies_),0,0);
+    s.viewportCallsUnbound=(uint64_t)InterlockedCompareExchange64(const_cast<volatile LONG64*>(&viewportCallsUnbound_),0,0);
+    s.scissorCallsUnbound=(uint64_t)InterlockedCompareExchange64(const_cast<volatile LONG64*>(&scissorCallsUnbound_),0,0);
     return s;
 }
 
 void ContextHooks::set_primary_bound(bool value) noexcept { InterlockedExchange(&primaryBound_,value?1:0); }
+
+void ContextHooks::clear_cached_raster_state() noexcept {
+    AcquireSRWLockExclusive(&rasterStateLock_);
+    requestedViewportCount_=requestedScissorCount_=0;
+    haveViewportState_=haveScissorState_=false;
+    ReleaseSRWLockExclusive(&rasterStateLock_);
+}
+
+void ContextHooks::cache_viewports(UINT count,const D3D11_VIEWPORT* viewports,bool valuesArePhysical) noexcept {
+    if(count>kRasterSlots || (count && !viewports)) return;
+    AcquireSRWLockExclusive(&rasterStateLock_);
+    requestedViewportCount_=count;
+    for(UINT i=0;i<count;++i){
+        if(valuesArePhysical && !viewport_exceeds_physical(contract_,viewports[i]))
+            requestedViewports_[i]=unmapped_viewport(contract_,viewports[i]);
+        else requestedViewports_[i]=viewports[i];
+    }
+    haveViewportState_=true;
+    ReleaseSRWLockExclusive(&rasterStateLock_);
+}
+
+void ContextHooks::cache_scissors(UINT count,const D3D11_RECT* rects,bool valuesArePhysical) noexcept {
+    if(count>kRasterSlots || (count && !rects)) return;
+    AcquireSRWLockExclusive(&rasterStateLock_);
+    requestedScissorCount_=count;
+    for(UINT i=0;i<count;++i){
+        if(valuesArePhysical && !scissor_exceeds_physical(contract_,rects[i]))
+            requestedScissors_[i]=unmapped_scissor(contract_,rects[i]);
+        else requestedScissors_[i]=rects[i];
+    }
+    haveScissorState_=true;
+    ReleaseSRWLockExclusive(&rasterStateLock_);
+}
+
+void ContextHooks::capture_raster_state_from_context(ID3D11DeviceContext* ctx) noexcept {
+    if(!ctx) return;
+    D3D11_VIEWPORT vp[kRasterSlots]{};UINT vpCount=kRasterSlots;
+    ctx->RSGetViewports(&vpCount,vp);
+    bool vpPhysical=primary_bound();
+    if(vpPhysical){
+        for(UINT i=0;i<vpCount;++i) if(viewport_exceeds_physical(contract_,vp[i])){vpPhysical=false;break;}
+    }
+    cache_viewports(vpCount,vp,vpPhysical);
+
+    D3D11_RECT sc[kRasterSlots]{};UINT scCount=kRasterSlots;
+    ctx->RSGetScissorRects(&scCount,sc);
+    bool scPhysical=primary_bound();
+    if(scPhysical){
+        for(UINT i=0;i<scCount;++i) if(scissor_exceeds_physical(contract_,sc[i])){scPhysical=false;break;}
+    }
+    cache_scissors(scCount,sc,scPhysical);
+}
+
+void ContextHooks::reconcile_cached_raster_state(ID3D11DeviceContext* ctx,bool primaryBound) noexcept {
+    if(!ctx || !origViewports_ || !origScissors_) return;
+    D3D11_VIEWPORT vp[kRasterSlots]{};D3D11_RECT sc[kRasterSlots]{};
+    UINT vpCount=0,scCount=0;bool haveVp=false,haveSc=false;
+    AcquireSRWLockShared(&rasterStateLock_);
+    vpCount=requestedViewportCount_;scCount=requestedScissorCount_;
+    haveVp=haveViewportState_;haveSc=haveScissorState_;
+    for(UINT i=0;i<vpCount;++i) vp[i]=requestedViewports_[i];
+    for(UINT i=0;i<scCount;++i) sc[i]=requestedScissors_[i];
+    ReleaseSRWLockShared(&rasterStateLock_);
+
+    if(haveVp){
+        if(primaryBound) for(UINT i=0;i<vpCount;++i) vp[i]=mapped_viewport(contract_,vp[i]);
+        origViewports_(ctx,vpCount,vpCount?vp:nullptr);
+        add_counter(viewportStateReapplies_);
+    }
+    if(haveSc){
+        if(primaryBound) for(UINT i=0;i<scCount;++i) sc[i]=mapped_scissor(contract_,sc[i]);
+        origScissors_(ctx,scCount,scCount?sc:nullptr);
+        add_counter(scissorStateReapplies_);
+    }
+}
 
 void ContextHooks::refresh_primary_from_context(ID3D11DeviceContext* ctx) noexcept {
     ID3D11RenderTargetView* rtvs[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT]{};
@@ -135,24 +246,39 @@ void ContextHooks::refresh_primary_from_context(ID3D11DeviceContext* ctx) noexce
     const bool bound=classifier_.any_primary(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT,rtvs,dsv);
     for(auto*& rtv:rtvs){ if(rtv){ rtv->Release(); rtv=nullptr; } }
     if(dsv) dsv->Release();
+    const bool old=primary_bound();
     set_primary_bound(bound);
+    if(old!=bound) add_counter(primaryBindTransitions_);
 }
 
 void STDMETHODCALLTYPE ContextHooks::hook_om(ID3D11DeviceContext* ctx,UINT count,ID3D11RenderTargetView* const* rtvs,ID3D11DepthStencilView* dsv){
     ContextHooks* self=owner_now();
     if(!self || !self->origOM_){ return; }
+    const bool old=self->primary_bound();
     self->origOM_(ctx,count,rtvs,dsv);
     self->add_counter(self->omCalls_);
-    self->set_primary_bound(self->classifier_.any_primary(count,rtvs,dsv));
+    const bool now=self->classifier_.any_primary(count,rtvs,dsv);
+    self->set_primary_bound(now);
+    if(old!=now){
+        self->add_counter(self->primaryBindTransitions_);
+        self->reconcile_cached_raster_state(ctx,now);
+    }
 }
 
 void STDMETHODCALLTYPE ContextHooks::hook_om_uav(ID3D11DeviceContext* ctx,UINT count,ID3D11RenderTargetView* const* rtvs,ID3D11DepthStencilView* dsv,UINT uavStart,UINT uavCount,ID3D11UnorderedAccessView* const* uavs,const UINT* initialCounts){
     ContextHooks* self=owner_now();
     if(!self || !self->origOMUav_){ return; }
+    const bool old=self->primary_bound();
     self->origOMUav_(ctx,count,rtvs,dsv,uavStart,uavCount,uavs,initialCounts);
     self->add_counter(self->omUavCalls_);
-    if(count!=D3D11_KEEP_RENDER_TARGETS_AND_DEPTH_STENCIL)
-        self->set_primary_bound(self->classifier_.any_primary(count,rtvs,dsv));
+    if(count!=D3D11_KEEP_RENDER_TARGETS_AND_DEPTH_STENCIL){
+        const bool now=self->classifier_.any_primary(count,rtvs,dsv);
+        self->set_primary_bound(now);
+        if(old!=now){
+            self->add_counter(self->primaryBindTransitions_);
+            self->reconcile_cached_raster_state(ctx,now);
+        }
+    }
 }
 
 void STDMETHODCALLTYPE ContextHooks::hook_execute_command_list(ID3D11DeviceContext* ctx,ID3D11CommandList* list,BOOL restore){
@@ -161,16 +287,20 @@ void STDMETHODCALLTYPE ContextHooks::hook_execute_command_list(ID3D11DeviceConte
     self->origExecuteCommandList_(ctx,list,restore);
     self->add_counter(self->executeCommandListCalls_);
     self->refresh_primary_from_context(ctx);
+    self->capture_raster_state_from_context(ctx);
+    self->reconcile_cached_raster_state(ctx,self->primary_bound());
 }
 
 void STDMETHODCALLTYPE ContextHooks::hook_viewports(ID3D11DeviceContext* ctx,UINT count,const D3D11_VIEWPORT* viewports){
     ContextHooks* self=owner_now();
     if(!self || !self->origViewports_){ return; }
     self->add_counter(self->viewportCalls_);
-    if(!self->primary_bound() || !viewports || !count || count>D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE){
+    if(viewports || count==0) self->cache_viewports(count,viewports,false);
+    if(!self->primary_bound() || !viewports || !count || count>kRasterSlots){
+        if(!self->primary_bound()) self->add_counter(self->viewportCallsUnbound_);
         self->origViewports_(ctx,count,viewports); return;
     }
-    D3D11_VIEWPORT mapped[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE]{};
+    D3D11_VIEWPORT mapped[kRasterSlots]{};
     for(UINT i=0;i<count;++i) mapped[i]=mapped_viewport(self->contract_,viewports[i]);
     self->add_counter(self->viewportMapped_);
     self->origViewports_(ctx,count,mapped);
@@ -180,10 +310,12 @@ void STDMETHODCALLTYPE ContextHooks::hook_scissors(ID3D11DeviceContext* ctx,UINT
     ContextHooks* self=owner_now();
     if(!self || !self->origScissors_){ return; }
     self->add_counter(self->scissorCalls_);
-    if(!self->primary_bound() || !rects || !count || count>D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE){
+    if(rects || count==0) self->cache_scissors(count,rects,false);
+    if(!self->primary_bound() || !rects || !count || count>kRasterSlots){
+        if(!self->primary_bound()) self->add_counter(self->scissorCallsUnbound_);
         self->origScissors_(ctx,count,rects); return;
     }
-    D3D11_RECT mapped[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE]{};
+    D3D11_RECT mapped[kRasterSlots]{};
     for(UINT i=0;i<count;++i) mapped[i]=mapped_scissor(self->contract_,rects[i]);
     self->add_counter(self->scissorMapped_);
     self->origScissors_(ctx,count,mapped);
@@ -195,6 +327,7 @@ void STDMETHODCALLTYPE ContextHooks::hook_clear_state(ID3D11DeviceContext* ctx){
     self->origClearState_(ctx);
     self->add_counter(self->clearStateCalls_);
     self->set_primary_bound(false);
+    self->clear_cached_raster_state();
 }
 
 } // namespace ptar_rc41
