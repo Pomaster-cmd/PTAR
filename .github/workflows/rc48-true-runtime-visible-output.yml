@@ -1,0 +1,87 @@
+name: RC48 True P1U46 Visible Output
+
+on:
+  push:
+    branches: [lab/rc48-field-parity-black-screen-20260914]
+    paths:
+      - lab/borderless/rc48/ptar_rc48_true_runtime_host.cpp
+      - lab/borderless/rc48/rebuild_exact_field_runtime.py
+      - lab/borderless/rc48/ptar_borderless_rc48_prod.cpp
+      - .github/workflows/rc48-true-runtime-visible-output.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-true-runtime:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct exact installed RC48 P1U46 runtime
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $o='lab/borderless/rc48/true_runtime'
+          New-Item -ItemType Directory -Force $o | Out-Null
+          $base=(Get-FileHash payload/d3d11.dll -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($base -ne '864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c'){throw "canonical runtime drift $base"}
+          python lab/borderless/rc48/rebuild_exact_field_runtime.py payload/d3d11.dll "$o/d3d11.dll"
+          if($LASTEXITCODE -ne 0){throw 'exact field runtime reconstruction failed'}
+          $h=(Get-FileHash "$o/d3d11.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($h -ne '6f1686992bef971c9995df9f0cb91b93c6946988e12a837e5de956df37c9082b'){throw "field runtime SHA mismatch $h"}
+          Copy-Item "$o/d3d11.dll" "$o/win81_nis_dx11_x64.dll" -Force
+          Copy-Item payload/win81_nis.ini "$o/win81_nis.ini" -Force
+          Write-Host "TRUE_RUNTIME_FIXTURE=PASS base=$base overlay=$h"
+
+      - name: Build exact RC48 carrier, RC42 raster and Warhammer host
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          set O=lab\borderless\rc48\true_runtime
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603
+          cl %CFLAGS% /LD lab\borderless\rc48\ptar_borderless_rc48_prod.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fe:%O%\ptar_borderless.dll user32.lib advapi32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 11
+          cl %CFLAGS% /I lab\raster\rc41 /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc41\ptar_rc41_context_hooks.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fe:%O%\ptar_rc41.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 12
+          cl %CFLAGS% lab\borderless\rc48\ptar_rc48_true_runtime_host.cpp /Fe:%O%\Warhammer.exe user32.lib advapi32.lib gdi32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:WINDOWS,6.03 || exit /b 13
+
+      - name: Verify exact component hashes
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o='lab/borderless/rc48/true_runtime'
+          $carrier=(Get-FileHash "$o/ptar_borderless.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $raster=(Get-FileHash "$o/ptar_rc41.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $runtime=(Get-FileHash "$o/d3d11.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($carrier -ne '0201c9ae7c1b02163a7960e26effebedd9f6d478987da63a19412af7b758cad3'){throw "carrier drift $carrier"}
+          if($raster -ne '7ffe7aa1b9afa42d5f22557cae29a4f65e17379c2a2f181f879427277839f1ca'){throw "raster drift $raster"}
+          if($runtime -ne '6f1686992bef971c9995df9f0cb91b93c6946988e12a837e5de956df37c9082b'){throw "runtime drift $runtime"}
+          "TRUE_FIELD_COMPONENTS=PASS runtime=$runtime carrier=$carrier raster=$raster" | Set-Content "$o/COMPONENTS.txt" -Encoding ASCII
+          Get-Content "$o/COMPONENTS.txt"
+
+      - name: Run exact P1U46 Windowed visible-pixel gate
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o=(Resolve-Path 'lab/borderless/rc48/true_runtime').Path
+          $p=Start-Process -FilePath "$o/Warhammer.exe" -WorkingDirectory $o -PassThru
+          if(-not $p.WaitForExit(90000)){Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue;throw 'Warhammer host timeout'}
+          $rc=$p.ExitCode
+          Write-Host "TRUE_RUNTIME_HOST_EXIT=$rc"
+          foreach($n in @('TRUE_RUNTIME_HOST.txt','win81_nis.log','ptar_borderless_rc38.log','ptar_rc41.log','ptar_rc41_bootstrap.log')){
+            $p2=Join-Path $o $n
+            if(Test-Path $p2){Write-Host "===== $n =====";Get-Content $p2 -Tail 250}
+          }
+          if($rc -ne 0){throw "true runtime visible-output gate failed rc=$rc"}
+          $host=Get-Content "$o/TRUE_RUNTIME_HOST.txt" -Raw
+          if(-not $host.Contains('TRUE_P1U46_WINDOWED_VISIBLE_PIXELS=PASS')){throw 'visible-pixel PASS marker missing'}
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PTAR_RC48_TRUE_P1U46_VISIBLE_OUTPUT
+          path: |
+            lab/borderless/rc48/true_runtime/*.txt
+            lab/borderless/rc48/true_runtime/*.log
+          if-no-files-found: warn
+          retention-days: 7
