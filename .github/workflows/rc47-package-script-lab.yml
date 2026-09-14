@@ -1,0 +1,120 @@
+name: RC47 Package Script Lab
+
+on:
+  push:
+    branches: [build/rc47-windowed-presenter-owner-20260914]
+    paths:
+      - lab/borderless/rc47/package_scripts/**
+      - .github/workflows/rc47-package-script-lab.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-rc47-package-scripts:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct certified RC41 script fixture
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$root='lab/raster/rc41/package_scripts';$joined=''
+          foreach($name in @('part01.b64','part02.b64','part03.b64','part04.b64','part05.b64')){$joined += (Get-Content -LiteralPath "$root/fixture_parts/$name" -Raw).Trim()}
+          $zip="$root/rc41_exact.zip";[IO.File]::WriteAllBytes($zip,[Convert]::FromBase64String($joined))
+          $h=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant();if($h -ne 'd12ac6a05f21477e720e909be37139545c033008ef7bfafddf518f418ca7c43d'){throw "RC41 fixture drift $h"}
+          Expand-Archive $zip "$root/rc41_exact" -Force
+
+      - name: Regenerate certified RC41B to RC46 chain
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $b='lab/borderless/rc47/package_scripts'
+          python lab/raster/rc41b/package_scripts/build_rc41b_scripts.py lab/raster/rc41/package_scripts/rc41_exact "$b/rc41b"
+          if($LASTEXITCODE -ne 0){throw 'RC41B transformer failed'}
+          python lab/raster/rc42/package_scripts/build_rc42_scripts.py "$b/rc41b" "$b/rc42"
+          if($LASTEXITCODE -ne 0){throw 'RC42 transformer failed'}
+          python lab/borderless/rc43/package_scripts/build_rc43_scripts.py "$b/rc42" "$b/rc43"
+          if($LASTEXITCODE -ne 0){throw 'RC43 transformer failed'}
+          python lab/borderless/rc44/package_scripts/build_rc44_scripts.py "$b/rc43" "$b/rc44"
+          if($LASTEXITCODE -ne 0){throw 'RC44 transformer failed'}
+          python lab/borderless/rc45/package_scripts/build_rc45_scripts.py "$b/rc44" "$b/rc45"
+          if($LASTEXITCODE -ne 0){throw 'RC45 transformer failed'}
+          python lab/borderless/rc46/package_scripts/build_rc46_scripts.py "$b/rc45" "$b/rc46"
+          if($LASTEXITCODE -ne 0){throw 'RC46 transformer failed'}
+          $expected=[ordered]@{
+            'install.ps1'='a920f66f184f1e7c1e3adebdbc0f8fb421c53e2bf6374fb1bea9f223ac51fe78'
+            'verify.ps1'='59df60590eb77a8cb21704cd2676157b3a024738db612837071c16ef52eaf407'
+            'rollback.ps1'='933965b6111b3a65f0ab38a8d88b56176306335e7fe5136004b8390ca0be5f39'
+            'uninstall_overlay.ps1'='06536460cf0b553093516f39efdfd5ec668f41cf8aaa7c2d42d2087206744637'
+            'collect_rc41.ps1'='7826b76f2867dac621cfcf46575aa7e8a79512014ded1d25b695a9c1241d4426'
+          }
+          foreach($name in $expected.Keys){$h=(Get-FileHash "$b/rc46/$name" -Algorithm SHA256).Hash.ToLowerInvariant();if($h -ne $expected[$name]){throw "RC46 source drift $name $h"};Write-Host "PASS RC46 SOURCE $name $h"}
+
+      - name: Generate exact RC47 scripts and verify hashes
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$root='lab/borderless/rc47/package_scripts';$out="$root/out"
+          python "$root/build_rc47_scripts.py" "$root/rc46" $out
+          if($LASTEXITCODE -ne 0){throw 'RC47 transformer failed'}
+          $expected=[ordered]@{
+            'install.ps1'='86368e59dda290a3e13ce66ad60faa083119346524c643f278586b407a647e08'
+            'verify.ps1'='fc4334175c4a23e94dc6893a58228c0e7817a8141687c9e43cbb9463fe2493db'
+            'rollback.ps1'='7c89f5fafd72a4068d0e1d32702c58c11074757a20f780d4144f50deb2f5d4c1'
+            'uninstall_overlay.ps1'='496748f4ca1c96a6efc32423c07f02b485563d781685c7e2065337cb16ee250e'
+            'collect_rc41.ps1'='0a5db4ad86eba6e0ca639f9197919ab457b88b2f0619bdbc6d6cbaef50d12299'
+          }
+          foreach($name in $expected.Keys){$h=(Get-FileHash "$out/$name" -Algorithm SHA256).Hash.ToLowerInvariant();if($h -ne $expected[$name]){throw "RC47 hash mismatch $name $h"};Write-Host "PASS RC47 HASH $name $h"}
+
+      - name: Parse RC47 scripts with Windows PowerShell
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$root='lab/borderless/rc47/package_scripts/out'
+          foreach($name in @('install.ps1','verify.ps1','rollback.ps1','uninstall_overlay.ps1','collect_rc41.ps1')){
+            $tokens=$null;$errors=$null;[void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path "$root/$name"),[ref]$tokens,[ref]$errors)
+            if($errors.Count){$errors|ForEach-Object{Write-Host "PARSE_ERROR $name $($_.Message)"};throw "PowerShell parse failure $name"};Write-Host "PASS PARSE $name"
+          }
+
+      - name: Validate RC47 package safety contracts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$root='lab/borderless/rc47/package_scripts/out'
+          $i=Get-Content "$root/install.ps1" -Raw;$v=Get-Content "$root/verify.ps1" -Raw;$r=Get-Content "$root/rollback.ps1" -Raw;$u=Get-Content "$root/uninstall_overlay.ps1" -Raw;$c=Get-Content "$root/collect_rc41.ps1" -Raw
+          $old='8269d32ccb77b5e65ed159f75ae24266c22b410b8b465a7d504775a937b54890';$new='a4f0c2cc95a8e0624d493b402e46f6938c60cb59c1827d2b677f786fe005c61f';$raster='7ffe7aa1b9afa42d5f22557cae29a4f65e17379c2a2f181f879427277839f1ca'
+          $checks=[ordered]@{
+            'install exact RC47 carrier'=$i.Contains("`$ExpectedBorderless='$new'")
+            'upgrade accepts RC46 carrier'=($i.Contains($old) -and $i.Contains($new))
+            'RC42 raster remains exact'=($i.Contains($raster) -and $v.Contains($raster))
+            'no WindowStyle force'=(-not $i.Contains('Set-ItemProperty -LiteralPath $key -Name WindowStyle -Type DWord -Value 1'))
+            'WindowStyle remains passive'=($i.Contains('WINDOWSTYLE_PRESERVED=') -and $i.Contains('$m.windowstyle.applied=$false'))
+            'no AffectGuiResolution force'=(-not $i.Contains('-Name AffectGuiResolution -Type DWord -Value 1'))
+            'package marker RC47'=$i.Contains("package='PTAR_RC47_WINDOWED_PRESENTER_OWNER'")
+            'mode marker RC47'=$i.Contains('MODE=RC47_WINDOWED_PRESENTER_OWNER_WITH_RC42_RASTER')
+            'verify marker RC47'=$v.Contains('VERIFY_RC47_WINDOWED_PRESENTER_OWNER=PASS')
+            'rollback accepts RC47 carrier'=($r.Contains($new) -and $r.Contains('KnownBorder'))
+            'rollback still accepts RC46 carrier'=($r.Contains($old) -and $r.Contains('KnownBorder'))
+            'uninstall accepts RC47 carrier'=($u.Contains($new) -and $u.Contains('borderExpected'))
+            'uninstall still accepts RC46 carrier'=($u.Contains($old) -and $u.Contains('borderExpected'))
+            'collector emits RC47 zip'=$c.Contains('PTAR_RC47_RESULTS_')
+            'collector writes RC47 payload hashes'=$c.Contains('RC47_ACTIVE_PAYLOAD_SHA256.txt')
+            'collector includes borderless log'=$c.Contains('ptar_borderless_rc38.log')
+            'collector includes raster log'=$c.Contains('ptar_rc41.log')
+            'collector includes bootstrap log'=$c.Contains('ptar_rc41_bootstrap.log')
+            'unknown runtime refusal retained'=$i.Contains('DLL locale inconnue')
+            'unknown carrier refusal retained'=$i.Contains('Sidecar borderless local inconnu')
+            'unknown raster refusal retained'=$i.Contains('Sidecar RC41 local inconnu')
+            'transaction rollback retained'=$i.Contains('Installation transaction annulee')
+            'canonical 107 verification retained'=$v.Contains('BASE GITHUB 107/107 fichiers byte-identiques')
+          }
+          foreach($k in $checks.Keys){if(-not $checks[$k]){throw "CONTRACT FAIL $k"};Write-Host "PASS $k"}
+          'RC47_PACKAGE_SCRIPTS=23/23 PASS' | Set-Content RC47_PACKAGE_SCRIPT_CONTRACT.txt -Encoding ASCII
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_RC47_PACKAGE_SCRIPT_LAB
+          path: |
+            RC47_PACKAGE_SCRIPT_CONTRACT.txt
+            lab/borderless/rc47/package_scripts/out/*.ps1
+          if-no-files-found: error
+          retention-days: 7
