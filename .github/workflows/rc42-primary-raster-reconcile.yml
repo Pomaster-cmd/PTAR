@@ -1,0 +1,116 @@
+name: RC42 Primary Raster Reconcile Lab
+
+on:
+  push:
+    branches: [build/rc42-primary-raster-reconcile-20260914]
+    paths:
+      - lab/raster/rc41/**
+      - .github/workflows/rc42-primary-raster-reconcile.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-rc42-raster:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Static RC42 contract
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $h=Get-Content 'lab/raster/rc41/ptar_rc41_context_hooks.h' -Raw
+          $c=Get-Content 'lab/raster/rc41/ptar_rc41_context_hooks.cpp' -Raw
+          $w=Get-Content 'lab/raster/rc41/ptar_rc41_hook_warp_harness.cpp' -Raw
+          $checks=[ordered]@{
+            'requested raster state is cached'=($h.Contains('requestedViewports_') -and $h.Contains('requestedScissors_'))
+            'primary transition reconciles cached state'=($c.Contains('reconcile_cached_raster_state(ctx,now)') -and $c.Contains('if(old!=now)'))
+            'unbound viewport is preserved'=($c.Contains('viewportCallsUnbound_') -and $c.Contains('origViewports_(ctx,count,viewports)'))
+            'primary viewport is mapped'=($c.Contains('mapped_viewport(self->contract_,viewports[i])'))
+            'command-list state is recaptured'=($c.Contains('capture_raster_state_from_context(ctx)') -and $c.Contains('hook_execute_command_list'))
+            'ClearState clears logical cache'=($c.Contains('clear_cached_raster_state()'))
+            'pre-bind ordering regression exists'=($w.Contains('prebind_reconcile=PASS') -and $w.Contains('unbind_restore=PASS'))
+            'no HWND policy added'=(-not $c.Contains('SetWindowPos(') -and -not $c.Contains('SetWindowLongPtr'))
+          }
+          foreach($k in $checks.Keys){if(-not $checks[$k]){throw "RC42 CONTRACT FAIL: $k"};Write-Host "PASS $k"}
+          'RC42_STATIC_CONTRACT=8/8 PASS' | Set-Content RC42_STATIC_CONTRACT.txt -Encoding ASCII
+
+      - name: Build RC42 WARP regression gates
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          if not exist lab\raster\rc41\rc42_out mkdir lab\raster\rc41\rc42_out
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\raster\rc41
+          cl %CFLAGS% lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc41\ptar_rc41_context_hooks.cpp lab\raster\rc41\ptar_rc41_hook_warp_harness.cpp /Fe:lab\raster\rc41\rc42_out\hook_warp.exe d3d11.lib dxgi.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 11
+          cl %CFLAGS% lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc41\ptar_rc41_context_hooks.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_swapchain_warp_harness.cpp /Fe:lab\raster\rc41\rc42_out\swapchain_warp.exe user32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 12
+          cl %CFLAGS% lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc41\ptar_rc41_context_hooks.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_resource_warp_harness.cpp /Fe:lab\raster\rc41\rc42_out\resource_warp.exe user32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 13
+
+      - name: Run RC42 WARP regression gates
+        shell: cmd
+        run: |
+          pushd lab\raster\rc41\rc42_out
+          hook_warp.exe > HOOK_WARP.txt 2>&1
+          if errorlevel 1 (type HOOK_WARP.txt & popd & exit /b 21)
+          type HOOK_WARP.txt
+          findstr /C:"RC42_HOOK_WARP=PASS" HOOK_WARP.txt >nul || (popd & exit /b 22)
+          swapchain_warp.exe > SWAPCHAIN_WARP.txt 2>&1
+          if errorlevel 1 (type SWAPCHAIN_WARP.txt & popd & exit /b 23)
+          type SWAPCHAIN_WARP.txt
+          findstr /C:"RC41_SWAPCHAIN_WARP=PASS" SWAPCHAIN_WARP.txt >nul || (popd & exit /b 24)
+          if exist RC41_RESOURCE_WARP_RESULT.txt del /q RC41_RESOURCE_WARP_RESULT.txt
+          resource_warp.exe > RESOURCE_WARP_STDOUT.txt 2>&1
+          if errorlevel 1 (type RESOURCE_WARP_STDOUT.txt & popd & exit /b 25)
+          type RC41_RESOURCE_WARP_RESULT.txt
+          findstr /C:"RC41_RESOURCE_WARP=PASS" RC41_RESOURCE_WARP_RESULT.txt >nul || (popd & exit /b 26)
+          popd
+
+      - name: Build reproducible RC42 production sidecar and host
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\raster\rc41
+          cl %CFLAGS% /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc41\ptar_rc41_context_hooks.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fe:lab\raster\rc41\rc42_out\ptar_rc42.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 31
+          copy /y lab\raster\rc41\rc42_out\ptar_rc42.dll lab\raster\rc41\rc42_out\ptar_rc42_first.dll >nul
+          copy /y lab\raster\rc41\rc42_out\ptar_rc42.dll lab\raster\rc41\rc42_out\ptar_rc41.dll >nul
+          cl %CFLAGS% lab\raster\rc41\ptar_rc41_prod_host.cpp /Fe:lab\raster\rc41\rc42_out\prod_host.exe user32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 32
+          pushd lab\raster\rc41\rc42_out
+          prod_host.exe > PROD_HOST.txt 2>&1
+          if errorlevel 1 (type PROD_HOST.txt & popd & exit /b 33)
+          type PROD_HOST.txt
+          findstr /C:"RC41_PROD_HOST=PASS" PROD_HOST.txt >nul || (popd & exit /b 34)
+          popd
+
+      - name: Verify RC42 reproducibility and package evidence
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $o='lab/raster/rc41/rc42_out'
+          $first=(Get-FileHash "$o/ptar_rc42_first.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          Remove-Item "$o/ptar_rc42.dll" -Force
+          cmd /c 'call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" && set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\raster\rc41 && cl %CFLAGS% /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc41\ptar_rc41_context_hooks.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fe:lab\raster\rc41\rc42_out\ptar_rc42.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03'
+          if($LASTEXITCODE -ne 0){throw 'RC42 rebuild failed'}
+          $second=(Get-FileHash "$o/ptar_rc42.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($first -ne $second){throw "RC42 reproducibility mismatch $first $second"}
+          @(
+            'RC42_PRIMARY_RASTER_RECONCILE=PASS',
+            'STATIC_CONTRACT=8/8 PASS',
+            'PREBIND_RECONCILE_WARP=PASS',
+            'UNBIND_RESTORE_WARP=PASS',
+            'INHERITED_SWAPCHAIN_WARP=PASS',
+            'INHERITED_RESOURCE_WARP=PASS',
+            'PRODUCTION_HOST=PASS',
+            "RC42_SIDECAR_SHA256=$second"
+          ) | Set-Content "$o/RC42_SUMMARY.txt" -Encoding ASCII
+          Get-Content "$o/RC42_SUMMARY.txt"
+          Compress-Archive -Path RC42_STATIC_CONTRACT.txt,"$o/*.txt","$o/ptar_rc42.dll" -DestinationPath RC42_PRIMARY_RASTER_RECONCILE_EVIDENCE.zip -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_RC42_PRIMARY_RASTER_RECONCILE
+          path: RC42_PRIMARY_RASTER_RECONCILE_EVIDENCE.zip
+          if-no-files-found: error
+          retention-days: 7
