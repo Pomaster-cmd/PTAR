@@ -136,22 +136,29 @@ jobs:
           lab\raster\rc41\out\resource_warp_harness.exe > lab\raster\rc41\out\RESOURCE_WARP_STRESS.txt 2>&1
           if errorlevel 1 (type lab\raster\rc41\out\RESOURCE_WARP_STRESS.txt & exit /b 27)
           type lab\raster\rc41\out\RESOURCE_WARP_STRESS.txt
+          findstr /C:"RC41_RESOURCE_WARP=PASS" lab\raster\rc41\out\RESOURCE_WARP_STRESS.txt >nul || exit /b 28
 
       - name: Package RC41 evidence
         shell: powershell
         run: |
           $ErrorActionPreference='Stop'
           $o='lab/raster/rc41/out'
+          function Read-Evidence([string]$path,[string]$marker){
+            $text=Get-Content $path -Raw -ErrorAction Stop
+            if([string]::IsNullOrWhiteSpace($text)){ throw "empty evidence: $path" }
+            if(-not $text.Contains($marker)){ throw "missing marker $marker in $path" }
+            return $text.Trim()
+          }
           $summary=@(
             'RC41_LAB_STATUS=PASS',
             'STATIC_ARCHITECTURE=22/22 PASS',
-            (Get-Content "$o/MATH_STRESS.txt" -Raw).Trim(),
-            (Get-Content "$o/FRAMING_ORACLE.txt" -Raw).Trim(),
-            (Get-Content "$o/WARP_TARGET_CLASSIFIER.txt" -Raw).Trim(),
-            (Get-Content "$o/HOOK_WARP_STRESS.txt" -Raw).Trim(),
-            (Get-Content "$o/SWAPCHAIN_WARP_STRESS.txt" -Raw).Trim(),
-            (Get-Content "$o/DUAL_INTERFACE.txt" -Raw).Trim(),
-            (Get-Content "$o/RESOURCE_WARP_STRESS.txt" -Raw).Trim()
+            (Read-Evidence "$o/MATH_STRESS.txt" 'RC41_MATH_STRESS=PASS'),
+            (Read-Evidence "$o/FRAMING_ORACLE.txt" 'RC41_FRAMING_ORACLE=PASS'),
+            (Read-Evidence "$o/WARP_TARGET_CLASSIFIER.txt" 'RC41_WARP_TARGET_CLASSIFIER=PASS'),
+            (Read-Evidence "$o/HOOK_WARP_STRESS.txt" 'RC41_HOOK_WARP=PASS'),
+            (Read-Evidence "$o/SWAPCHAIN_WARP_STRESS.txt" 'RC41_SWAPCHAIN_WARP=PASS'),
+            (Read-Evidence "$o/DUAL_INTERFACE.txt" 'RC41_DUAL_INTERFACE=PASS'),
+            (Read-Evidence "$o/RESOURCE_WARP_STRESS.txt" 'RC41_RESOURCE_WARP=PASS')
           )
           $summary | Set-Content "$o/RC41_SUMMARY.txt" -Encoding ASCII
           Copy-Item 'lab/raster/rc41/STATIC_ARCHITECTURE.txt' "$o/STATIC_ARCHITECTURE.txt" -Force
