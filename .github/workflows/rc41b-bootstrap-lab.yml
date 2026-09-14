@@ -1,0 +1,92 @@
+name: RC41B Bootstrap Diagnostic Lab
+
+on:
+  push:
+    branches:
+      - build/rc41b-bootstrap-diagnostic-20260914
+    paths:
+      - lab/raster/rc41b/**
+      - .github/workflows/rc41b-bootstrap-lab.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-rc41b-bootstrap:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decode exact loader bytes
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $root='lab/raster/rc41b'
+          [IO.File]::WriteAllBytes("$root/rc41b_loader.bin",[Convert]::FromBase64String((Get-Content "$root/rc41b_loader.bin.b64" -Raw).Trim()))
+          $actual=(Get-FileHash "$root/rc41b_loader.bin" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expected='67704f05b14463dfd3ce2c3abcb4c69e853ed72b3c1e82255d4d8b393d0f68b5'
+          if($actual -ne $expected){ throw "loader hash mismatch: $actual" }
+          if((Get-Item "$root/rc41b_loader.bin").Length -ne 1198){ throw 'loader size mismatch' }
+      - name: Static loader contract
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $src=Get-Content 'lab/raster/rc41b/rc41b_loader.s' -Raw
+          $checks=[ordered]@{
+            'nonblocking worker thread'=$src.Contains('CreateThread') -and $src.Contains('rc41b_worker')
+            'absolute sibling path'=$src.Contains('GetModuleFileNameW') -and $src.Contains('rc41b_append_name')
+            'load failures capture error'=$src.Contains('stage=LOADLIB_FAIL') -and $src.Contains('GetLastError')
+            'bounded load retries'=$src.Contains('cmp dword ptr [rsp+0x58], 40')
+            'autostart retries'=$src.Contains('stage=AUTOSTART_RETRY')
+            'binary state persisted'=$src.Contains('ptar_rc41_bootstrap.bin') -and $src.Contains('RC41BST1')
+            'terminal retry reopens hook'=$src.Contains('rc41b_worker_terminal_reset') -and $src.Contains('rc41b_flag], 0')
+          }
+          foreach($k in $checks.Keys){ if(-not $checks[$k]){ throw "RC41B STATIC FAIL: $k" }; Write-Host "PASS $k" }
+      - name: Build host and mock sidecar
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 10
+          if not exist lab\raster\rc41b\out mkdir lab\raster\rc41b\out
+          cl /nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 lab\raster\rc41b\loader_host.cpp /Fe:lab\raster\rc41b\out\rc41b_loader_host.exe /link /SUBSYSTEM:CONSOLE,6.03
+          if errorlevel 1 exit /b 11
+          cl /nologo /EHsc /std:c++17 /W4 /WX /MT /LD /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 lab\raster\rc41b\mock_sidecar.cpp /Fe:lab\raster\rc41b\out\ptar_rc41_delayed.dll /link /SUBSYSTEM:WINDOWS,6.03
+          if errorlevel 1 exit /b 12
+          copy /y lab\raster\rc41b\rc41b_loader.bin lab\raster\rc41b\out\rc41b_loader.bin >nul
+      - name: Execute exact loader bytes
+        shell: cmd
+        run: |
+          pushd lab\raster\rc41b\out
+          rc41b_loader_host.exe rc41b_loader.bin > RC41B_BOOTSTRAP_HOST.txt 2>&1
+          if errorlevel 1 (type RC41B_BOOTSTRAP_HOST.txt & popd & exit /b 20)
+          type RC41B_BOOTSTRAP_HOST.txt
+          findstr /C:"RC41B_BOOTSTRAP_HOST=PASS" RC41B_BOOTSTRAP_HOST.txt >nul || (popd & exit /b 21)
+          popd
+      - name: Validate patcher and decoder
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $p=Get-Content 'lab/raster/rc41b/patch_rc41b_runtime.py' -Raw
+          $d=Get-Content 'lab/raster/rc41b/decode_bootstrap.ps1' -Raw
+          $checks=[ordered]@{
+            'base pinned'=$p.Contains('6f1686992bef971c9995df9f0cb91b93c6946988e12a837e5de956df37c9082b')
+            'pristine padding required'=$p.Contains('insertion area is not pristine CC padding')
+            'only RC41 hook redirected'=$p.Contains('HOOK_RVA=0x44EE') -and $p.Contains('LOADER_RVA=0x035006C0')
+            'PE checksum recomputed'=$p.Contains('pe_checksum')
+            'decoder validates record'=$d.Contains('Length -ne 64') -and $d.Contains('RC41BST1')
+            'decoder names stages'=$d.Contains('LOADLIB_FAIL') -and $d.Contains('AUTOSTART_RETRY') -and $d.Contains('ACTIVE')
+          }
+          foreach($k in $checks.Keys){ if(-not $checks[$k]){ throw "RC41B CONTRACT FAIL: $k" }; Write-Host "PASS $k" }
+      - name: Package evidence
+        shell: powershell
+        run: |
+          Copy-Item 'lab/raster/rc41b/out/RC41B_BOOTSTRAP_HOST.txt' 'RC41B_BOOTSTRAP_HOST.txt' -Force
+          @('RC41B_BOOTSTRAP_LAB=PASS','LOADER_SHA256=67704f05b14463dfd3ce2c3abcb4c69e853ed72b3c1e82255d4d8b393d0f68b5','ABSOLUTE_PATH=PASS','DELAYED_LOAD_RETRY=PASS','AUTOSTART_RETRY=PASS','NONBLOCKING_THREAD=PASS','BINARY_STATE=PASS') | Set-Content 'RC41B_BOOTSTRAP_SUMMARY.txt' -Encoding ASCII
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_RC41B_BOOTSTRAP_LAB
+          path: |
+            RC41B_BOOTSTRAP_HOST.txt
+            RC41B_BOOTSTRAP_SUMMARY.txt
+          if-no-files-found: error
+          retention-days: 7
