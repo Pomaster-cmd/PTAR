@@ -36,6 +36,7 @@ static volatile LONG64 g_rc48TopRestore=0;
 static volatile LONG64 g_rc48Repairs=0;
 static volatile LONG64 g_rc48WindowedSetPos=0;
 static volatile LONG64 g_rc48BorderlessGeometryRepair=0;
+static volatile LONG64 g_rc48WindowedGeometryRepair=0;
 
 static void rc48_capture_original() noexcept {
     if(InterlockedCompareExchange(&g_rc48HaveOriginal,0,0) || !IsWindow(g_presenter)) return;
@@ -48,6 +49,15 @@ static void rc48_capture_original() noexcept {
 
 static bool rc48_windowed_mode() noexcept {
     return InterlockedCompareExchange(&g_rc45Borderless,0,0)==0;
+}
+
+static bool rc48_windowed_geometry_ok() noexcept {
+    if(!IsWindow(g_game)||!IsWindow(g_presenter)||!rc48_windowed_mode()) return false;
+    RECT c{},p{};
+    if(!GetClientRect(g_game,&c) || !GetWindowRect(g_presenter,&p)) return false;
+    POINT a{c.left,c.top},b{c.right,c.bottom};
+    if(!ClientToScreen(g_game,&a) || !ClientToScreen(g_game,&b)) return false;
+    return p.left==a.x && p.top==a.y && p.right==b.x && p.bottom==b.y;
 }
 
 static bool rc48_make_child(bool countRepair) noexcept {
@@ -76,10 +86,22 @@ static bool rc48_make_child(bool countRepair) noexcept {
     LONG_PTR ex=GetWindowLongPtrW(g_presenter,GWL_EXSTYLE);
     const LONG_PTR desiredEx=(ex|WS_EX_NOACTIVATE) & ~(LONG_PTR)(WS_EX_TRANSPARENT|WS_EX_TOPMOST|WS_EX_APPWINDOW|WS_EX_TOOLWINDOW);
     if(ex!=desiredEx){SetWindowLongPtrW(g_presenter,GWL_EXSTYLE,desiredEx);changed=true;}
-    RECT c{};if(GetClientRect(g_game,&c) && rc48_windowed_mode()){
-        SetWindowPos(g_presenter,HWND_TOP,0,0,c.right-c.left,c.bottom-c.top,SWP_NOACTIVATE|SWP_FRAMECHANGED|SWP_SHOWWINDOW);
+
+    bool geometryWasBad=!rc48_windowed_geometry_ok();
+    for(int pass=0;pass<4 && rc48_windowed_mode();++pass){
+        RECT c{};
+        if(!GetClientRect(g_game,&c)) break;
+        SetWindowPos(g_presenter,HWND_TOP,0,0,c.right-c.left,c.bottom-c.top,
+                     SWP_NOACTIVATE|SWP_FRAMECHANGED|SWP_SHOWWINDOW);
+        if(rc48_windowed_geometry_ok()) break;
+        Sleep(0);
     }
-    if(!rc48_windowed_mode()) return false;
+    if(!rc48_windowed_mode() || !rc48_windowed_geometry_ok()) return false;
+    if(geometryWasBad){
+        changed=true;
+        InterlockedIncrement64(&g_rc48WindowedGeometryRepair);
+    }
+
     InterlockedExchange(&g_rc48IsChild,1);
     if(changed){
         InterlockedIncrement64(&g_rc48ChildAttach);
@@ -156,8 +178,7 @@ static LONG_PTR WINAPI RC48_SetWindowLongPtrW(HWND h,int index,LONG_PTR value){
             LONG_PTR desired=(value & (WS_VISIBLE|WS_DISABLED|WS_CLIPSIBLINGS|WS_CLIPCHILDREN)) |
                              WS_CHILD | WS_CLIPSIBLINGS | WS_CLIPCHILDREN;
             const LONG_PTR prior=SetWindowLongPtrW(h,index,desired);
-            if(rc48_windowed_mode() && GetParent(h)!=g_game && IsWindow(g_game)) SetParent(h,g_game);
-            if(rc48_windowed_mode()) InterlockedExchange(&g_rc48IsChild,1);
+            if(rc48_windowed_mode()) rc48_make_child(false);
             return prior;
         }
         if(GetWindowLongPtrW(h,GWL_STYLE)&WS_CHILD) rc48_restore_top_level(false);
@@ -173,11 +194,13 @@ static LONG_PTR WINAPI RC48_SetWindowLongPtrW(HWND h,int index,LONG_PTR value){
 static BOOL WINAPI RC48_SetWindowPos(HWND h,HWND after,int x,int y,int cx,int cy,UINT flags){
     if(h!=g_presenter || !IsWindow(h)) return SetWindowPos(h,after,x,y,cx,cy,flags);
     if(rc48_windowed_mode() && IsWindow(g_game)){
-        rc48_make_child(false);
+        if(!rc48_make_child(false) && !rc48_windowed_mode()) return SetWindowPos(h,after,x,y,cx,cy,flags);
         RECT c{};if(rc48_windowed_mode() && GetClientRect(g_game,&c)){
             InterlockedIncrement64(&g_rc48WindowedSetPos);
-            return SetWindowPos(h,HWND_TOP,0,0,c.right-c.left,c.bottom-c.top,
-                                (flags|SWP_NOACTIVATE|SWP_SHOWWINDOW)&~(SWP_NOMOVE|SWP_NOSIZE|SWP_NOZORDER));
+            const BOOL ok=SetWindowPos(h,HWND_TOP,0,0,c.right-c.left,c.bottom-c.top,
+                                       (flags|SWP_NOACTIVATE|SWP_SHOWWINDOW)&~(SWP_NOMOVE|SWP_NOSIZE|SWP_NOZORDER));
+            if(ok && rc48_windowed_mode() && !rc48_windowed_geometry_ok()) rc48_make_child(true);
+            return ok;
         }
     } else if(!rc48_windowed_mode()) {
         rc48_restore_top_level(false);
@@ -197,7 +220,9 @@ static DWORD WINAPI RC48InvariantWorker(LPVOID){
         const LONG mode=InterlockedCompareExchange(&g_rc45Borderless,0,0);
         const LONG_PTR s=GetWindowLongPtrW(g_presenter,GWL_STYLE);
         if(mode==0){
-            if(last!=0 || !(s&WS_CHILD) || (s&WS_POPUP) || GetParent(g_presenter)!=g_game) rc48_make_child(last==0);
+            const bool geometryBad=!rc48_windowed_geometry_ok();
+            if(last!=0 || !(s&WS_CHILD) || (s&WS_POPUP) || GetParent(g_presenter)!=g_game || geometryBad)
+                rc48_make_child(last==0 || geometryBad);
         } else {
             RECT r{};GetWindowRect(g_presenter,&r);
             const bool geometryBad=r.left!=g_rc45Monitor.left||r.top!=g_rc45Monitor.top||
