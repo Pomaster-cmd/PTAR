@@ -132,7 +132,7 @@ void ContextHooks::refresh_primary_from_context(ID3D11DeviceContext* ctx) noexce
     ID3D11RenderTargetView* rtvs[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT]{};
     ID3D11DepthStencilView* dsv=nullptr;
     ctx->OMGetRenderTargets(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT,rtvs,&dsv);
-    const bool bound=classifier_.any_primary(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT,rtvs);
+    const bool bound=classifier_.any_primary(D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT,rtvs,dsv);
     for(auto*& rtv:rtvs){ if(rtv){ rtv->Release(); rtv=nullptr; } }
     if(dsv) dsv->Release();
     set_primary_bound(bound);
@@ -143,7 +143,7 @@ void STDMETHODCALLTYPE ContextHooks::hook_om(ID3D11DeviceContext* ctx,UINT count
     if(!self || !self->origOM_){ return; }
     self->origOM_(ctx,count,rtvs,dsv);
     self->add_counter(self->omCalls_);
-    self->set_primary_bound(self->classifier_.any_primary(count,rtvs));
+    self->set_primary_bound(self->classifier_.any_primary(count,rtvs,dsv));
 }
 
 void STDMETHODCALLTYPE ContextHooks::hook_om_uav(ID3D11DeviceContext* ctx,UINT count,ID3D11RenderTargetView* const* rtvs,ID3D11DepthStencilView* dsv,UINT uavStart,UINT uavCount,ID3D11UnorderedAccessView* const* uavs,const UINT* initialCounts){
@@ -152,7 +152,7 @@ void STDMETHODCALLTYPE ContextHooks::hook_om_uav(ID3D11DeviceContext* ctx,UINT c
     self->origOMUav_(ctx,count,rtvs,dsv,uavStart,uavCount,uavs,initialCounts);
     self->add_counter(self->omUavCalls_);
     if(count!=D3D11_KEEP_RENDER_TARGETS_AND_DEPTH_STENCIL)
-        self->set_primary_bound(self->classifier_.any_primary(count,rtvs));
+        self->set_primary_bound(self->classifier_.any_primary(count,rtvs,dsv));
 }
 
 void STDMETHODCALLTYPE ContextHooks::hook_execute_command_list(ID3D11DeviceContext* ctx,ID3D11CommandList* list,BOOL restore){
