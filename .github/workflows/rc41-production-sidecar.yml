@@ -82,10 +82,10 @@ jobs:
           $o='lab/raster/rc41/prod_out'
           $hash=(Get-FileHash "$o/ptar_rc41.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
           $size=(Get-Item "$o/ptar_rc41.dll").Length
-          $host=Get-Content "$o/PROD_HOST.txt" -Raw -ErrorAction Stop
-          if([string]::IsNullOrWhiteSpace($host)){ throw 'RC41 production host evidence is empty' }
-          if(-not $host.Contains('RC41_PROD_HOST=PASS')){ throw 'RC41 production host PASS marker missing' }
-          @("RC41_PRODUCTION_SIDECAR=PASS","SHA256=$hash","SIZE=$size",$host.Trim()) | Set-Content "$o/PROD_SUMMARY.txt" -Encoding ASCII
+          $hostText=Get-Content "$o/PROD_HOST.txt" -Raw -ErrorAction Stop
+          if([string]::IsNullOrWhiteSpace($hostText)){ throw 'RC41 production host evidence is empty' }
+          if(-not $hostText.Contains('RC41_PROD_HOST=PASS')){ throw 'RC41 production host PASS marker missing' }
+          @("RC41_PRODUCTION_SIDECAR=PASS","SHA256=$hash","SIZE=$size",$hostText.Trim()) | Set-Content "$o/PROD_SUMMARY.txt" -Encoding ASCII
           Write-Host "RC41_PROD_SHA256=$hash"
           Write-Host "RC41_PROD_SIZE=$size"
           Compress-Archive -Path "$o/ptar_rc41.dll","$o/EXPORTS.txt","$o/IMPORTS.txt","$o/HEADERS.txt","$o/PROD_HOST.txt","$o/PROD_HOST_STDOUT.txt","$o/PROD_SUMMARY.txt" -DestinationPath RC41_PRODUCTION_SIDECAR_EVIDENCE.zip -Force
