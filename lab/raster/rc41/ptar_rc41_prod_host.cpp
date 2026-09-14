@@ -27,6 +27,10 @@ static bool vp_is(ID3D11DeviceContext* ctx,float x,float y,float w,float h){
     UINT n=1;D3D11_VIEWPORT v{};ctx->RSGetViewports(&n,&v);auto almost_equal=[](float a,float b){return std::fabs(a-b)<3.0e-4f;};
     return n==1&&almost_equal(v.TopLeftX,x)&&almost_equal(v.TopLeftY,y)&&almost_equal(v.Width,w)&&almost_equal(v.Height,h);
 }
+static bool write_result(const char* text){
+    HANDLE h=CreateFileA("RC41_PROD_HOST_RESULT.txt",GENERIC_WRITE,FILE_SHARE_READ,nullptr,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,nullptr);
+    if(h==INVALID_HANDLE_VALUE)return false;DWORD wr=0;const DWORD n=(DWORD)lstrlenA(text);const BOOL ok=WriteFile(h,text,n,&wr,nullptr);CloseHandle(h);return ok&&wr==n;
+}
 
 int main(){
     HINSTANCE inst=GetModuleHandleW(nullptr);WNDCLASSW wc{};wc.lpfnWndProc=wndproc;wc.hInstance=inst;wc.lpszClassName=L"PTAR_RC41_PROD_HOST";
@@ -77,12 +81,14 @@ int main(){
         st={};st.size=sizeof(st);if(query(&st)!=0||st.active){rc=29;break;}
         DXGI_SWAP_CHAIN_DESC physical{};if(FAILED(sc->GetDesc(&physical))||physical.BufferDesc.Width!=1280||physical.BufferDesc.Height!=720){rc=30;break;}
         ID3D11Texture2D* restored=nullptr;if(FAILED(dev->CreateTexture2D(&ld,nullptr,&restored))||!texture_is(restored,1920,1080)||ptar_rc41::resource_has_family_tag(restored)){safe_release(restored);rc=31;break;}safe_release(restored);
-        std::printf("RC41_PROD_HOST=PASS feature_level=0x%x logical=1920x1080 physical=1280x720 resource_family=PASS resizes=%u vp_mapped=%llu getdesc_virtualized=%llu resize_remapped=%llu refresh=%llu texture_remapped=%llu rtv_tagged=%llu unload_restore=PASS\n",
-                    static_cast<unsigned>(fl),static_cast<unsigned>(kLoops),static_cast<unsigned long long>(finalStats.viewportMapped),
-                    static_cast<unsigned long long>(finalStats.getDescVirtualized),static_cast<unsigned long long>(finalStats.resizeRemapped),
-                    static_cast<unsigned long long>(finalStats.primaryRefreshes),static_cast<unsigned long long>(finalStats.textureRemapped),
-                    static_cast<unsigned long long>(finalStats.rtvTagged));
-        std::fflush(stdout);
+        char result[768]{};
+        wsprintfA(result,"RC41_PROD_HOST=PASS feature_level=0x%x logical=1920x1080 physical=1280x720 resource_family=PASS resizes=%u vp_mapped=%llu getdesc_virtualized=%llu resize_remapped=%llu refresh=%llu texture_remapped=%llu rtv_tagged=%llu unload_restore=PASS\r\n",
+                  static_cast<unsigned>(fl),static_cast<unsigned>(kLoops),static_cast<unsigned long long>(finalStats.viewportMapped),
+                  static_cast<unsigned long long>(finalStats.getDescVirtualized),static_cast<unsigned long long>(finalStats.resizeRemapped),
+                  static_cast<unsigned long long>(finalStats.primaryRefreshes),static_cast<unsigned long long>(finalStats.textureRemapped),
+                  static_cast<unsigned long long>(finalStats.rtvTagged));
+        if(!write_result(result)){rc=32;break;}
+        std::fputs(result,stdout);std::fflush(stdout);
     }while(false);
     if(detach)detach();FreeLibrary(dll);ctx->ClearState();safe_release(ctx);safe_release(dev);safe_release(sc);DestroyWindow(hwnd);UnregisterClassW(wc.lpszClassName,inst);
     if(rc){std::fprintf(stderr,"RC41_PROD_HOST=FAIL rc=%d hr=0x%x\n",rc,static_cast<unsigned>(hr));std::fflush(stderr);}
