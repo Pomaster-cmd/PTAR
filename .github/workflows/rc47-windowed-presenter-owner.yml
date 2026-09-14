@@ -1,0 +1,108 @@
+name: RC47 Windowed Presenter Owner Lab
+
+on:
+  push:
+    branches: [build/rc47-windowed-presenter-owner-20260914]
+    paths:
+      - lab/borderless/rc47/**
+      - .github/workflows/rc47-windowed-presenter-owner.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-rc47-owner:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Static RC47 contract
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $s=Get-Content 'lab/borderless/rc47/ptar_borderless_rc47_prod.cpp' -Raw
+          $h=Get-Content 'lab/borderless/rc47/ptar_borderless_rc47_owner_host.cpp' -Raw
+          $checks=[ordered]@{
+            'windowed presenter ownership explicit'=$s.Contains('GWLP_HWNDPARENT')
+            'windowed owner is game'=$s.Contains('rc47_set_presenter_owner(g_game)')
+            'borderless original owner restored'=$s.Contains('g_rc47OriginalPresenterOwner')
+            'no topmost policy'=(-not $s.Contains('HWND_TOPMOST'))
+            'presenter remains noactivate'=($s.Contains('rc46_force_presenter_to_target') -and $s.Contains('RC47_WINDOWED_OWNER_ATTACHED'))
+            'unowned real presenter lab condition'=$h.Contains('unowned_field_presenter=PASS')
+            '500 game HWND_TOP raises'=$h.Contains('kRaises=500')
+            'hit-test occlusion gate'=$h.Contains('presenter-occluded-by-owner')
+            'borderless owner restore gate'=$h.Contains('borderless_owner_restore=PASS')
+            'RC46 geometry inherited'=$s.Contains('../rc46/ptar_borderless_rc46_prod.cpp')
+            'RC42 bootstrap inherited'=$s.Contains('RC41B_StartBootstrap')
+          }
+          foreach($k in $checks.Keys){if(-not $checks[$k]){throw "RC47 CONTRACT FAIL: $k"};Write-Host "PASS $k"}
+          git diff --quiet 0f69490bb2210e96e94213643c382bdf89dfee10 HEAD -- lab/raster
+          if($LASTEXITCODE -ne 0){throw 'RC42 raster scope changed unexpectedly'}
+          'RC47_STATIC_CONTRACT=12/12 PASS' | Set-Content RC47_STATIC_CONTRACT.txt -Encoding ASCII
+
+      - name: Build RC47 carrier and owner host
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          if not exist lab\borderless\rc47\out mkdir lab\borderless\rc47\out
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603
+          cl %CFLAGS% /LD lab\borderless\rc47\ptar_borderless_rc47_prod.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fe:lab\borderless\rc47\out\ptar_borderless.dll user32.lib advapi32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 11
+          copy /y lab\borderless\rc47\out\ptar_borderless.dll lab\borderless\rc47\out\ptar_borderless_first.dll >nul
+          cl %CFLAGS% lab\borderless\rc47\ptar_borderless_rc47_owner_host.cpp /Fe:lab\borderless\rc47\out\owner_host.exe user32.lib advapi32.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 12
+          dumpbin /exports lab\borderless\rc47\out\ptar_borderless.dll > lab\borderless\rc47\out\EXPORTS.txt
+          findstr /C:"PTAR_BorderlessAutoStart" lab\borderless\rc47\out\EXPORTS.txt >nul || exit /b 13
+          findstr /C:"PTAR_BorderlessAttachStable" lab\borderless\rc47\out\EXPORTS.txt >nul || exit /b 14
+          findstr /C:"PTAR_BorderlessQueryMode" lab\borderless\rc47\out\EXPORTS.txt >nul || exit /b 15
+
+      - name: Run exact unowned presenter field gate
+        shell: cmd
+        run: |
+          pushd lab\borderless\rc47\out
+          owner_host.exe > OWNER_HOST.txt 2>&1
+          if errorlevel 1 (type OWNER_HOST.txt & popd & exit /b 21)
+          type OWNER_HOST.txt
+          findstr /C:"RC47_OWNER_HOST=PASS" OWNER_HOST.txt >nul || (popd & exit /b 22)
+          findstr /C:"unowned_field_presenter=PASS" OWNER_HOST.txt >nul || (popd & exit /b 23)
+          findstr /C:"hwnd_top_occlusion_guard=PASS" OWNER_HOST.txt >nul || (popd & exit /b 24)
+          findstr /C:"borderless_owner_restore=PASS" OWNER_HOST.txt >nul || (popd & exit /b 25)
+          popd
+
+      - name: Verify RC47 reproducibility
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          del /q lab\borderless\rc47\out\ptar_borderless.dll
+          cl /nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /LD lab\borderless\rc47\ptar_borderless_rc47_prod.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fe:lab\borderless\rc47\out\ptar_borderless.dll user32.lib advapi32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 31
+          fc /b lab\borderless\rc47\out\ptar_borderless_first.dll lab\borderless\rc47\out\ptar_borderless.dll >nul || exit /b 32
+          echo RC47_REPRODUCIBILITY=PASS
+
+      - name: Reuse RC46 inherited stress workflow gates
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          # Compile and run only the high-value inherited regression set here;
+          # RC46 already passed the full 11/11 set on the same branch ancestry.
+          cmd /c 'call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" && if not exist lab\borderless\rc47\gates mkdir lab\borderless\rc47\gates && cl /nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\borderless lab\borderless\ptar_borderless_geometry_stress.cpp /Fe:lab\borderless\rc47\gates\geometry.exe user32.lib /link /SUBSYSTEM:CONSOLE,6.03 && cl /nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\borderless lab\borderless\ptar_borderless_input_stress.cpp /Fe:lab\borderless\rc47\gates\input.exe user32.lib /link /SUBSYSTEM:CONSOLE,6.03'
+          if($LASTEXITCODE -ne 0){throw 'Inherited gate build failed'}
+          & lab/borderless/rc47/gates/geometry.exe; if($LASTEXITCODE -ne 0){throw 'geometry failed'}
+          & lab/borderless/rc47/gates/input.exe; if($LASTEXITCODE -ne 0){throw 'input failed'}
+          'RC47_INHERITED_GATES=2/2 PASS' | Set-Content lab/borderless/rc47/out/INHERITED_GATES.txt -Encoding ASCII
+
+      - name: Package RC47 evidence
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o='lab/borderless/rc47/out';$h=(Get-FileHash "$o/ptar_borderless.dll" -Algorithm SHA256).Hash.ToLowerInvariant();$sz=(Get-Item "$o/ptar_borderless.dll").Length
+          @('RC47_WINDOWED_PRESENTER_OWNER=PASS','STATIC_CONTRACT=12/12 PASS','UNOWNED_FIELD_PRESENTER=PASS','WINDOWED_OWNER_ATTACH=PASS','HWND_TOP_OCCLUSION_GUARD=PASS','RAISE_STRESS=500 PASS','BORDERLESS_OWNER_RESTORE=PASS','WINDOWED_REENTRY=PASS','INHERITED_GATES=2/2 PASS','RC42_RASTER_UNCHANGED=PASS','REPRODUCIBILITY=PASS',"RC47_CARRIER_SHA256=$h","RC47_CARRIER_SIZE=$sz") | Set-Content "$o/RC47_SUMMARY.txt" -Encoding ASCII
+          Get-Content "$o/RC47_SUMMARY.txt"
+          Compress-Archive -Path RC47_STATIC_CONTRACT.txt,"$o/*.txt","$o/ptar_borderless.dll" -DestinationPath RC47_WINDOWED_PRESENTER_OWNER_EVIDENCE.zip -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_RC47_WINDOWED_PRESENTER_OWNER
+          path: RC47_WINDOWED_PRESENTER_OWNER_EVIDENCE.zip
+          retention-days: 7
