@@ -61,6 +61,23 @@ jobs:
           "TRUE_FIELD_COMPONENTS=PASS runtime=$runtime carrier=$carrier raster=$raster" | Set-Content "$o/COMPONENTS.txt" -Encoding ASCII
           Get-Content "$o/COMPONENTS.txt"
 
+      - name: Adapt only INI geometry to runner monitor
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          Add-Type -AssemblyName System.Windows.Forms
+          $b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $w=[int]$b.Width;$h=[int]$b.Height;$rw=[int][math]::Floor($w*2/3);$rh=[int][math]::Floor($h*2/3)
+          $p='lab/borderless/rc48/true_runtime/win81_nis.ini'
+          $s=Get-Content $p -Raw
+          $s=[regex]::Replace($s,'(?m)^OutputWidth=.*$',"OutputWidth=$w")
+          $s=[regex]::Replace($s,'(?m)^OutputHeight=.*$',"OutputHeight=$h")
+          $s=[regex]::Replace($s,'(?m)^RenderWidth=.*$',"RenderWidth=$rw")
+          $s=[regex]::Replace($s,'(?m)^RenderHeight=.*$',"RenderHeight=$rh")
+          Set-Content $p $s -Encoding ASCII
+          "RUNNER_NATIVE=${w}x${h} RUNNER_RENDER=${rw}x${rh}" | Set-Content 'lab/borderless/rc48/true_runtime/RUNNER_GEOMETRY.txt' -Encoding ASCII
+          Get-Content 'lab/borderless/rc48/true_runtime/RUNNER_GEOMETRY.txt'
+
       - name: Run exact P1U46 Windowed visible-pixel gate
         shell: powershell
         run: |
