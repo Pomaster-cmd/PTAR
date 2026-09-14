@@ -205,7 +205,10 @@ static BOOL WINAPI RC48_SetWindowPos(HWND h,HWND after,int x,int y,int cx,int cy
             return ok;
         }
     } else if(!rc48_windowed_mode()) {
-        rc48_restore_top_level(false);
+        if(!rc48_restore_top_level(false)) return FALSE;
+        return SetWindowPos(h,HWND_NOTOPMOST,g_rc45Monitor.left,g_rc45Monitor.top,
+                            (int)g_outputW,(int)g_outputH,
+                            (flags|SWP_NOACTIVATE|SWP_SHOWWINDOW)&~(SWP_NOMOVE|SWP_NOSIZE|SWP_NOZORDER));
     }
     return SetWindowPos(h,after,x,y,cx,cy,flags);
 }
