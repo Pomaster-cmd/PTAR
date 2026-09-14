@@ -1,0 +1,47 @@
+name: RC48 Real Preference Stress
+
+on:
+  push:
+    branches: [build/rc48-windowed-child-presenter-20260914]
+    paths:
+      - lab/borderless/rc48/ptar_borderless_rc48_prod.cpp
+      - lab/borderless/rc48/ptar_rc48_preference_stress.cpp
+      - .github/workflows/rc48-preference-stress.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-preference-stress:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build RC48 and real preference stress host
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          if not exist lab\borderless\rc48\prefout mkdir lab\borderless\rc48\prefout
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603
+          cl %CFLAGS% /LD lab\borderless\rc48\ptar_borderless_rc48_prod.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fe:lab\borderless\rc48\prefout\ptar_borderless.dll user32.lib advapi32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 11
+          cl %CFLAGS% lab\borderless\rc48\ptar_rc48_preference_stress.cpp /Fe:lab\borderless\rc48\prefout\pref_stress.exe user32.lib advapi32.lib gdi32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 12
+      - name: Run 100 real registry preference roundtrips
+        shell: cmd
+        run: |
+          pushd lab\borderless\rc48\prefout
+          pref_stress.exe > PREF_STRESS.txt 2>&1
+          if errorlevel 1 (type PREF_STRESS.txt & popd & exit /b 21)
+          type PREF_STRESS.txt
+          findstr /C:"RC48_PREF_STRESS=PASS" PREF_STRESS.txt >nul || (popd & exit /b 22)
+          findstr /C:"pairs=100" PREF_STRESS.txt >nul || (popd & exit /b 23)
+          findstr /C:"transitions=200" PREF_STRESS.txt >nul || (popd & exit /b 24)
+          findstr /C:"swap_output_stable=PASS" PREF_STRESS.txt >nul || (popd & exit /b 25)
+          findstr /C:"black_parent_repaint=PASS" PREF_STRESS.txt >nul || (popd & exit /b 26)
+          popd
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_RC48_REAL_PREFERENCE_STRESS
+          path: lab/borderless/rc48/prefout/PREF_STRESS.txt
+          retention-days: 7
