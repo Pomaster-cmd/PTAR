@@ -1,0 +1,152 @@
+name: RC50 Hostile Game Raise Visible Output
+
+on:
+  push:
+    branches: [lab/rc50-top-level-zorder-20260914]
+    paths:
+      - lab/borderless/rc50/**
+      - .github/workflows/rc50-hostile-game-raise-visible-output.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-visible-zorder:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate RC50 and hostile host
+        shell: cmd
+        run: |
+          python lab\borderless\rc50\build_rc50_source.py lab\borderless\rc50\ptar_borderless_rc50_generated.cpp || exit /b 10
+          python lab\borderless\rc50\build_hostile_true_runtime_host.py lab\borderless\rc50\ptar_rc50_hostile_true_runtime_host.cpp || exit /b 11
+          findstr /C:"RC50_WINDOWED_ZORDER_REASSERT_ACTIVE" lab\borderless\rc50\ptar_borderless_rc50_generated.cpp >nul || exit /b 12
+          findstr /C:"SetParent(" lab\borderless\rc50\ptar_borderless_rc50_generated.cpp >nul && exit /b 13 || ver >nul
+          findstr /C:"GWLP_HWNDPARENT" lab\borderless\rc50\ptar_borderless_rc50_generated.cpp >nul && exit /b 14 || ver >nul
+          findstr /C:"WS_CHILD" lab\borderless\rc50\ptar_borderless_rc50_generated.cpp >nul && exit /b 15 || ver >nul
+          echo RC50_STATIC_TOPOLOGY=PASS
+
+      - name: Reconstruct exact P1U46 runtime fixtures
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $base=(Get-FileHash payload/d3d11.dll -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($base -ne '864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c'){throw "canonical runtime drift $base"}
+          foreach($name in @('rc46','rc47','rc50')){
+            $o="lab/borderless/rc50/run_$name";New-Item -ItemType Directory -Force $o | Out-Null
+            python lab/borderless/rc48/rebuild_exact_field_runtime.py payload/d3d11.dll "$o/d3d11.dll"
+            if($LASTEXITCODE -ne 0){throw "runtime reconstruction failed $name"}
+            $h=(Get-FileHash "$o/d3d11.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+            if($h -ne '6f1686992bef971c9995df9f0cb91b93c6946988e12a837e5de956df37c9082b'){throw "field runtime SHA mismatch $name $h"}
+            Copy-Item "$o/d3d11.dll" "$o/win81_nis_dx11_x64.dll" -Force
+            Copy-Item payload/win81_nis.ini "$o/win81_nis.ini" -Force
+          }
+          Write-Host "RC50_EXACT_P1U46_FIXTURES=PASS base=$base overlay=6f1686992bef971c9995df9f0cb91b93c6946988e12a837e5de956df37c9082b"
+
+      - name: Adapt only INI geometry to hosted monitor
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';Add-Type -AssemblyName System.Windows.Forms
+          $b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds;$w=[int]$b.Width;$h=[int]$b.Height
+          $rw=[int][math]::Floor($w*2/3);$rh=[int][math]::Floor($h*2/3)
+          foreach($name in @('rc46','rc47','rc50')){
+            $p="lab/borderless/rc50/run_$name/win81_nis.ini";$s=Get-Content $p -Raw
+            $s=[regex]::Replace($s,'(?m)^OutputWidth=.*$',"OutputWidth=$w")
+            $s=[regex]::Replace($s,'(?m)^OutputHeight=.*$',"OutputHeight=$h")
+            $s=[regex]::Replace($s,'(?m)^RenderWidth=.*$',"RenderWidth=$rw")
+            $s=[regex]::Replace($s,'(?m)^RenderHeight=.*$',"RenderHeight=$rh")
+            Set-Content $p $s -Encoding ASCII
+          }
+          "RUNNER_NATIVE=${w}x${h} RUNNER_RENDER=${rw}x${rh}" | Set-Content 'lab/borderless/rc50/RUNNER_GEOMETRY.txt' -Encoding ASCII
+          Get-Content 'lab/borderless/rc50/RUNNER_GEOMETRY.txt'
+
+      - name: Build RC46 RC47 RC50 carriers exact RC42 raster and host
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603
+          cl %CFLAGS% /LD lab\borderless\rc46\ptar_borderless_rc46_prod.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fe:lab\borderless\rc50\run_rc46\ptar_borderless.dll user32.lib advapi32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 21
+          cl %CFLAGS% /LD lab\borderless\rc47\ptar_borderless_rc47_prod.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fe:lab\borderless\rc50\run_rc47\ptar_borderless.dll user32.lib advapi32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 22
+          cl %CFLAGS% /LD lab\borderless\rc50\ptar_borderless_rc50_generated.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fe:lab\borderless\rc50\run_rc50\ptar_borderless.dll user32.lib advapi32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 23
+          cl %CFLAGS% /I lab\raster\rc41 /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc41\ptar_rc41_context_hooks.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fe:lab\borderless\rc50\ptar_rc42.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 24
+          cl %CFLAGS% lab\borderless\rc50\ptar_rc50_hostile_true_runtime_host.cpp /Fe:lab\borderless\rc50\Warhammer.exe user32.lib advapi32.lib gdi32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:WINDOWS,6.03 || exit /b 25
+          for %%D in (rc46 rc47 rc50) do copy /y lab\borderless\rc50\ptar_rc42.dll lab\borderless\rc50\run_%%D\ptar_rc42.dll >nul
+          for %%D in (rc46 rc47 rc50) do copy /y lab\borderless\rc50\ptar_rc42.dll lab\borderless\rc50\run_%%D\ptar_rc41.dll >nul
+          for %%D in (rc46 rc47 rc50) do copy /y lab\borderless\rc50\Warhammer.exe lab\borderless\rc50\run_%%D\Warhammer.exe >nul
+
+      - name: Verify exact inherited binaries
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($name in @('rc46','rc47','rc50')){
+            $o="lab/borderless/rc50/run_$name"
+            $runtime=(Get-FileHash "$o/d3d11.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+            $raster=(Get-FileHash "$o/ptar_rc41.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+            if($runtime -ne '6f1686992bef971c9995df9f0cb91b93c6946988e12a837e5de956df37c9082b'){throw "runtime drift $name $runtime"}
+            if($raster -ne '7ffe7aa1b9afa42d5f22557cae29a4f65e17379c2a2f181f879427277839f1ca'){throw "raster drift $name $raster"}
+            $carrier=(Get-FileHash "$o/ptar_borderless.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$name runtime=$runtime raster=$raster carrier=$carrier" | Add-Content 'lab/borderless/rc50/COMPONENTS.txt' -Encoding ASCII
+          }
+          Get-Content 'lab/borderless/rc50/COMPONENTS.txt'
+
+      - name: Prove RC46 baseline reproduces black occlusion
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o=(Resolve-Path 'lab/borderless/rc50/run_rc46').Path
+          $p=Start-Process -FilePath "$o/Warhammer.exe" -WorkingDirectory $o -PassThru
+          if(-not $p.WaitForExit(90000)){Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue;throw 'RC46 baseline timeout'}
+          $rc=$p.ExitCode;$text=[IO.File]::ReadAllText("$o/TRUE_RUNTIME_HOST.txt",[Text.Encoding]::Unicode)
+          Write-Host "RC46_BASELINE_EXIT=$rc";Write-Host $text
+          if($rc -ne 40){throw "RC46 baseline did not reproduce visible failure rc=$rc"}
+          if(-not $text.Contains('HOSTILE_P1U46_WINDOWED_VISIBLE_PIXELS=FAIL')){throw 'RC46 baseline FAIL marker missing'}
+          Write-Host 'RC46_HOSTILE_GAME_RAISE_BASELINE=EXPECTED_FAIL_REPRODUCED'
+
+      - name: Compare RC47 owned popup on modern host
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o=(Resolve-Path 'lab/borderless/rc50/run_rc47').Path
+          $p=Start-Process -FilePath "$o/Warhammer.exe" -WorkingDirectory $o -PassThru
+          if(-not $p.WaitForExit(90000)){Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue;throw 'RC47 comparison timeout'}
+          $rc=$p.ExitCode;$text=[IO.File]::ReadAllText("$o/TRUE_RUNTIME_HOST.txt",[Text.Encoding]::Unicode)
+          Write-Host "RC47_COMPARE_EXIT=$rc";Write-Host $text
+          "RC47_MODERN_HOST_EXIT=$rc marker=$($text.Contains('HOSTILE_P1U46_WINDOWED_VISIBLE_PIXELS=PASS'))" | Set-Content 'lab/borderless/rc50/RC47_COMPARE.txt' -Encoding ASCII
+          if($rc -ne 0){throw "RC47 modern-host comparison unexpectedly failed rc=$rc"}
+
+      - name: Require RC50 top-level unowned candidate visible output
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o=(Resolve-Path 'lab/borderless/rc50/run_rc50').Path
+          $p=Start-Process -FilePath "$o/Warhammer.exe" -WorkingDirectory $o -PassThru
+          if(-not $p.WaitForExit(90000)){Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue;throw 'RC50 timeout'}
+          $rc=$p.ExitCode;$text=[IO.File]::ReadAllText("$o/TRUE_RUNTIME_HOST.txt",[Text.Encoding]::Unicode)
+          Write-Host "RC50_EXIT=$rc";Write-Host $text
+          if($rc -ne 0){throw "RC50 visible output failed rc=$rc"}
+          if(-not $text.Contains('HOSTILE_P1U46_WINDOWED_VISIBLE_PIXELS=PASS')){throw 'RC50 PASS marker missing'}
+          $presenter=($text -split "`r?`n" | Where-Object {$_ -like 'TOP *class=Win81USRPresenterV041*'} | Select-Object -Last 1)
+          if(-not $presenter){throw 'RC50 presenter is not top-level'}
+          if($presenter -notmatch 'parent=0+ owner=0+'){throw "RC50 mutated presenter parent/owner: $presenter"}
+          $side=Join-Path $o 'ptar_borderless_rc38.log'
+          if(-not (Test-Path $side)){throw 'RC50 sidecar log missing'}
+          if((Select-String -Path $side -SimpleMatch 'RC50_WINDOWED_ZORDER_REASSERT_ACTIVE').Count -lt 1){throw 'RC50 z-order path not exercised'}
+          Write-Host 'RC50_HOSTILE_GAME_RAISE_VISIBLE_OUTPUT=PASS topology=TOPLEVEL_UNOWNED'
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PTAR_RC50_HOSTILE_GAME_RAISE_VISIBLE_OUTPUT
+          path: |
+            lab/borderless/rc50/*.txt
+            lab/borderless/rc50/run_rc46/*.txt
+            lab/borderless/rc50/run_rc46/*.log
+            lab/borderless/rc50/run_rc47/*.txt
+            lab/borderless/rc50/run_rc47/*.log
+            lab/borderless/rc50/run_rc50/*.txt
+            lab/borderless/rc50/run_rc50/*.log
+            lab/borderless/rc50/ptar_borderless_rc50_generated.cpp
+            lab/borderless/rc50/ptar_rc50_hostile_true_runtime_host.cpp
+          if-no-files-found: warn
+          retention-days: 7
