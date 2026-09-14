@@ -1,0 +1,43 @@
+name: RC41B Package Script Lab 2
+
+on:
+  push:
+    branches: [build/rc41b-bootstrap-diagnostic-20260914]
+    paths:
+      - lab/raster/rc41b/package_scripts/fixture_parts2/**
+      - .github/workflows/rc41b-package-script-lab2.yml
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  windows-rc41b-package-scripts:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reassemble exact fixture and verify SHA
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$d='lab/raster/rc41b/package_scripts/fixture_parts2'
+          $names=@('part01.b64','part02.b64','part03a.b64','part03b.b64','part03c.b64','part03d.b64','part04.b64','part05.b64','part06.b64','part07.b64','part08.b64')
+          $joined='';foreach($n in $names){$p=Join-Path $d $n;if(-not(Test-Path $p)){throw "missing $n"};$joined+=(Get-Content $p -Raw).Trim()}
+          [IO.File]::WriteAllBytes('scripts_exact.zip',[Convert]::FromBase64String($joined))
+          $h=(Get-FileHash scripts_exact.zip -Algorithm SHA256).Hash.ToLowerInvariant();if($h -ne '5015536c613d3e5cfc0bb27075b1f5cb4c23d4bd68f0f35506ba535dd5624661'){throw "fixture mismatch $h"}
+          Expand-Archive scripts_exact.zip exact -Force;Write-Host "PASS FIXTURE $h"
+      - name: Verify hashes and parse exact scripts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$e=[ordered]@{'install.ps1'='6cb0aaeedfaaf0a75cc43421da6a1ae667081c6258d27a62d3064ccf0962f871';'verify.ps1'='4362e86eef53b850fa4234f2610dcf1f8b73c7805adf3918cbb1cf20729c9941';'rollback.ps1'='baa84d9cca910bdf071428bf5f60fbbf5bc96659fb08cc2d76d069198274bf8d';'uninstall_overlay.ps1'='687f8434b0d0250b3f70ac15c21de83057f562c36cb4299685aa6f94ffcd52ff';'collect_rc41b.ps1'='4089b8e04ce8db7055a404aff9708e5c89d7d87032198a4df63546b2c706fe30';'decode_bootstrap.ps1'='78459ca6e0972800bb86baf4cabacc420885ee3e8da868e36a55411eb09cb83a'}
+          $lines=@();foreach($n in $e.Keys){$p=Join-Path exact $n;$h=(Get-FileHash $p -Algorithm SHA256).Hash.ToLowerInvariant();if($h -ne $e[$n]){throw "$n hash $h"};$t=$null;$er=$null;[void][Management.Automation.Language.Parser]::ParseFile((Resolve-Path $p),[ref]$t,[ref]$er);if($er.Count){throw "$n parser"};$lines+="PASS PARSE $n";Write-Host "PASS HASH+PARSE $n"};$lines|Set-Content RC41B_PACKAGE_SCRIPT_PARSE.txt -Encoding ASCII
+      - name: Validate safety contracts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$i=Get-Content exact/install.ps1 -Raw;$v=Get-Content exact/verify.ps1 -Raw;$r=Get-Content exact/rollback.ps1 -Raw;$u=Get-Content exact/uninstall_overlay.ps1 -Raw;$c=Get-Content exact/collect_rc41b.ps1 -Raw;$d=Get-Content exact/decode_bootstrap.ps1 -Raw;$all=$i+$v+$r+$u+$c+$d
+          $q=[ordered]@{
+            'RC41B runtime exact'=$i.Contains('febd4ddb12d0370dea66bece7598a8da29981362082812941320ac9b2c75b32b');'prior RC41 accepted'=$i.Contains('6f1686992bef971c9995df9f0cb91b93c6946988e12a837e5de956df37c9082b');'unknown runtime refused'=$i.Contains('DLL locale inconnue');'no forced AffectGuiResolution'=(-not $i.Contains('-Name AffectGuiResolution -Type DWord -Value 1'));'RC41B hook exact'=$v.Contains('0xE8,0xCD,0xC1,0x4F,0x03');'new loader verified'=$v.Contains('0x4E8C0');'old loader verified'=$v.Contains('0x4E800');'VS B6E verified'=$v.Contains('0xB6E');'base 107 verified'=$v.Contains('107/107');'rollback canonical hash'=$r.Contains('864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c');'rollback bootstrap cleanup'=$r.Contains('ptar_rc41_bootstrap.bin');'uninstall canonical engine'=$u.Contains('& $Engine -Root $Root');'uninstall ownership'=$u.Contains('OVERLAY_OWNERSHIP.tsv');'collector canonical diag'=$c.Contains('diag\collect.ps1');'collector bootstrap'=$c.Contains('ptar_rc41_bootstrap.bin');'collector decoder'=$c.Contains('decode_bootstrap.ps1');'collector RC41 log'=$c.Contains('ptar_rc41.log');'collector result RC41B'=$c.Contains('PTAR_RC41B_RESULTS_');'decoder magic'=$d.Contains('RC41BST1');'decoder last error'=$d.Contains('LAST_ERROR');'decoder autostart rc'=$d.Contains('AUTOSTART_RC');'no RC33B'=(-not $all.Contains('RC33B'))}
+          $lines=@();foreach($k in $q.Keys){if(-not $q[$k]){throw "contract $k"};$lines+="PASS $k";Write-Host "PASS $k"};$lines|Set-Content RC41B_PACKAGE_SCRIPT_CONTRACT.txt -Encoding ASCII
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_RC41B_PACKAGE_SCRIPT_LAB2
+          path: |
+            RC41B_PACKAGE_SCRIPT_PARSE.txt
+            RC41B_PACKAGE_SCRIPT_CONTRACT.txt
+          retention-days: 7
