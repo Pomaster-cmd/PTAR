@@ -62,9 +62,10 @@ jobs:
             'resource-family ownership is private-data lifetime safe'=($resourceTag.Contains('SetPrivateData') -and $resourceTag.Contains('needs no persistent') -and $classifier.Contains('view_or_resource_has_family_tag'))
             'D3D11 device resource hook slots are explicit'=($resourceBridge.Contains('kSlotCreateTexture2D=5') -and $resourceBridge.Contains('kSlotCreateRenderTargetView=9') -and $resourceBridge.Contains('kSlotCreateDepthStencilView=10'))
             'resource WARP gate covers depth-only and non-family isolation'=($resourceWarp.Contains('dsv_only_mapping=PASS') -and $resourceWarp.Contains('same_size_nonfamily=PASS'))
+            'device resource shadow preserves highest aliased interface'=($resourceBridge.Contains('kMaxVtableSlots=kDevice5VtableSlots') -and $resourceBridgeCpp.Contains('aliases_base_device') -and $resourceBridgeCpp.Contains('highest_aliased_device_slots') -and $resourceBridgeCpp.Contains('shadowSlots_*sizeof(void*)') -and $resourceWarp.Contains('shadow_contract_ok'))
           }
           foreach($k in $checks.Keys){ if(-not $checks[$k]){ throw "RC41 CONTRACT FAIL: $k" }; Write-Host "PASS $k" }
-          'RC41_STATIC_ARCHITECTURE=22/22 PASS' | Set-Content "$root/STATIC_ARCHITECTURE.txt" -Encoding ASCII
+          'RC41_STATIC_ARCHITECTURE=23/23 PASS' | Set-Content "$root/STATIC_ARCHITECTURE.txt" -Encoding ASCII
 
       - name: Build RC41 lab gates
         shell: cmd
@@ -156,7 +157,7 @@ jobs:
           }
           $summary=@(
             'RC41_LAB_STATUS=PASS',
-            'STATIC_ARCHITECTURE=22/22 PASS',
+            'STATIC_ARCHITECTURE=23/23 PASS',
             (Read-Evidence "$o/MATH_STRESS.txt" 'RC41_MATH_STRESS=PASS'),
             (Read-Evidence "$o/FRAMING_ORACLE.txt" 'RC41_FRAMING_ORACLE=PASS'),
             (Read-Evidence "$o/WARP_TARGET_CLASSIFIER.txt" 'RC41_WARP_TARGET_CLASSIFIER=PASS'),
