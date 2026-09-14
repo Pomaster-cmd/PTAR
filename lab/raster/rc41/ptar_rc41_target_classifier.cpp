@@ -7,26 +7,23 @@ TargetClassifier::TargetClassifier() noexcept : lock_(SRWLOCK_INIT), primaryIden
 TargetClassifier::~TargetClassifier(){ clear_primary(); }
 
 void TargetClassifier::clear_primary() noexcept {
-    IUnknown* old=nullptr;
     AcquireSRWLockExclusive(&lock_);
-    old=primaryIdentity_;
     primaryIdentity_=nullptr;
     ReleaseSRWLockExclusive(&lock_);
-    if(old) old->Release();
 }
 
 bool TargetClassifier::set_primary_resource(ID3D11Resource* resource) noexcept {
-    IUnknown* next=nullptr;
+    IUnknown* identity=nullptr;
     if(resource){
-        if(FAILED(resource->QueryInterface(IID_IUnknown,reinterpret_cast<void**>(&next))) || !next) return false;
+        if(FAILED(resource->QueryInterface(IID_IUnknown,reinterpret_cast<void**>(&identity))) || !identity) return false;
     }
-    IUnknown* old=nullptr;
+    // Store identity value only. We intentionally do NOT retain a COM reference:
+    // a persistent AddRef on the swap-chain backbuffer would make ResizeBuffers fail.
     AcquireSRWLockExclusive(&lock_);
-    old=primaryIdentity_;
-    primaryIdentity_=next;
+    primaryIdentity_=identity;
     ReleaseSRWLockExclusive(&lock_);
-    if(old) old->Release();
-    return resource ? next!=nullptr : true;
+    if(identity) identity->Release();
+    return resource ? identity!=nullptr : true;
 }
 
 bool TargetClassifier::is_primary(ID3D11RenderTargetView* rtv) const noexcept {
@@ -34,16 +31,16 @@ bool TargetClassifier::is_primary(ID3D11RenderTargetView* rtv) const noexcept {
     ID3D11Resource* resource=nullptr;
     rtv->GetResource(&resource);
     if(!resource) return false;
-    IUnknown* id=nullptr;
-    const HRESULT hr=resource->QueryInterface(IID_IUnknown,reinterpret_cast<void**>(&id));
+    IUnknown* identity=nullptr;
+    const HRESULT hr=resource->QueryInterface(IID_IUnknown,reinterpret_cast<void**>(&identity));
     resource->Release();
-    if(FAILED(hr)||!id) return false;
+    if(FAILED(hr)||!identity) return false;
 
     bool same=false;
     AcquireSRWLockShared(&lock_);
-    same=(primaryIdentity_ && id==primaryIdentity_);
+    same=(primaryIdentity_ && identity==primaryIdentity_);
     ReleaseSRWLockShared(&lock_);
-    id->Release();
+    identity->Release();
     return same;
 }
 
