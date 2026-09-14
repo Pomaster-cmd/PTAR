@@ -27,6 +27,7 @@ jobs:
           $expected='67704f05b14463dfd3ce2c3abcb4c69e853ed72b3c1e82255d4d8b393d0f68b5'
           if($actual -ne $expected){ throw "loader hash mismatch: $actual" }
           if((Get-Item "$root/rc41b_loader.bin").Length -ne 1198){ throw 'loader size mismatch' }
+          Write-Host "PASS loader $actual"
       - name: Static loader contract
         shell: powershell
         run: |
@@ -38,7 +39,7 @@ jobs:
             'load failures capture error'=$src.Contains('stage=LOADLIB_FAIL') -and $src.Contains('GetLastError')
             'bounded load retries'=$src.Contains('cmp dword ptr [rsp+0x58], 40')
             'autostart retries'=$src.Contains('stage=AUTOSTART_RETRY')
-            'binary state persisted'=$src.Contains('ptar_rc41_bootstrap.bin') -and $src.Contains('RC41BST1')
+            'binary state persisted'=$src.Contains('rc41b_state_name') -and $src.Contains('0x3154534231344352')
             'terminal retry reopens hook'=$src.Contains('rc41b_worker_terminal_reset') -and $src.Contains('rc41b_flag], 0')
           }
           foreach($k in $checks.Keys){ if(-not $checks[$k]){ throw "RC41B STATIC FAIL: $k" }; Write-Host "PASS $k" }
