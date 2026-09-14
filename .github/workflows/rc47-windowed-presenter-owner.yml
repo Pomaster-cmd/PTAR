@@ -25,6 +25,8 @@ jobs:
           $ErrorActionPreference='Stop'
           $s=Get-Content 'lab/borderless/rc47/ptar_borderless_rc47_prod.cpp' -Raw
           $h=Get-Content 'lab/borderless/rc47/ptar_borderless_rc47_owner_host.cpp' -Raw
+          $rc46=Get-Content 'lab/borderless/rc46/ptar_borderless_rc46_prod.cpp' -Raw
+          $rc45=Get-Content 'lab/borderless/rc45/ptar_borderless_rc45_prod.cpp' -Raw
           $checks=[ordered]@{
             'windowed presenter ownership explicit'=$s.Contains('GWLP_HWNDPARENT')
             'windowed owner is game'=$s.Contains('rc47_set_presenter_owner(g_game)')
@@ -36,7 +38,7 @@ jobs:
             'hit-test occlusion gate'=$h.Contains('presenter-occluded-by-owner')
             'borderless owner restore gate'=$h.Contains('borderless_owner_restore=PASS')
             'RC46 geometry inherited'=$s.Contains('../rc46/ptar_borderless_rc46_prod.cpp')
-            'RC42 bootstrap inherited'=$s.Contains('RC41B_StartBootstrap')
+            'RC42 bootstrap inherited'=($rc46.Contains('../rc45/ptar_borderless_rc45_prod.cpp') -and $rc45.Contains('RC41B_StartBootstrap'))
           }
           foreach($k in $checks.Keys){if(-not $checks[$k]){throw "RC47 CONTRACT FAIL: $k"};Write-Host "PASS $k"}
           git diff --quiet 0f69490bb2210e96e94213643c382bdf89dfee10 HEAD -- lab/raster
@@ -85,8 +87,6 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference='Stop'
-          # Compile and run only the high-value inherited regression set here;
-          # RC46 already passed the full 11/11 set on the same branch ancestry.
           cmd /c 'call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" && if not exist lab\borderless\rc47\gates mkdir lab\borderless\rc47\gates && cl /nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\borderless lab\borderless\ptar_borderless_geometry_stress.cpp /Fe:lab\borderless\rc47\gates\geometry.exe user32.lib /link /SUBSYSTEM:CONSOLE,6.03 && cl /nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\borderless lab\borderless\ptar_borderless_input_stress.cpp /Fe:lab\borderless\rc47\gates\input.exe user32.lib /link /SUBSYSTEM:CONSOLE,6.03'
           if($LASTEXITCODE -ne 0){throw 'Inherited gate build failed'}
           & lab/borderless/rc47/gates/geometry.exe; if($LASTEXITCODE -ne 0){throw 'geometry failed'}
