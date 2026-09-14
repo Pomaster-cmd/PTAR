@@ -1,0 +1,161 @@
+name: RC41B Loader Diagnostics Lab
+
+on:
+  push:
+    branches:
+      - build/rc41b-loader-diagnostics-20260914
+    paths:
+      - lab/raster/rc41b/**
+      - lab/raster/rc41/**
+      - lab/borderless/rc40/ptar_borderless_rc40_prod.cpp
+      - .github/workflows/rc41b-loader-diagnostics.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-rc41b-loader:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Static RC41B contract
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $b=Get-Content 'lab/raster/rc41b/ptar_rc41b_bootstrap.cpp' -Raw
+          $r=Get-Content 'lab/borderless/rc40/ptar_borderless_rc40_prod.cpp' -Raw
+          $rc41=Get-Content 'lab/raster/rc41/ptar_rc41_prod.cpp' -Raw
+          $checks=[ordered]@{
+            'absolute sibling path'=$b.Contains('RC41B_BuildSiblingPath')
+            'bootstrap log before loading'=($b.IndexOf('BOOTSTRAP_RC41B_ENTERED') -lt $b.IndexOf('g_hooks.loadLibraryW'))
+            'LoadLibrary error captured'=$b.Contains('log_ptr(logPath,"LoadLibraryW",sidecar,gle)')
+            'AutoStart error captured'=$b.Contains('PTAR_RC41_AutoStart rc/gle')
+            'Query proves geometry'=($b.Contains('state.logicalW==1920') -and $b.Contains('state.physicalW==1280'))
+            'bounded retry budget'=($b.Contains('attempt<=maxAttempts') -and $b.Contains('RC41B_RETRY_BUDGET_EXPIRED_FAIL_OPEN'))
+            'RC40 starts RC41B only after ACTIVE'=($r.IndexOf('InterlockedExchange(&g_active,1)') -lt $r.IndexOf('RC41B_StartBootstrap'))
+            'RC41 rendering source unchanged by diagnostic architecture'=(-not $rc41.Contains('RC41B_'))
+          }
+          foreach($k in $checks.Keys){if(-not $checks[$k]){throw "RC41B CONTRACT FAIL: $k"};Write-Host "PASS $k"}
+          'RC41B_STATIC_CONTRACT=8/8 PASS' | Set-Content 'lab/raster/rc41b/STATIC_CONTRACT.txt' -Encoding ASCII
+
+      - name: Build RC41B bootstrap harness
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          if not exist lab\raster\rc41b\out mkdir lab\raster\rc41b\out
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\raster\rc41b
+          cl %CFLAGS% lab\raster\rc41b\ptar_rc41b_bootstrap.cpp lab\raster\rc41b\ptar_rc41b_bootstrap_harness.cpp /Fe:lab\raster\rc41b\out\bootstrap_harness.exe user32.lib /link /SUBSYSTEM:CONSOLE,6.03
+          if errorlevel 1 exit /b 11
+          dumpbin /headers lab\raster\rc41b\out\bootstrap_harness.exe > lab\raster\rc41b\out\HARNESS_HEADERS.txt
+          findstr /C:"6.03 subsystem version" lab\raster\rc41b\out\HARNESS_HEADERS.txt >nul || exit /b 12
+
+      - name: Run RC41B bootstrap harness
+        shell: cmd
+        run: |
+          pushd lab\raster\rc41b\out
+          bootstrap_harness.exe > BOOTSTRAP_HARNESS.txt 2>&1
+          set RC=%ERRORLEVEL%
+          type BOOTSTRAP_HARNESS.txt
+          if not "%RC%"=="0" popd & exit /b %RC%
+          findstr /C:"RC41B_BOOTSTRAP_HARNESS=PASS" BOOTSTRAP_HARNESS.txt >nul || (popd & exit /b 21)
+          findstr /C:"FIRST_FAIL_THEN_SUCCESS=PASS" BOOTSTRAP_HARNESS.txt >nul || (popd & exit /b 22)
+          findstr /C:"ABSOLUTE_PATH_WITH_SPACES=PASS" BOOTSTRAP_HARNESS.txt >nul || (popd & exit /b 23)
+          findstr /C:"RETRY_BUDGET_FAIL_OPEN=PASS" BOOTSTRAP_HARNESS.txt >nul || (popd & exit /b 24)
+          findstr /C:"MISSING_EXPORT_FAIL_OPEN=PASS" BOOTSTRAP_HARNESS.txt >nul || (popd & exit /b 25)
+          popd
+
+      - name: Rebuild exact RC41 production sidecar and host
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          if not exist lab\raster\rc41b\rc41_out mkdir lab\raster\rc41b\rc41_out
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\raster\rc41
+          cl %CFLAGS% /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc41\ptar_rc41_context_hooks.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fe:lab\raster\rc41b\rc41_out\ptar_rc41.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03
+          if errorlevel 1 exit /b 31
+          cl %CFLAGS% lab\raster\rc41\ptar_rc41_prod_host.cpp /Fe:lab\raster\rc41b\rc41_out\prod_host.exe user32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:CONSOLE,6.03
+          if errorlevel 1 exit /b 32
+
+      - name: Prove RC41 sidecar byte identity and run production host
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dll='lab/raster/rc41b/rc41_out/ptar_rc41.dll'
+          $h=(Get-FileHash $dll -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($h -ne '15a8f276816f3123a79a2d8e6932b6bf42b3826288ea5f016c124afec99fbbcf'){throw "RC41 sidecar drift: $h"}
+          Push-Location 'lab/raster/rc41b/rc41_out'
+          & .\prod_host.exe *> PROD_HOST.txt
+          $rc=$LASTEXITCODE
+          Get-Content PROD_HOST.txt
+          if($rc -ne 0){throw "RC41 production host failed rc=$rc"}
+          if(-not (Test-Path 'RC41_PROD_HOST_RESULT.txt')){throw 'RC41 production host result missing'}
+          $t=Get-Content 'RC41_PROD_HOST_RESULT.txt' -Raw
+          if(-not $t.Contains('RC41_PROD_HOST=PASS')){throw 'RC41 production host PASS missing'}
+          Pop-Location
+          "RC41_SIDECAR_SHA256=$h`nRC41_PRODUCTION_HOST=PASS" | Set-Content 'lab/raster/rc41b/rc41_out/RC41_IDENTITY.txt' -Encoding ASCII
+
+      - name: Build RC41B RC40 bootstrap carrier
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          if not exist lab\raster\rc41b\carrier_out mkdir lab\raster\rc41b\carrier_out
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\raster\rc41b
+          cl %CFLAGS% /LD lab\borderless\rc40\ptar_borderless_rc40_prod.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fe:lab\raster\rc41b\carrier_out\ptar_borderless.dll user32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03
+          if errorlevel 1 exit /b 41
+          copy /y lab\raster\rc41b\carrier_out\ptar_borderless.dll lab\raster\rc41b\carrier_out\ptar_borderless_first.dll >nul
+          cl %CFLAGS% lab\borderless\rc38\ptar_borderless_stable_host_test.cpp /Fe:lab\raster\rc41b\carrier_out\stable_host_test.exe user32.lib /link /SUBSYSTEM:CONSOLE,6.03
+          if errorlevel 1 exit /b 42
+          dumpbin /headers lab\raster\rc41b\carrier_out\ptar_borderless.dll > lab\raster\rc41b\carrier_out\HEADERS.txt
+          dumpbin /imports lab\raster\rc41b\carrier_out\ptar_borderless.dll > lab\raster\rc41b\carrier_out\IMPORTS.txt
+          findstr /C:"6.03 subsystem version" lab\raster\rc41b\carrier_out\HEADERS.txt >nul || exit /b 43
+
+      - name: Verify carrier reproducibility
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\raster\rc41b
+          cl %CFLAGS% /LD lab\borderless\rc40\ptar_borderless_rc40_prod.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fe:lab\raster\rc41b\carrier_out\ptar_borderless.dll user32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03
+          if errorlevel 1 exit /b 51
+          fc /b lab\raster\rc41b\carrier_out\ptar_borderless_first.dll lab\raster\rc41b\carrier_out\ptar_borderless.dll >nul
+          if errorlevel 1 exit /b 52
+          echo RC41B_CARRIER_REPRODUCIBILITY=PASS
+
+      - name: Run inherited RC40 stable host
+        shell: cmd
+        run: |
+          pushd lab\raster\rc41b\carrier_out
+          stable_host_test.exe > STABLE_HOST.txt 2>&1
+          set RC=%ERRORLEVEL%
+          type STABLE_HOST.txt
+          if not "%RC%"=="0" popd & exit /b %RC%
+          popd
+
+      - name: Package RC41B evidence
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $o='lab/raster/rc41b'
+          $carrierHash=(Get-FileHash "$o/carrier_out/ptar_borderless.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          @(
+            'RC41B_LOADER_DIAGNOSTICS_LAB=PASS',
+            'STATIC_CONTRACT=8/8 PASS',
+            'BOOTSTRAP_HARNESS=PASS',
+            'RC41_PRODUCTION_SIDECAR_BYTE_IDENTICAL=PASS',
+            'RC41_PRODUCTION_HOST=PASS',
+            'RC40_STABLE_HOST=PASS',
+            "RC41B_CARRIER_SHA256=$carrierHash"
+          ) | Set-Content "$o/RC41B_SUMMARY.txt" -Encoding ASCII
+          Compress-Archive -Path "$o/STATIC_CONTRACT.txt","$o/RC41B_SUMMARY.txt","$o/out/*.txt","$o/rc41_out/*.txt","$o/carrier_out/*.txt","$o/carrier_out/ptar_borderless.dll","$o/rc41_out/ptar_rc41.dll" -DestinationPath RC41B_LOADER_DIAGNOSTICS_EVIDENCE.zip -Force
+          Get-Content "$o/RC41B_SUMMARY.txt"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_RC41B_LOADER_DIAGNOSTICS
+          path: RC41B_LOADER_DIAGNOSTICS_EVIDENCE.zip
+          if-no-files-found: error
+          retention-days: 7
