@@ -37,7 +37,11 @@ static bool client_screen(HWND h,RECT& r){RECT c{};if(!GetClientRect(h,&c))retur
 static bool exact_child(HWND g,HWND p){
     if(GetParent(p)!=g)return false;LONG_PTR s=GetWindowLongPtrW(p,GWL_STYLE);if(!(s&WS_CHILD)||(s&WS_POPUP))return false;
     RECT gc{},pr{};if(!client_screen(g,gc)||!GetWindowRect(p,&pr)||!EqualRect(&gc,&pr))return false;
-    POINT pt{(gc.left+gc.right)/2,(gc.top+gc.bottom)/2};return WindowFromPoint(pt)==p;
+    // WindowFromPoint is global: any unrelated runner/tool window above this lab
+    // can steal the result even while the game hierarchy is perfect. Validate the
+    // z-order where it matters: inside the game client hierarchy itself.
+    RECT c{};if(!GetClientRect(g,&c))return false;POINT pt{(c.right-c.left)/2,(c.bottom-c.top)/2};
+    return ChildWindowFromPointEx(g,pt,CWP_ALL)==p && IsWindowVisible(p)!=FALSE;
 }
 static bool exact_top(HWND g,HWND p,const RECT& mon){
     LONG_PTR s=GetWindowLongPtrW(p,GWL_STYLE);if((s&WS_CHILD)||!(s&WS_POPUP))return false;
@@ -52,7 +56,7 @@ static void dump_runtime_log(){
     fseek(f,0,SEEK_END);long n=ftell(f);long start=n>32768?n-32768:0;fseek(f,start,SEEK_SET);
     std::puts("----- PTAR RUNTIME LOG TAIL -----");char buf[2049]{};size_t got=0;while((got=fread(buf,1,2048,f))>0){buf[got]=0;std::fputs(buf,stdout);}std::puts("\n----- END PTAR RUNTIME LOG TAIL -----");fclose(f);
 }
-static int fail(int rc,const char* what,QueryFn q,HWND g,HWND p,const RegBackup& b){ModeState s{};query(q,s);RECT gr{},pr{},gc{};GetWindowRect(g,&gr);GetWindowRect(p,&pr);client_screen(g,gc);std::printf("RC48_CHILD_D3D=FAIL rc=%d what=%s mode=%u gstyle=0x%llx pstyle=0x%llx parent=%p owner=%p grect=%ld,%ld,%ld,%ld gclient=%ld,%ld,%ld,%ld prect=%ld,%ld,%ld,%ld target=%ld,%ld,%ld,%ld gle=%lu\n",rc,what,s.borderlessActive,(unsigned long long)GetWindowLongPtrW(g,GWL_STYLE),(unsigned long long)GetWindowLongPtrW(p,GWL_STYLE),GetParent(p),GetWindow(p,GW_OWNER),gr.left,gr.top,gr.right,gr.bottom,gc.left,gc.top,gc.right,gc.bottom,pr.left,pr.top,pr.right,pr.bottom,s.targetLeft,s.targetTop,s.targetRight,s.targetBottom,(unsigned long)GetLastError());dump_runtime_log();restore(b);return rc;}
+static int fail(int rc,const char* what,QueryFn q,HWND g,HWND p,const RegBackup& b){ModeState s{};query(q,s);RECT gr{},pr{},gc{},cc{};GetWindowRect(g,&gr);GetWindowRect(p,&pr);client_screen(g,gc);GetClientRect(g,&cc);POINT cp{(cc.right-cc.left)/2,(cc.bottom-cc.top)/2};HWND childHit=ChildWindowFromPointEx(g,cp,CWP_ALL);POINT sp{(gc.left+gc.right)/2,(gc.top+gc.bottom)/2};HWND globalHit=WindowFromPoint(sp);std::printf("RC48_CHILD_D3D=FAIL rc=%d what=%s mode=%u gstyle=0x%llx pstyle=0x%llx pex=0x%llx parent=%p owner=%p childhit=%p globalhit=%p topchild=%p prev=%p next=%p visible=%d grect=%ld,%ld,%ld,%ld gclient=%ld,%ld,%ld,%ld prect=%ld,%ld,%ld,%ld target=%ld,%ld,%ld,%ld gle=%lu\n",rc,what,s.borderlessActive,(unsigned long long)GetWindowLongPtrW(g,GWL_STYLE),(unsigned long long)GetWindowLongPtrW(p,GWL_STYLE),(unsigned long long)GetWindowLongPtrW(p,GWL_EXSTYLE),GetParent(p),GetWindow(p,GW_OWNER),childHit,globalHit,GetTopWindow(g),GetWindow(p,GW_HWNDPREV),GetWindow(p,GW_HWNDNEXT),(int)IsWindowVisible(p),gr.left,gr.top,gr.right,gr.bottom,gc.left,gc.top,gc.right,gc.bottom,pr.left,pr.top,pr.right,pr.bottom,s.targetLeft,s.targetTop,s.targetRight,s.targetBottom,(unsigned long)GetLastError());dump_runtime_log();restore(b);return rc;}
 template<class T>static void rel(T*&p){if(p){p->Release();p=nullptr;}}
 
 int wmain(){
