@@ -1,0 +1,123 @@
+name: RC41 Package Script Lab
+
+on:
+  push:
+    branches:
+      - build/rc41-logical-native-subraster-20260913
+    paths:
+      - lab/raster/rc41/package_scripts/scripts_exact.zip.b64
+      - .github/workflows/rc41-package-script-lab.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-rc41-package-scripts:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Decode and verify exact fixture
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $root='lab/raster/rc41/package_scripts'
+          $zip="$root/scripts_exact.zip"
+          [IO.File]::WriteAllBytes($zip,[Convert]::FromBase64String((Get-Content "$root/scripts_exact.zip.b64" -Raw).Trim()))
+          $actual=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expected='d12ac6a05f21477e720e909be37139545c033008ef7bfafddf518f418ca7c43d'
+          if($actual -ne $expected){ throw "fixture hash mismatch: $actual" }
+          if(Test-Path "$root/exact"){ Remove-Item "$root/exact" -Recurse -Force }
+          Expand-Archive $zip "$root/exact" -Force
+          Write-Host "RC41_SCRIPT_FIXTURE_SHA256=$actual"
+
+      - name: Verify exact script hashes
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $root='lab/raster/rc41/package_scripts/exact'
+          $expected=[ordered]@{
+            'install.ps1'='8ffb1e93ecd2f6aea253eb368ff51f2f9c897731dba03f0ba757693a19d2eaf0'
+            'verify.ps1'='e07581a3c3c37b40c69da9f90a6e0944645701f4755314404d892ee6cfc29c67'
+            'rollback.ps1'='0bd8dfbf3fbcd83e4c1f6ab79628d60f5e9220eb653f4fb00f616781ec89ba33'
+            'uninstall_overlay.ps1'='740c0d7ac3472643f7a07cda5536e0b99c24c4e74eccdd4cb5515f58678caa6e'
+            'collect_rc41.ps1'='a3ce5acc3b016f172a816ec61d0e6e7effa463352aff27e03ee4f33fbbcd1c08'
+          }
+          foreach($name in $expected.Keys){
+            $actual=(Get-FileHash "$root/$name" -Algorithm SHA256).Hash.ToLowerInvariant()
+            if($actual -ne $expected[$name]){ throw "$name hash mismatch: $actual" }
+            Write-Host "PASS HASH $name $actual"
+          }
+
+      - name: Parse exact scripts with Windows PowerShell
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $root='lab/raster/rc41/package_scripts/exact'
+          $out='RC41_PACKAGE_SCRIPT_PARSE.txt'
+          $lines=@()
+          foreach($name in @('install.ps1','verify.ps1','rollback.ps1','uninstall_overlay.ps1','collect_rc41.ps1')){
+            $tokens=$null;$errors=$null
+            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path "$root/$name"),[ref]$tokens,[ref]$errors)
+            if($errors.Count -ne 0){
+              $errors | ForEach-Object { Write-Host "PARSE_ERROR $name $($_.Message) @ $($_.Extent.Text)" }
+              throw "PowerShell parser rejected $name"
+            }
+            $lines += "PASS PARSE $name"
+          }
+          $lines | Set-Content $out -Encoding ASCII
+          Get-Content $out
+
+      - name: Validate package safety contracts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $root='lab/raster/rc41/package_scripts/exact'
+          $install=Get-Content "$root/install.ps1" -Raw
+          $verify=Get-Content "$root/verify.ps1" -Raw
+          $rollback=Get-Content "$root/rollback.ps1" -Raw
+          $uninstall=Get-Content "$root/uninstall_overlay.ps1" -Raw
+          $collect=Get-Content "$root/collect_rc41.ps1" -Raw
+          $checks=[ordered]@{
+            'install exact RC41 runtime hash'=$install.Contains('6f1686992bef971c9995df9f0cb91b93c6946988e12a837e5de956df37c9082b')
+            'install exact RC40 borderless hash'=$install.Contains('ce497e72837f95503f877f73239c63a692c90b8646dbf7a3bbd4ba8082083416')
+            'install exact RC41 raster sidecar hash'=$install.Contains('15a8f276816f3123a79a2d8e6932b6bf42b3826288ea5f016c124afec99fbbcf')
+            'install known raster allowlist'=$install.Contains('KnownRaster')
+            'install known borderless allowlist'=$install.Contains('KnownBorderless')
+            'install refuses unknown runtime'=$install.Contains('runtime inconnu')
+            'install refuses unknown borderless sidecar'=$install.Contains('borderless') -and $install.Contains('inconnu')
+            'install refuses unknown raster sidecar'=$install.Contains('ptar_rc41.dll') -and $install.Contains('inconnu')
+            'no AffectGuiResolution mutation'=(-not ($install+$verify+$rollback+$uninstall+$collect).Contains('AffectGuiResolution'))
+            'no RC33B dependency'=(-not ($install+$verify+$rollback+$uninstall+$collect).Contains('RC33B'))
+            'verify exact RC41 hook offset'=$verify.Contains('0x38EE')
+            'verify exact RC41 loader offset'=$verify.Contains('0x4E800')
+            'verify rc38 section virtual size'=$verify.Contains('0x6A2')
+            'rollback canonical GitHub runtime hash'=$rollback.Contains('864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c')
+            'rollback refuses unknown active runtime'=$rollback.Contains('runtime inconnu')
+            'rollback sidecar ownership guard'=$rollback.Contains('sidecar') -and $rollback.Contains('inconnu')
+            'rollback owns RC41 raster sidecar'=$rollback.Contains('ptar_rc41.dll') -and $rollback.Contains('15a8f276816f3123a79a2d8e6932b6bf42b3826288ea5f016c124afec99fbbcf')
+            'uninstall delegates canonical safe engine'=$uninstall.Contains('$Engine -Root $Root')
+            'uninstall ownership aware'=$uninstall.Contains('ownership') -or $uninstall.Contains('Ownership')
+            'uninstall knows both RC40 and RC41 sidecars'=$uninstall.Contains('ptar_borderless.dll') -and $uninstall.Contains('ptar_rc41.dll')
+            'collector invokes canonical diag collector'=$collect.Contains('diag\collect.ps1')
+            'collector captures RC40 borderless log'=$collect.Contains('ptar_borderless_rc38.log')
+            'collector captures RC41 raster log'=$collect.Contains('ptar_rc41.log')
+          }
+          $out='RC41_PACKAGE_SCRIPT_CONTRACT.txt'
+          $lines=@()
+          foreach($k in $checks.Keys){
+            if(-not $checks[$k]){ throw "RC41 PACKAGE CONTRACT FAIL: $k" }
+            $lines += "PASS $k"
+            Write-Host "PASS $k"
+          }
+          $lines | Set-Content $out -Encoding ASCII
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_RC41_PACKAGE_SCRIPT_LAB
+          path: |
+            RC41_PACKAGE_SCRIPT_PARSE.txt
+            RC41_PACKAGE_SCRIPT_CONTRACT.txt
+          if-no-files-found: error
+          retention-days: 7
