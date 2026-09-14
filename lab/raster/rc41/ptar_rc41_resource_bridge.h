@@ -16,6 +16,8 @@ struct ResourceBridgeStats {
     uint64_t rtvTagged=0;
     uint64_t dsvCalls=0;
     uint64_t dsvTagged=0;
+    uint32_t deviceInterfaceVersion=0;
+    uint32_t shadowSlots=0;
 };
 
 class ResourceBridge {
@@ -32,7 +34,13 @@ public:
     ResourceBridgeStats stats() const noexcept;
 
 private:
-    static constexpr size_t kVtableSlots=43;
+    static constexpr size_t kBaseVtableSlots=43;
+    static constexpr size_t kDevice1VtableSlots=50;
+    static constexpr size_t kDevice2VtableSlots=54;
+    static constexpr size_t kDevice3VtableSlots=65;
+    static constexpr size_t kDevice4VtableSlots=67;
+    static constexpr size_t kDevice5VtableSlots=69;
+    static constexpr size_t kMaxVtableSlots=kDevice5VtableSlots;
     static constexpr size_t kSlotCreateTexture2D=5;
     static constexpr size_t kSlotCreateRenderTargetView=9;
     static constexpr size_t kSlotCreateDepthStencilView=10;
@@ -53,7 +61,9 @@ private:
     HMODULE gameModule_=nullptr,runtimeModule_=nullptr,sidecarModule_=nullptr;
     ID3D11Device* device_=nullptr;
     void** originalVtable_=nullptr;
-    void* shadowVtable_[kVtableSlots]{};
+    void* shadowVtable_[kMaxVtableSlots]{};
+    size_t shadowSlots_=kBaseVtableSlots;
+    unsigned deviceInterfaceVersion_=0;
     FnCreateTexture2D origCreateTexture2D_=nullptr;
     FnCreateRenderTargetView origCreateRTV_=nullptr;
     FnCreateDepthStencilView origCreateDSV_=nullptr;
