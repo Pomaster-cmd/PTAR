@@ -68,7 +68,7 @@ jobs:
             'raster unchanged'=($i.Contains($raster)-and$v.Contains($raster))
             'package RC53'=$i.Contains("package='PTAR_RC53_GUI_RESOLUTION_SYNC'")
             'apply GUI exactly 1'=$i.Contains('Set-ItemProperty -LiteralPath $key -Name AffectGuiResolution -Type DWord -Value 1')
-            'record GUI original'=$i.Contains("Get-RegValueState $key 'AffectGuiResolution'")
+            'record GUI original'=$i.Contains("Get-RegValueState `$key 'AffectGuiResolution'")
             'install state GUI ownership'=$i.Contains('installed=1;applied=$false')
             'WindowStyle passive'=($i.Contains('WINDOWSTYLE_PRESERVED=') -and -not $i.Contains('-Name WindowStyle -Type DWord -Value 1'))
             'no Resolution force'=(-not $i.Contains('-Name Resolution -Type DWord'))
