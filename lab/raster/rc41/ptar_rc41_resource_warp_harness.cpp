@@ -3,7 +3,7 @@
 #include <windows.h>
 #include <d3d11.h>
 #include <cmath>
-#include <iostream>
+#include <cstdio>
 #include "ptar_rc41_context_hooks.h"
 #include "ptar_rc41_resource_bridge.h"
 #include "ptar_rc41_resource_tag.h"
@@ -69,10 +69,10 @@ int main(){
     ID3D11Texture2D* restored=nullptr;
     if(FAILED(dev->CreateTexture2D(&probe,nullptr,&restored))||!dims(restored,1920,1080)||resource_has_family_tag(restored))return 28;
 
-    std::cout<<"RC41_RESOURCE_WARP=PASS feature_level=0x"<<std::hex<<static_cast<unsigned>(fl)<<std::dec
-             <<" exact_logical_rt=1920x1080->1280x720 depth=PASS dsv_only_mapping=PASS same_size_nonfamily=PASS"
-             <<" remapped="<<rs.textureRemapped<<" rtv_tagged="<<rs.rtvTagged<<" dsv_tagged="<<rs.dsvTagged
-             <<" vp_mapped="<<hs.viewportMapped<<" restore=PASS\n";
+    std::printf("RC41_RESOURCE_WARP=PASS feature_level=0x%x exact_logical_rt=1920x1080->1280x720 depth=PASS dsv_only_mapping=PASS same_size_nonfamily=PASS remapped=%llu rtv_tagged=%llu dsv_tagged=%llu vp_mapped=%llu restore=PASS\n",
+                static_cast<unsigned>(fl),static_cast<unsigned long long>(rs.textureRemapped),static_cast<unsigned long long>(rs.rtvTagged),
+                static_cast<unsigned long long>(rs.dsvTagged),static_cast<unsigned long long>(hs.viewportMapped));
+    std::fflush(stdout);
 
     safe_release(restored);safe_release(sameRTV);safe_release(samePhysical);safe_release(familyDSV);safe_release(familyDepth);safe_release(familyRTV);safe_release(familyRT);safe_release(primary);safe_release(ctx);safe_release(dev);
     return 0;
