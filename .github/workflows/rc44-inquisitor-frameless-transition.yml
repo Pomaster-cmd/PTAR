@@ -1,0 +1,148 @@
+name: RC44 Inquisitor Frameless Transition Lab
+
+on:
+  push:
+    branches: [build/rc44-inquisitor-frameless-transition-20260914]
+    paths:
+      - lab/borderless/rc43/**
+      - .github/workflows/rc44-inquisitor-frameless-transition.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-rc44-field-transition:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Static exact-field contract
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $p=Get-Content 'lab/borderless/rc43/ptar_borderless_mode_policy.h' -Raw
+          $h=Get-Content 'lab/borderless/rc43/ptar_borderless_rc43_coexist_host.cpp' -Raw
+          $checks=[ordered]@{
+            'field log transition encoded'=$h.Contains('0x14CF0000 -> 0x14000000')
+            'exact field frameless constant'=$h.Contains('fieldFrameless=WS_VISIBLE|WS_CLIPSIBLINGS')
+            'field style asserted 0x14000000'=$h.Contains('0x14000000ull')
+            'frameless top-level classified borderless'=($p.Contains('if(child) return RequestedWindowMode::Ambiguous') -and $p.Contains('if(caption||thick) return RequestedWindowMode::Windowed') -and $p.Contains('return RequestedWindowMode::Borderless'))
+            '500 exact-field cycles'=$h.Contains('kCycles=500')
+            'popup compatibility retained'=$h.Contains('popup-borderless-compat')
+          }
+          foreach($k in $checks.Keys){if(-not $checks[$k]){throw "RC44 CONTRACT FAIL: $k"};Write-Host "PASS $k"}
+          git diff --quiet 0f69490bb2210e96e94213643c382bdf89dfee10 HEAD -- lab/raster
+          if($LASTEXITCODE -ne 0){throw 'RC42 raster scope changed unexpectedly'}
+          Write-Host 'PASS RC42 raster tree unchanged'
+
+      - name: Build RC44 carrier and exact-field host
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          if not exist lab\borderless\rc43\out mkdir lab\borderless\rc43\out
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603
+          cl %CFLAGS% /LD lab\borderless\rc43\ptar_borderless_rc43_prod.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fe:lab\borderless\rc43\out\ptar_borderless.dll user32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 11
+          copy /y lab\borderless\rc43\out\ptar_borderless.dll lab\borderless\rc43\out\ptar_borderless_first.dll >nul
+          cl %CFLAGS% lab\borderless\rc43\ptar_borderless_rc43_coexist_host.cpp /Fe:lab\borderless\rc43\out\coexist_host.exe user32.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 12
+
+      - name: Run exact Inquisitor transition gate
+        shell: cmd
+        run: |
+          pushd lab\borderless\rc43\out
+          coexist_host.exe > RC44_FIELD_HOST.txt 2>&1
+          if errorlevel 1 (type RC44_FIELD_HOST.txt & popd & exit /b 21)
+          type RC44_FIELD_HOST.txt
+          findstr /C:"RC44_COEXIST_HOST=PASS" RC44_FIELD_HOST.txt >nul || (popd & exit /b 22)
+          findstr /C:"exact_field_style=0x14000000" RC44_FIELD_HOST.txt >nul || (popd & exit /b 23)
+          findstr /C:"popup_compat=PASS" RC44_FIELD_HOST.txt >nul || (popd & exit /b 24)
+          popd
+
+      - name: Verify same-target reproducibility
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          del /q lab\borderless\rc43\out\ptar_borderless.dll
+          cl /nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /LD lab\borderless\rc43\ptar_borderless_rc43_prod.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fe:lab\borderless\rc43\out\ptar_borderless.dll user32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 31
+          fc /b lab\borderless\rc43\out\ptar_borderless_first.dll lab\borderless\rc43\out\ptar_borderless.dll >nul || exit /b 32
+          echo RC44_REPRODUCIBILITY=PASS
+
+      - name: Build inherited borderless stress gates
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          if not exist lab\borderless\rc43\gates mkdir lab\borderless\rc43\gates
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\borderless
+          set LFLAGS=/link /SUBSYSTEM:CONSOLE,6.03
+          cl %CFLAGS% lab\borderless\ptar_borderless_geometry_stress.cpp /Fe:lab\borderless\rc43\gates\geometry_stress.exe user32.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_input_stress.cpp /Fe:lab\borderless\rc43\gates\input_stress.exe user32.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_event_parity.cpp /Fe:lab\borderless\rc43\gates\event_parity.exe user32.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_user32_virtualization.cpp /Fe:lab\borderless\rc43\gates\user32_virtualization.exe user32.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_thread_affinity.cpp /Fe:lab\borderless\rc43\gates\thread_affinity.exe user32.lib d3d11.lib dxgi.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_dpi_policy.cpp /Fe:lab\borderless\rc43\gates\dpi_policy.exe user32.lib gdi32.lib shcore.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_lifecycle_stress.cpp /Fe:lab\borderless\rc43\gates\lifecycle_stress.exe user32.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_window_stress.cpp /Fe:lab\borderless\rc43\gates\window_stress.exe user32.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_takeover_harness.cpp /Fe:lab\borderless\rc43\gates\takeover_harness.exe user32.lib gdi32.lib d3d11.lib dxgi.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_warp_stress.cpp /Fe:lab\borderless\rc43\gates\warp_stress.exe user32.lib d3d11.lib dxgi.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_occlusion_focus_stress.cpp /Fe:lab\borderless\rc43\gates\occlusion_focus_stress.exe user32.lib d3d11.lib dxgi.lib %LFLAGS% || exit /b 1
+
+      - name: Run inherited borderless stress gates
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $tests=@('geometry_stress','input_stress','event_parity','user32_virtualization','thread_affinity','dpi_policy','lifecycle_stress','window_stress','takeover_harness','warp_stress','occlusion_focus_stress')
+          $summary=@()
+          foreach($n in $tests){
+            $exe="lab/borderless/rc43/gates/$n.exe";$log="lab/borderless/rc43/gates/$($n.ToUpper()).txt"
+            & $exe *> $log;$rc=$LASTEXITCODE
+            $summary += "$n RC=$rc"
+            if($rc -ne 0){Get-Content $log;throw "$n failed RC=$rc"}
+          }
+          $summary += 'RC44_INHERITED_BORDERLESS_GATES=11/11 PASS'
+          $summary | Set-Content 'lab/borderless/rc43/gates/GATES_SUMMARY.txt' -Encoding ASCII
+
+      - name: Rebuild and run unchanged RC42 production host
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          if not exist lab\borderless\rc43\rc42gate mkdir lab\borderless\rc43\rc42gate
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\raster\rc41
+          cl %CFLAGS% /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc41\ptar_rc41_context_hooks.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fe:lab\borderless\rc43\rc42gate\ptar_rc41.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 41
+          cl %CFLAGS% lab\raster\rc41\ptar_rc41_prod_host.cpp /Fe:lab\borderless\rc43\rc42gate\prod_host.exe user32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 42
+          pushd lab\borderless\rc43\rc42gate
+          prod_host.exe > RC42_PROD_HOST.txt 2>&1
+          if errorlevel 1 (type RC42_PROD_HOST.txt & popd & exit /b 43)
+          findstr /C:"RC41_PROD_HOST=PASS" RC42_PROD_HOST.txt >nul || (type RC42_PROD_HOST.txt & popd & exit /b 44)
+          popd
+
+      - name: Package RC44 evidence
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $o='lab/borderless/rc43/out'
+          $hash=(Get-FileHash "$o/ptar_borderless.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          @(
+            'RC44_INQUISITOR_FRAMELESS_TRANSITION=PASS',
+            'FIELD_TRANSITION_0x14CF0000_TO_0x14000000=PASS',
+            'EXACT_FIELD_STYLE_500_CYCLES=PASS',
+            'POPUP_COMPAT=PASS',
+            'INHERITED_BORDERLESS_GATES=11/11 PASS',
+            'RC42_RASTER_TREE_UNCHANGED=PASS',
+            'RC42_PRODUCTION_HOST=PASS',
+            'SAME_TARGET_REPRODUCIBILITY=PASS',
+            "RC44_CARRIER_SHA256=$hash"
+          ) | Set-Content "$o/RC44_SUMMARY.txt" -Encoding ASCII
+          Compress-Archive -Path "$o/RC44_FIELD_HOST.txt","$o/RC44_SUMMARY.txt","$o/ptar_borderless.dll","lab/borderless/rc43/gates/GATES_SUMMARY.txt","lab/borderless/rc43/rc42gate/RC42_PROD_HOST.txt" -DestinationPath RC44_INQUISITOR_FRAMELESS_TRANSITION_EVIDENCE.zip -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_RC44_INQUISITOR_FRAMELESS_TRANSITION
+          path: RC44_INQUISITOR_FRAMELESS_TRANSITION_EVIDENCE.zip
+          if-no-files-found: error
+          retention-days: 7
