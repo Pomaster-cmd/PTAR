@@ -1,0 +1,139 @@
+name: RC49 Hostile Topmost Visible Output
+
+on:
+  push:
+    branches: [lab/rc49-windowed-presenter-stability-20260914]
+    paths:
+      - lab/borderless/rc49/**
+      - lab/borderless/rc48/ptar_rc48_true_runtime_host.cpp
+      - lab/borderless/rc48/rebuild_exact_field_runtime.py
+      - .github/workflows/rc49-hostile-topmost-visible-output.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-hostile-topmost:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct exact installed P1U46 runtime
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $o='lab/borderless/rc49/run'
+          New-Item -ItemType Directory -Force $o | Out-Null
+          $base=(Get-FileHash payload/d3d11.dll -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($base -ne '864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c'){throw "canonical runtime drift $base"}
+          python lab/borderless/rc48/rebuild_exact_field_runtime.py payload/d3d11.dll "$o/d3d11.dll"
+          if($LASTEXITCODE -ne 0){throw 'exact field runtime reconstruction failed'}
+          $h=(Get-FileHash "$o/d3d11.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($h -ne '6f1686992bef971c9995df9f0cb91b93c6946988e12a837e5de956df37c9082b'){throw "field runtime SHA mismatch $h"}
+          Copy-Item "$o/d3d11.dll" "$o/win81_nis_dx11_x64.dll" -Force
+          Copy-Item payload/win81_nis.ini "$o/win81_nis.ini" -Force
+          Write-Host "RC49_TRUE_RUNTIME_FIXTURE=PASS base=$base overlay=$h"
+
+      - name: Generate and build RC49 carrier plus exact RC42 raster
+        shell: cmd
+        run: |
+          python lab\borderless\rc49\build_rc49_source.py lab\borderless\rc49\ptar_borderless_rc49_generated.cpp || exit /b 10
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          set O=lab\borderless\rc49\run
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603
+          cl %CFLAGS% /LD lab\borderless\rc49\ptar_borderless_rc49_generated.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fe:%O%\ptar_borderless.dll user32.lib advapi32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 11
+          cl %CFLAGS% /I lab\raster\rc41 /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc41\ptar_rc41_context_hooks.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fe:%O%\ptar_rc42.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 12
+          copy /y %O%\ptar_rc42.dll %O%\ptar_rc41.dll >nul
+          cl %CFLAGS% lab\borderless\rc48\ptar_rc48_true_runtime_host.cpp /Fe:%O%\Warhammer.exe user32.lib advapi32.lib gdi32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:WINDOWS,6.03 || exit /b 13
+
+      - name: Verify exact inherited components and record RC49 carrier
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o='lab/borderless/rc49/run'
+          $runtime=(Get-FileHash "$o/d3d11.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $raster=(Get-FileHash "$o/ptar_rc41.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $carrier=(Get-FileHash "$o/ptar_borderless.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($runtime -ne '6f1686992bef971c9995df9f0cb91b93c6946988e12a837e5de956df37c9082b'){throw "runtime drift $runtime"}
+          if($raster -ne '7ffe7aa1b9afa42d5f22557cae29a4f65e17379c2a2f181f879427277839f1ca'){throw "raster drift $raster"}
+          "RC49_COMPONENTS=PASS runtime=$runtime raster=$raster carrier=$carrier" | Set-Content "$o/COMPONENTS.txt" -Encoding ASCII
+          Get-Content "$o/COMPONENTS.txt"
+
+      - name: Adapt only INI geometry to runner monitor
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          Add-Type -AssemblyName System.Windows.Forms
+          $b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $w=[int]$b.Width;$h=[int]$b.Height;$rw=[int][math]::Floor($w*2/3);$rh=[int][math]::Floor($h*2/3)
+          $p='lab/borderless/rc49/run/win81_nis.ini'
+          $s=Get-Content $p -Raw
+          $s=[regex]::Replace($s,'(?m)^OutputWidth=.*$',"OutputWidth=$w")
+          $s=[regex]::Replace($s,'(?m)^OutputHeight=.*$',"OutputHeight=$h")
+          $s=[regex]::Replace($s,'(?m)^RenderWidth=.*$',"RenderWidth=$rw")
+          $s=[regex]::Replace($s,'(?m)^RenderHeight=.*$',"RenderHeight=$rh")
+          Set-Content $p $s -Encoding ASCII
+          "RUNNER_NATIVE=${w}x${h} RUNNER_RENDER=${rw}x${rh}" | Set-Content 'lab/borderless/rc49/run/RUNNER_GEOMETRY.txt' -Encoding ASCII
+          Get-Content 'lab/borderless/rc49/run/RUNNER_GEOMETRY.txt'
+
+      - name: Run hostile TOPMOST reassertion and visible-pixel gate
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o=(Resolve-Path 'lab/borderless/rc49/run').Path
+          Add-Type -TypeDefinition @'
+          using System;
+          using System.Runtime.InteropServices;
+          public static class R49Win {
+            [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr FindWindowEx(IntPtr p, IntPtr a, string c, string n);
+            [DllImport("user32.dll", SetLastError=true)] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint f);
+          }
+          '@
+          $proc=Start-Process -FilePath "$o/Warhammer.exe" -WorkingDirectory $o -PassThru
+          $game=[IntPtr]::Zero;$presenter=[IntPtr]::Zero
+          for($i=0;$i -lt 300 -and $presenter -eq [IntPtr]::Zero;$i++){
+            Start-Sleep -Milliseconds 50;$proc.Refresh();$game=$proc.MainWindowHandle
+            if($game -ne [IntPtr]::Zero){$presenter=[R49Win]::FindWindowEx($game,[IntPtr]::Zero,'Win81USRPresenterV041',$null)}
+          }
+          if($presenter -eq [IntPtr]::Zero){Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue;throw 'RC49 presenter child not found'}
+          $TOPMOST=[IntPtr](-1);$flags=[uint32](0x0001 -bor 0x0002 -bor 0x0010 -bor 0x0200)
+          $okCount=0
+          for($i=0;$i -lt 250;$i++){
+            if([R49Win]::SetWindowPos($presenter,$TOPMOST,0,0,0,0,$flags)){$okCount++}
+            Start-Sleep -Milliseconds 12
+          }
+          "HOSTILE_TOPMOST_CALLS=250 OK=$okCount" | Set-Content "$o/HOSTILE_TOPMOST.txt" -Encoding ASCII
+          Start-Sleep -Milliseconds 1200
+          $log=Join-Path $o 'ptar_borderless_rc38.log'
+          $before=0;if(Test-Path $log){$before=(Select-String -Path $log -SimpleMatch 'RC48_WINDOWED_CHILD_ATTACHED').Count}
+          Start-Sleep -Seconds 3
+          $after=0;if(Test-Path $log){$after=(Select-String -Path $log -SimpleMatch 'RC48_WINDOWED_CHILD_ATTACHED').Count}
+          "REPAIR_SETTLE before=$before after=$after delta=$($after-$before)" | Add-Content "$o/HOSTILE_TOPMOST.txt" -Encoding ASCII
+          if(($after-$before) -gt 5){Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue;throw "RC49 self-repair storm persists delta=$($after-$before)"}
+          if(-not $proc.WaitForExit(90000)){Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue;throw 'Warhammer host timeout'}
+          $rc=$proc.ExitCode;Write-Host "RC49_HOST_EXIT=$rc"
+          foreach($n in @('HOSTILE_TOPMOST.txt','TRUE_RUNTIME_HOST.txt','win81_nis.log','ptar_borderless_rc38.log','ptar_rc41.log','ptar_rc41_bootstrap.log')){ $p2=Join-Path $o $n;if(Test-Path $p2){Write-Host "===== $n =====";Get-Content $p2 -Tail 180} }
+          if($rc -ne 0){throw "visible-output host failed rc=$rc"}
+          $hostText=Get-Content "$o/TRUE_RUNTIME_HOST.txt" -Raw
+          if(-not $hostText.Contains('TRUE_P1U46_WINDOWED_VISIBLE_PIXELS=PASS')){throw 'visible pixel PASS missing'}
+          $line=($hostText -split "`r?`n" | Where-Object {$_ -like '*class=Win81USRPresenterV041*'} | Select-Object -Last 1)
+          if(-not $line){throw 'final presenter child inventory missing'}
+          if($line -notmatch 'ex=0x([0-9A-Fa-f]+)'){throw "final presenter exstyle missing: $line"}
+          $ex=[Convert]::ToInt64($Matches[1],16)
+          if(($ex -band 0x8) -ne 0){throw ('TOPMOST survived final settle ex=0x{0:X}' -f $ex)}
+          if((Select-String -Path $log -SimpleMatch 'FAIL RC49 WINDOWED DETOPMOST').Count -ne 0){throw 'RC49 detopmost failure logged'}
+          $clears=(Select-String -Path $log -SimpleMatch 'RC49_WINDOWED_DETOPMOST_COMMITTED').Count
+          if($clears -lt 1){throw 'RC49 never observed/cleared hostile TOPMOST state'}
+          Write-Host "RC49_HOSTILE_TOPMOST_VISIBLE_OUTPUT=PASS clears=$clears settle_delta=$($after-$before) final_ex=0x$('{0:X}' -f $ex)"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PTAR_RC49_HOSTILE_TOPMOST_VISIBLE_OUTPUT
+          path: |
+            lab/borderless/rc49/run/*.txt
+            lab/borderless/rc49/run/*.log
+            lab/borderless/rc49/ptar_borderless_rc49_generated.cpp
+          if-no-files-found: warn
+          retention-days: 7
