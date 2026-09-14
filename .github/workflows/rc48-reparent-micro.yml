@@ -1,0 +1,40 @@
+name: RC48 Reparent Micro Lab
+
+on:
+  push:
+    branches: [build/rc48-windowed-child-presenter-20260914]
+    paths:
+      - lab/borderless/rc48/ptar_rc48_reparent_micro.cpp
+      - .github/workflows/rc48-reparent-micro.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-reparent-micro:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run 10k D3D reparent pairs
+        shell: cmd
+        timeout-minutes: 10
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          if not exist lab\borderless\rc48\micro_out mkdir lab\borderless\rc48\micro_out
+          cl /nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 lab\borderless\rc48\ptar_rc48_reparent_micro.cpp /Fe:lab\borderless\rc48\micro_out\reparent_micro.exe user32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 11
+          pushd lab\borderless\rc48\micro_out
+          reparent_micro.exe > REPARENT_MICRO.txt 2>&1
+          if errorlevel 1 (type REPARENT_MICRO.txt & popd & exit /b 12)
+          type REPARENT_MICRO.txt
+          findstr /C:"RC48_REPARENT_MICRO=PASS" REPARENT_MICRO.txt >nul || (popd & exit /b 13)
+          findstr /C:"pairs=10000" REPARENT_MICRO.txt >nul || (popd & exit /b 14)
+          findstr /C:"transitions=20000" REPARENT_MICRO.txt >nul || (popd & exit /b 15)
+          findstr /C:"presents=40000" REPARENT_MICRO.txt >nul || (popd & exit /b 16)
+          popd
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_RC48_REPARENT_MICRO
+          path: lab/borderless/rc48/micro_out/REPARENT_MICRO.txt
+          retention-days: 7
