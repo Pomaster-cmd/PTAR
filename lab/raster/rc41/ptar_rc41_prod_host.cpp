@@ -19,8 +19,8 @@ static bool physical_is(IDXGISwapChain* sc,UINT w,UINT h){
     D3D11_TEXTURE2D_DESC d{};t->GetDesc(&d);t->Release();return d.Width==w&&d.Height==h;
 }
 static bool vp_is(ID3D11DeviceContext* ctx,float x,float y,float w,float h){
-    UINT n=1;D3D11_VIEWPORT v{};ctx->RSGetViewports(&n,&v);auto near=[](float a,float b){return std::fabs(a-b)<3.0e-4f;};
-    return n==1&&near(v.TopLeftX,x)&&near(v.TopLeftY,y)&&near(v.Width,w)&&near(v.Height,h);
+    UINT n=1;D3D11_VIEWPORT v{};ctx->RSGetViewports(&n,&v);auto almost_equal=[](float a,float b){return std::fabs(a-b)<3.0e-4f;};
+    return n==1&&almost_equal(v.TopLeftX,x)&&almost_equal(v.TopLeftY,y)&&almost_equal(v.Width,w)&&almost_equal(v.Height,h);
 }
 
 int main(){
