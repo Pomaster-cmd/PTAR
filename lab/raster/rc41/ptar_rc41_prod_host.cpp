@@ -82,7 +82,7 @@ int main(){
         DXGI_SWAP_CHAIN_DESC physical{};if(FAILED(sc->GetDesc(&physical))||physical.BufferDesc.Width!=1280||physical.BufferDesc.Height!=720){rc=30;break;}
         ID3D11Texture2D* restored=nullptr;if(FAILED(dev->CreateTexture2D(&ld,nullptr,&restored))||!texture_is(restored,1920,1080)||ptar_rc41::resource_has_family_tag(restored)){safe_release(restored);rc=31;break;}safe_release(restored);
         char result[768]{};
-        wsprintfA(result,"RC41_PROD_HOST=PASS feature_level=0x%x logical=1920x1080 physical=1280x720 resource_family=PASS resizes=%u vp_mapped=%llu getdesc_virtualized=%llu resize_remapped=%llu refresh=%llu texture_remapped=%llu rtv_tagged=%llu unload_restore=PASS\r\n",
+        std::snprintf(result,sizeof(result),"RC41_PROD_HOST=PASS feature_level=0x%x logical=1920x1080 physical=1280x720 resource_family=PASS resizes=%u vp_mapped=%llu getdesc_virtualized=%llu resize_remapped=%llu refresh=%llu texture_remapped=%llu rtv_tagged=%llu unload_restore=PASS\r\n",
                   static_cast<unsigned>(fl),static_cast<unsigned>(kLoops),static_cast<unsigned long long>(finalStats.viewportMapped),
                   static_cast<unsigned long long>(finalStats.getDescVirtualized),static_cast<unsigned long long>(finalStats.resizeRemapped),
                   static_cast<unsigned long long>(finalStats.primaryRefreshes),static_cast<unsigned long long>(finalStats.textureRemapped),
