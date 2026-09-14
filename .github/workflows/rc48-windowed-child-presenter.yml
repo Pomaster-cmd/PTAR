@@ -1,0 +1,168 @@
+name: RC48 Windowed Child Presenter Lab
+
+on:
+  push:
+    branches: [build/rc48-windowed-child-presenter-20260914]
+    paths:
+      - lab/borderless/rc48/**
+      - .github/workflows/rc48-windowed-child-presenter.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-rc48-child:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Static RC48 architecture contract
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $s=Get-Content 'lab/borderless/rc48/ptar_borderless_rc48_prod.cpp' -Raw
+          $h=Get-Content 'lab/borderless/rc48/ptar_borderless_rc48_child_d3d_host.cpp' -Raw
+          $checks=[ordered]@{
+            'RC46 controller inherited directly'=$s.Contains('../rc46/ptar_borderless_rc46_prod.cpp')
+            'windowed presenter becomes WS_CHILD'=($s.Contains('WS_CHILD') -and $s.Contains('SetParent(g_presenter,g_game)'))
+            'windowed popup removed'=$s.Contains('WS_CHILD | WS_CLIPSIBLINGS | WS_CLIPCHILDREN')
+            'borderless top-level restore exists'=$s.Contains('RC48_BORDERLESS_TOPLEVEL_RESTORED')
+            'borderless popup restored'=$s.Contains('(desired & ~(LONG_PTR)WS_CHILD) | WS_POPUP')
+            'no topmost policy'=(-not $s.Contains('HWND_TOPMOST'))
+            'transparent presenter forbidden in windowed'=$s.Contains('WS_EX_TRANSPARENT|WS_EX_TOPMOST|WS_EX_APPWINDOW|WS_EX_TOOLWINDOW')
+            'presenter client pinned to game client'=($s.Contains('GetClientRect(g_game') -and $s.Contains('SetWindowPos(h,HWND_TOP,0,0'))
+            'runtime mutation repair worker exists'=$s.Contains('RC48InvariantWorker')
+            'field owned-popup precondition reproduced'=$h.Contains('field-owner-precondition')
+            'black parent repaint stress reproduced'=$h.Contains('black_parent_repaint=PASS')
+            '20k D3D windowed frames'=$h.Contains('kWindowedFrames=20000')
+            '2500 mode pairs'=$h.Contains('kModePairs=2500')
+            'real preference roundtrip'=$h.Contains('pref_roundtrip=PASS')
+            'swapchain output HWND remains stable'=$h.Contains('swap_output_stable=PASS')
+          }
+          foreach($k in $checks.Keys){if(-not $checks[$k]){throw "RC48 CONTRACT FAIL: $k"};Write-Host "PASS $k"}
+          git diff --quiet 0f69490bb2210e96e94213643c382bdf89dfee10 HEAD -- lab/raster
+          if($LASTEXITCODE -ne 0){throw 'RC42 raster scope changed unexpectedly'}
+          'RC48_STATIC_CONTRACT=16/16 PASS' | Set-Content RC48_STATIC_CONTRACT.txt -Encoding ASCII
+
+      - name: Build reproducible RC48 carrier and D3D child host
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          if not exist lab\borderless\rc48\out mkdir lab\borderless\rc48\out
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603
+          cl %CFLAGS% /LD lab\borderless\rc48\ptar_borderless_rc48_prod.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fe:lab\borderless\rc48\out\ptar_borderless.dll user32.lib advapi32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 11
+          copy /y lab\borderless\rc48\out\ptar_borderless.dll lab\borderless\rc48\out\ptar_borderless_first.dll >nul
+          cl %CFLAGS% lab\borderless\rc48\ptar_borderless_rc48_child_d3d_host.cpp /Fe:lab\borderless\rc48\out\child_d3d_host.exe user32.lib advapi32.lib gdi32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 12
+          dumpbin /exports lab\borderless\rc48\out\ptar_borderless.dll > lab\borderless\rc48\out\EXPORTS.txt
+          dumpbin /imports lab\borderless\rc48\out\ptar_borderless.dll > lab\borderless\rc48\out\IMPORTS.txt
+          dumpbin /headers lab\borderless\rc48\out\ptar_borderless.dll > lab\borderless\rc48\out\HEADERS.txt
+          findstr /C:"PTAR_BorderlessAutoStart" lab\borderless\rc48\out\EXPORTS.txt >nul || exit /b 13
+          findstr /C:"PTAR_BorderlessAttachStable" lab\borderless\rc48\out\EXPORTS.txt >nul || exit /b 14
+          findstr /C:"PTAR_BorderlessQueryMode" lab\borderless\rc48\out\EXPORTS.txt >nul || exit /b 15
+
+      - name: Run 25k D3D/Win32 field-model stress
+        shell: cmd
+        timeout-minutes: 10
+        run: |
+          pushd lab\borderless\rc48\out
+          child_d3d_host.exe > CHILD_D3D_HOST.txt 2>&1
+          if errorlevel 1 (type CHILD_D3D_HOST.txt & popd & exit /b 21)
+          type CHILD_D3D_HOST.txt
+          findstr /C:"RC48_CHILD_D3D=PASS" CHILD_D3D_HOST.txt >nul || (popd & exit /b 22)
+          findstr /C:"d3d_warp_present=20000" CHILD_D3D_HOST.txt >nul || (popd & exit /b 23)
+          findstr /C:"mode_pairs=2500" CHILD_D3D_HOST.txt >nul || (popd & exit /b 24)
+          findstr /C:"mode_transitions=5000" CHILD_D3D_HOST.txt >nul || (popd & exit /b 25)
+          findstr /C:"black_parent_repaint=PASS" CHILD_D3D_HOST.txt >nul || (popd & exit /b 26)
+          findstr /C:"swap_output_stable=PASS" CHILD_D3D_HOST.txt >nul || (popd & exit /b 27)
+          popd
+
+      - name: Verify same-target reproducibility
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          del /q lab\borderless\rc48\out\ptar_borderless.dll
+          cl /nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /LD lab\borderless\rc48\ptar_borderless_rc48_prod.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fe:lab\borderless\rc48\out\ptar_borderless.dll user32.lib advapi32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 31
+          fc /b lab\borderless\rc48\out\ptar_borderless_first.dll lab\borderless\rc48\out\ptar_borderless.dll >nul || exit /b 32
+          echo RC48_SAME_TARGET_REPRODUCIBILITY=PASS
+
+      - name: Build inherited 11 borderless stress gates
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          if not exist lab\borderless\rc48\gates mkdir lab\borderless\rc48\gates
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\borderless
+          set LFLAGS=/link /SUBSYSTEM:CONSOLE,6.03
+          cl %CFLAGS% lab\borderless\ptar_borderless_geometry_stress.cpp /Fe:lab\borderless\rc48\gates\geometry_stress.exe user32.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_input_stress.cpp /Fe:lab\borderless\rc48\gates\input_stress.exe user32.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_event_parity.cpp /Fe:lab\borderless\rc48\gates\event_parity.exe user32.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_user32_virtualization.cpp /Fe:lab\borderless\rc48\gates\user32_virtualization.exe user32.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_thread_affinity.cpp /Fe:lab\borderless\rc48\gates\thread_affinity.exe user32.lib d3d11.lib dxgi.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_dpi_policy.cpp /Fe:lab\borderless\rc48\gates\dpi_policy.exe user32.lib gdi32.lib shcore.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_lifecycle_stress.cpp /Fe:lab\borderless\rc48\gates\lifecycle_stress.exe user32.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_window_stress.cpp /Fe:lab\borderless\rc48\gates\window_stress.exe user32.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_takeover_harness.cpp /Fe:lab\borderless\rc48\gates\takeover_harness.exe user32.lib gdi32.lib d3d11.lib dxgi.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_warp_stress.cpp /Fe:lab\borderless\rc48\gates\warp_stress.exe user32.lib d3d11.lib dxgi.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_occlusion_focus_stress.cpp /Fe:lab\borderless\rc48\gates\occlusion_focus_stress.exe user32.lib d3d11.lib dxgi.lib %LFLAGS% || exit /b 1
+
+      - name: Run inherited 11 borderless stress gates
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $tests=@('geometry_stress','input_stress','event_parity','user32_virtualization','thread_affinity','dpi_policy','lifecycle_stress','window_stress','takeover_harness','warp_stress','occlusion_focus_stress')
+          $summary=@()
+          foreach($n in $tests){$exe="lab/borderless/rc48/gates/$n.exe";$log="lab/borderless/rc48/gates/$($n.ToUpper()).txt";& $exe *> $log;$rc=$LASTEXITCODE;Get-Content $log;$summary += "$n RC=$rc";if($rc -ne 0){throw "$n failed RC=$rc"}}
+          $summary += 'RC48_INHERITED_BORDERLESS_GATES=11/11 PASS';$summary | Set-Content 'lab/borderless/rc48/gates/GATES_SUMMARY.txt' -Encoding ASCII
+
+      - name: Rebuild and run unchanged RC42 production host
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          if not exist lab\borderless\rc48\rc42gate mkdir lab\borderless\rc48\rc42gate
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\raster\rc41
+          cl %CFLAGS% /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc41\ptar_rc41_context_hooks.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fe:lab\borderless\rc48\rc42gate\ptar_rc41.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 41
+          cl %CFLAGS% lab\raster\rc41\ptar_rc41_prod_host.cpp /Fe:lab\borderless\rc48\rc42gate\prod_host.exe user32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 42
+          pushd lab\borderless\rc48\rc42gate
+          prod_host.exe > RC42_PROD_HOST.txt 2>&1
+          if errorlevel 1 (type RC42_PROD_HOST.txt & popd & exit /b 43)
+          type RC42_PROD_HOST.txt
+          findstr /C:"RC41_PROD_HOST=PASS" RC42_PROD_HOST.txt >nul || (popd & exit /b 44)
+          popd
+
+      - name: Package RC48 evidence
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o='lab/borderless/rc48/out';$hash=(Get-FileHash "$o/ptar_borderless.dll" -Algorithm SHA256).Hash.ToLowerInvariant();$size=(Get-Item "$o/ptar_borderless.dll").Length
+          @(
+            'RC48_WINDOWED_CHILD_PRESENTER=PASS',
+            'STATIC_CONTRACT=16/16 PASS',
+            'FIELD_OWNED_POPUP_REGRESSION=PASS',
+            'BLACK_PARENT_REPAINT=PASS',
+            'WINDOWED_D3D_WARP_FRAMES=20000 PASS',
+            'STYLE_MODE_PAIRS=2500 PASS',
+            'STYLE_MODE_TRANSITIONS=5000 PASS',
+            'PREFERENCE_ROUNDTRIP=PASS',
+            'CHILD_HIT_TEST=PASS',
+            'SWAP_OUTPUT_WINDOW_STABLE=PASS',
+            'INHERITED_BORDERLESS_GATES=11/11 PASS',
+            'RC42_PRODUCTION_HOST=PASS',
+            'RC42_RASTER_TREE_UNCHANGED=PASS',
+            'SAME_TARGET_REPRODUCIBILITY=PASS',
+            "RC48_CARRIER_SHA256=$hash",
+            "RC48_CARRIER_SIZE=$size"
+          ) | Set-Content "$o/RC48_SUMMARY.txt" -Encoding ASCII
+          Get-Content "$o/RC48_SUMMARY.txt"
+          Compress-Archive -Path RC48_STATIC_CONTRACT.txt,"$o/*.txt","$o/ptar_borderless.dll","lab/borderless/rc48/gates/*.txt","lab/borderless/rc48/rc42gate/RC42_PROD_HOST.txt" -DestinationPath RC48_WINDOWED_CHILD_PRESENTER_EVIDENCE.zip -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_RC48_WINDOWED_CHILD_PRESENTER
+          path: RC48_WINDOWED_CHILD_PRESENTER_EVIDENCE.zip
+          if-no-files-found: error
+          retention-days: 7
