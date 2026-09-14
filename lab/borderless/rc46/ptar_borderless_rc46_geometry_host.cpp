@@ -29,7 +29,6 @@ static bool wait_outer(HWND h,const RECT& want,unsigned timeout=2000){DWORD st=G
 static bool set_pref(DWORD v){HKEY k=nullptr;DWORD d=0;if(RegCreateKeyExW(HKEY_CURRENT_USER,kOptionsKey,0,nullptr,0,KEY_QUERY_VALUE|KEY_SET_VALUE,nullptr,&k,&d)!=ERROR_SUCCESS)return false;LONG r=RegSetValueExW(k,L"WindowStyle",0,REG_DWORD,reinterpret_cast<BYTE*>(&v),sizeof(v));RegCloseKey(k);return r==ERROR_SUCCESS;}
 static void backup_pref(RegistryBackup& b){HKEY k=nullptr;if(RegOpenKeyExW(HKEY_CURRENT_USER,kOptionsKey,0,KEY_QUERY_VALUE,&k)!=ERROR_SUCCESS)return;DWORD t=0,s=sizeof(b.value);if(RegQueryValueExW(k,L"WindowStyle",nullptr,&t,reinterpret_cast<BYTE*>(&b.value),&s)==ERROR_SUCCESS&&t==REG_DWORD&&s==sizeof(b.value))b.valueExisted=true;RegCloseKey(k);}
 static void restore_pref(const RegistryBackup& b){HKEY k=nullptr;DWORD d=0;if(RegCreateKeyExW(HKEY_CURRENT_USER,kOptionsKey,0,nullptr,0,KEY_SET_VALUE,nullptr,&k,&d)!=ERROR_SUCCESS)return;if(b.valueExisted)RegSetValueExW(k,L"WindowStyle",0,REG_DWORD,reinterpret_cast<const BYTE*>(&b.value),sizeof(b.value));else RegDeleteValueW(k,L"WindowStyle");RegCloseKey(k);}
-static void request_style(HWND h,LONG_PTR s){SetWindowLongPtrW(h,GWL_STYLE,s);SetWindowPos(h,nullptr,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE|SWP_FRAMECHANGED|SWP_SHOWWINDOW);}
 static int fail(int rc,const char* what,QueryFn q,HWND game,HWND presenter,const RegistryBackup& b){ModeState s{};if(q)query_state(q,s);RECT g{},p{};if(game)GetWindowRect(game,&g);if(presenter)GetWindowRect(presenter,&p);std::printf("RC46_GEOMETRY_HOST=FAIL rc=%d what=%s mode=%u pref=%ld game=%ld,%ld,%ld,%ld presenter=%ld,%ld,%ld,%ld clamps=%llu pclamps=%llu rejects=%llu gle=%lu\n",rc,what,s.borderlessActive,s.windowStylePreference,g.left,g.top,g.right,g.bottom,p.left,p.top,p.right,p.bottom,s.gameCoercionClamps,s.presenterClamps,s.rejectedWindowSaves,(unsigned long)GetLastError());restore_pref(b);return rc;}
 
 int wmain(){
@@ -44,16 +43,13 @@ int wmain(){
     HMODULE dll=LoadLibraryW(L"ptar_borderless.dll");if(!dll)return fail(14,"load",nullptr,game,presenter,backup);auto attach=(AttachStableFn)GetProcAddress(dll,"PTAR_BorderlessAttachStable");auto query=(QueryFn)GetProcAddress(dll,"PTAR_BorderlessQueryMode");if(!attach||!query)return fail(15,"exports",query,game,presenter,backup);
     if(attach(game,presenter,rw,rh,outW,outH)!=0)return fail(16,"attach",query,game,presenter,backup);if(!wait_mode(query,false))return fail(17,"initial-windowed",query,game,presenter,backup);if(!wait_outer(game,initial)||!wait_presenter(game,presenter))return fail(18,"initial-real-window",query,game,presenter,backup);
 
-    // Exact field regression: outer rect corresponding to a monitor-sized client.
     RECT fullClient{0,0,(LONG)outW,(LONG)outH};AdjustWindowRectEx(&fullClient,(DWORD)winStyle,FALSE,0);const LONG fx=mi.rcMonitor.left+fullClient.left,fy=mi.rcMonitor.top+fullClient.top,fw=fullClient.right-fullClient.left,fh=fullClient.bottom-fullClient.top;
     SetWindowPos(game,nullptr,fx,fy,fw,fh,SWP_NOZORDER|SWP_NOACTIVATE|SWP_SHOWWINDOW);pump(30);
     if(!wait_outer(game,initial)||!wait_presenter(game,presenter))return fail(19,"field-monitor-coercion-not-rejected",query,game,presenter,backup);
 
-    // Runtime may independently pull presenter back to monitor origin; clamp it.
     SetWindowPos(presenter,nullptr,mi.rcMonitor.left,mi.rcMonitor.top,outW,outH,SWP_NOZORDER|SWP_NOACTIVATE|SWP_SHOWWINDOW);pump(30);
     if(!wait_presenter(game,presenter))return fail(20,"presenter-origin-coercion-not-rejected",query,game,presenter,backup);
 
-    // User interactive move is authoritative and becomes the new saved rect.
     SendMessageW(game,WM_ENTERSIZEMOVE,0,0);RECT moved=initial;OffsetRect(&moved,137,101);SetWindowPos(game,nullptr,moved.left,moved.top,moved.right-moved.left,moved.bottom-moved.top,SWP_NOZORDER|SWP_NOACTIVATE|SWP_SHOWWINDOW);SendMessageW(game,WM_EXITSIZEMOVE,0,0);pump(30);
     if(!wait_outer(game,moved)||!wait_presenter(game,presenter))return fail(21,"interactive-move-not-preserved",query,game,presenter,backup);
     SetWindowPos(game,nullptr,fx,fy,fw,fh,SWP_NOZORDER|SWP_NOACTIVATE|SWP_SHOWWINDOW);pump(30);
