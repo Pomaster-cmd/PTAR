@@ -1,0 +1,108 @@
+name: RC52 Field Faithful Scale Oracle
+
+on:
+  push:
+    branches: [lab/rc52-windowed-final-output-scale-20260914]
+    paths:
+      - lab/presenter/rc52/**
+      - .github/workflows/rc52-field-faithful-scale-oracle.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-field-oracle:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate exact-x1.5 field-faithful host
+        shell: cmd
+        run: |
+          python lab\presenter\rc52\build_field_faithful_host.py lab\presenter\rc52\ptar_rc52_field_faithful_generated.cpp || exit /b 10
+
+      - name: Reconstruct exact field runtime and exact-x1.5 config
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';Add-Type -AssemblyName System.Windows.Forms
+          $o='lab/presenter/rc52/oracle';New-Item -ItemType Directory -Force $o | Out-Null
+          $base=(Get-FileHash payload/d3d11.dll -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($base -ne '864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c'){throw "canonical runtime drift $base"}
+          python lab/borderless/rc48/rebuild_exact_field_runtime.py payload/d3d11.dll "$o/d3d11.dll"
+          if($LASTEXITCODE -ne 0){throw 'runtime reconstruction failed'}
+          $runtime=(Get-FileHash "$o/d3d11.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($runtime -ne '6f1686992bef971c9995df9f0cb91b93c6946988e12a837e5de956df37c9082b'){throw "field runtime mismatch $runtime"}
+          Copy-Item "$o/d3d11.dll" "$o/win81_nis_dx11_x64.dll" -Force
+          $b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $ow=[int]([math]::Floor($b.Width/3)*3);$oh=[int]([math]::Floor($b.Height/3)*3);$rw=[int]($ow*2/3);$rh=[int]($oh*2/3)
+          if(($rw*3 -ne $ow*2) -or ($rh*3 -ne $oh*2)){throw 'non-exact x1.5 oracle geometry'}
+          $ini=Get-Content payload/win81_nis.ini -Raw
+          $ini=[regex]::Replace($ini,'(?m)^OutputWidth=.*$',"OutputWidth=$ow")
+          $ini=[regex]::Replace($ini,'(?m)^OutputHeight=.*$',"OutputHeight=$oh")
+          $ini=[regex]::Replace($ini,'(?m)^RenderWidth=.*$',"RenderWidth=$rw")
+          $ini=[regex]::Replace($ini,'(?m)^RenderHeight=.*$',"RenderHeight=$rh")
+          Set-Content "$o/win81_nis.ini" $ini -Encoding ASCII
+          "OUTPUT=${ow}x${oh} RENDER=${rw}x${rh} EXACT_X15=PASS RUNTIME=$runtime" | Set-Content 'lab/presenter/rc52/ORACLE_GEOMETRY.txt' -Encoding ASCII
+          Get-Content 'lab/presenter/rc52/ORACLE_GEOMETRY.txt'
+
+      - name: Build exact RC51 carrier plus immutable RC42 raster and oracle host
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603
+          python lab\presenter\rc51\build_rc51_candidate.py lab\presenter\rc52\ptar_borderless_rc51_generated.cpp || exit /b 20
+          cl %CFLAGS% /LD lab\presenter\rc52\ptar_borderless_rc51_generated.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fe:lab\presenter\rc52\oracle\ptar_borderless.dll user32.lib advapi32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 21
+          cl %CFLAGS% /I lab\raster\rc41 /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc41\ptar_rc41_context_hooks.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fe:lab\presenter\rc52\oracle\ptar_rc42.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 22
+          copy /y lab\presenter\rc52\oracle\ptar_rc42.dll lab\presenter\rc52\oracle\ptar_rc41.dll >nul
+          cl %CFLAGS% lab\presenter\rc52\ptar_rc52_field_faithful_generated.cpp /Fe:lab\presenter\rc52\oracle\Warhammer.exe user32.lib advapi32.lib gdi32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:WINDOWS,6.03 || exit /b 23
+
+      - name: Verify exact certified component hashes
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o='lab/presenter/rc52/oracle'
+          $runtime=(Get-FileHash "$o/d3d11.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $raster=(Get-FileHash "$o/ptar_rc42.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $carrier=(Get-FileHash "$o/ptar_borderless.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($runtime -ne '6f1686992bef971c9995df9f0cb91b93c6946988e12a837e5de956df37c9082b'){throw "runtime drift $runtime"}
+          if($raster -ne '7ffe7aa1b9afa42d5f22557cae29a4f65e17379c2a2f181f879427277839f1ca'){throw "RC42 drift $raster"}
+          if($carrier -ne '59e699536998054ae38cc5a30e03375c9cd206220667debe87070962609dd26c'){throw "RC51 carrier drift $carrier"}
+          "RUNTIME=$runtime`nRASTER=$raster`nRC51=$carrier" | Set-Content 'lab/presenter/rc52/ORACLE_COMPONENTS.txt' -Encoding ASCII
+
+      - name: Run field-faithful oracle and classify exact shrink signature
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o=(Resolve-Path 'lab/presenter/rc52/oracle').Path
+          $p=Start-Process -FilePath "$o/Warhammer.exe" -WorkingDirectory $o -PassThru
+          if(-not $p.WaitForExit(90000)){Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue;throw 'RC52 oracle timeout'}
+          $rc=$p.ExitCode;Write-Host "RC52_ORACLE_HOST_EXIT=$rc"
+          $ev=Join-Path $o 'RC52_FIELD_SCALE_ORACLE.txt';if(-not (Test-Path $ev)){throw 'oracle evidence missing'}
+          $txt=[IO.File]::ReadAllText($ev,[Text.Encoding]::Unicode);Write-Host $txt
+          foreach($n in @('win81_nis.log','ptar_borderless_rc38.log','ptar_rc41.log','ptar_rc41_bootstrap.log')){$f=Join-Path $o $n;if(Test-Path $f){Write-Host "===== $n =====";Get-Content $f -Tail 220}}
+          $boot=Join-Path $o 'ptar_rc41_bootstrap.log';if(-not (Test-Path $boot)){throw 'RC42 bootstrap evidence missing'}
+          $bt=Get-Content $boot -Raw
+          if(-not $bt.Contains('RC41B_ACTIVATION_PROVEN')){throw 'RC42 did not activate in field-faithful oracle'}
+          if(-not $bt.Contains('active=1')){throw 'RC42 query not active'}
+          $m=[regex]::Match($txt,'PIXELS_INITIAL n=(\d+) expected=(\d+) black=(\d+)')
+          if(-not $m.Success){throw 'PIXELS_INITIAL evidence missing'}
+          $n=[int]$m.Groups[1].Value;$good=[int]$m.Groups[2].Value;$black=[int]$m.Groups[3].Value
+          "HOST_EXIT=$rc`nPIXELS_N=$n`nPIXELS_EXPECTED=$good`nPIXELS_BLACK=$black`nRC42_ACTIVE=PASS" | Set-Content 'lab/presenter/rc52/ORACLE_RESULT.txt' -Encoding ASCII
+          Write-Host "RC52_ORACLE_CLASSIFICATION host_exit=$rc expected=$good/$n black=$black/$n"
+          # A full-frame result is accepted as non-reproduction; exit 18 is the RC51 host's initial pixel-fill failure signature.
+          if($rc -ne 0 -and $rc -ne 18){throw "unexpected oracle host exit $rc"}
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PTAR_RC52_FIELD_FAITHFUL_SCALE_ORACLE
+          path: |
+            lab/presenter/rc52/ORACLE_*.txt
+            lab/presenter/rc52/oracle/*.txt
+            lab/presenter/rc52/oracle/*.log
+            lab/presenter/rc52/oracle/ptar_borderless.dll
+            lab/presenter/rc52/ptar_borderless_rc51_generated.cpp
+            lab/presenter/rc52/ptar_rc52_field_faithful_generated.cpp
+          if-no-files-found: warn
+          retention-days: 7
