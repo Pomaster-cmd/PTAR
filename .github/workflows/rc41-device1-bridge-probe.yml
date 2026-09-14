@@ -1,0 +1,41 @@
+name: RC41 Device1 Bridge Probe
+
+on:
+  push:
+    branches:
+      - build/rc41-logical-native-subraster-20260913
+    paths:
+      - lab/raster/rc41/ptar_rc41_device1_bridge_probe.cpp
+      - .github/workflows/rc41-device1-bridge-probe.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-device1-probe:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Device1 bridge probe
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          if not exist lab\raster\rc41\device1_probe_out mkdir lab\raster\rc41\device1_probe_out
+          cl /nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 lab\raster\rc41\ptar_rc41_device1_bridge_probe.cpp /Fe:lab\raster\rc41\device1_probe_out\device1_bridge_probe.exe d3d11.lib dxgi.lib /link /SUBSYSTEM:CONSOLE,6.03
+          if errorlevel 1 exit /b 11
+      - name: Run Device1 bridge probe with exact crash capture
+        shell: cmd
+        run: |
+          pushd lab\raster\rc41\device1_probe_out
+          device1_bridge_probe.exe > STDOUT.txt 2>&1
+          set RC=%ERRORLEVEL%
+          echo RC41_DEVICE1_BRIDGE_EXIT=%RC%
+          if exist DEVICE1_BRIDGE_STAGE.txt type DEVICE1_BRIDGE_STAGE.txt
+          if exist STDOUT.txt type STDOUT.txt
+          if exist DEVICE1_BRIDGE_RESULT.txt type DEVICE1_BRIDGE_RESULT.txt
+          if not "%RC%"=="0" popd & exit /b 41
+          if not exist DEVICE1_BRIDGE_RESULT.txt popd & exit /b 42
+          findstr /C:"RC41_DEVICE1_BRIDGE=PASS" DEVICE1_BRIDGE_RESULT.txt >nul || (popd & exit /b 43)
+          popd
