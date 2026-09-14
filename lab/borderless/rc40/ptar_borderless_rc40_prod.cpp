@@ -3,6 +3,7 @@
 
 static volatile LONG g_prodStarting=0;
 static volatile LONG g_prodStableMode=0;
+static HMODULE g_prodRuntime=nullptr;
 
 static void prod_starting_clear(){InterlockedExchange(&g_prodStarting,0);}
 
@@ -23,7 +24,7 @@ static DWORD WINAPI StableWorker(LPVOID){
     prod_starting_clear();
     UINT gw=0,gh=0,pw=0,ph=0;client_size(g_game,gw,gh);client_size(g_presenter,pw,ph);
     logfmt("ACTIVE_RC40_POSTWNDPROC game/presenter",(LONG_PTR)((gw<<16)^gh),(LONG_PTR)((pw<<16)^ph),g_iatHooks);
-    RC41B_StartBootstrap(g_self,GetModuleHandleW(L"d3d11.dll"));
+    RC41B_StartBootstrap(g_self,g_prodRuntime);
     return 0;
 }
 
@@ -82,6 +83,7 @@ extern "C" __declspec(dllexport) int WINAPI PTAR_BorderlessAutoStart(HMODULE run
     if(!renderW||!renderH||!outputW||!outputH){logfmt("FAIL RC40 runtime dimensions",renderW,renderH,outputW,outputH);return -22;}
     LONG_PTR proc=get_wndproc(game);
     if(proc!=(LONG_PTR)(base+0x0000DC50u)){logfmt("FAIL RC40 expected P1U46 WndProc not active",proc,(LONG_PTR)(base+0x0000DC50u));return -23;}
+    g_prodRuntime=runtime;
     logfmt("AUTO_START_RC40_POSTWNDPROC geometry",renderW,renderH,outputW,outputH);
     return attach_stable(game,presenter,renderW,renderH,outputW,outputH);
 }
