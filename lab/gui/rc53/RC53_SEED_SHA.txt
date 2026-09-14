@@ -1,0 +1,1 @@
+RC53 seed includes RC52 raster quarantine, RC51 presenter sync, package transformer, GUI registry stress harness, and no main/SOURCE changes.
