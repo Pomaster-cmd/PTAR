@@ -43,7 +43,7 @@ jobs:
           findstr /C:"PTAR_RC41_Attach" lab\raster\rc41\prod_out\EXPORTS.txt >nul || exit /b 22
           findstr /C:"PTAR_RC41_Query" lab\raster\rc41\prod_out\EXPORTS.txt >nul || exit /b 23
           findstr /C:"PTAR_RC41_Detach" lab\raster\rc41\prod_out\EXPORTS.txt >nul || exit /b 24
-          findstr /C:"subsystem version 6.03" lab\raster\rc41\prod_out\HEADERS.txt >nul || exit /b 25
+          findstr /C:"6.03 subsystem version" lab\raster\rc41\prod_out\HEADERS.txt >nul || exit /b 25
 
       - name: Verify same-target reproducibility
         shell: cmd
