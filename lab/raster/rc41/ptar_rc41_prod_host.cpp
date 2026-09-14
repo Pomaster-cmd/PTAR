@@ -36,7 +36,7 @@ int main(){
     auto attach=reinterpret_cast<AttachFn>(GetProcAddress(dll,"PTAR_RC41_Attach"));
     auto detach=reinterpret_cast<DetachFn>(GetProcAddress(dll,"PTAR_RC41_Detach"));
     auto query=reinterpret_cast<QueryFn>(GetProcAddress(dll,"PTAR_RC41_Query"));
-    int rc=0;
+    int rc=0;RC41State finalStats{};
     do{
         if(!attach||!detach||!query){rc=14;break;}
         if(attach(sc,ctx,1920,1080)!=0){rc=15;break;}
@@ -58,13 +58,15 @@ int main(){
             DXGI_SWAP_CHAIN_DESC q{};if(FAILED(sc->GetDesc(&q))||q.BufferDesc.Width!=1920||q.BufferDesc.Height!=1080){rc=24;break;}
         }
         if(rc)break;
-        st={};st.size=sizeof(st);if(query(&st)!=0||st.viewportMapped<128||st.getDescVirtualized<129||st.resizeRemapped!=128||st.primaryRefreshes!=128){rc=25;break;}
+        finalStats={};finalStats.size=sizeof(finalStats);if(query(&finalStats)!=0||finalStats.viewportMapped<128||finalStats.getDescVirtualized<129||finalStats.resizeRemapped!=128||finalStats.primaryRefreshes!=128){rc=25;break;}
         detach();
         st={};st.size=sizeof(st);if(query(&st)!=0||st.active){rc=26;break;}
         DXGI_SWAP_CHAIN_DESC physical{};if(FAILED(sc->GetDesc(&physical))||physical.BufferDesc.Width!=1280||physical.BufferDesc.Height!=720){rc=27;break;}
         std::cout<<"RC41_PROD_HOST=PASS feature_level=0x"<<std::hex<<static_cast<unsigned>(fl)<<std::dec
                  <<" logical=1920x1080 physical=1280x720 resizes="<<kLoops
-                 <<" vp_mapped="<<st.viewportMapped<<" unload_restore=PASS\n";
+                 <<" vp_mapped="<<finalStats.viewportMapped<<" getdesc_virtualized="<<finalStats.getDescVirtualized
+                 <<" resize_remapped="<<finalStats.resizeRemapped<<" refresh="<<finalStats.primaryRefreshes
+                 <<" unload_restore=PASS\n";
     }while(false);
     if(detach)detach();FreeLibrary(dll);ctx->ClearState();safe_release(ctx);safe_release(dev);safe_release(sc);DestroyWindow(hwnd);UnregisterClassW(wc.lpszClassName,inst);
     if(rc)std::cerr<<"RC41_PROD_HOST=FAIL rc="<<rc<<" hr=0x"<<std::hex<<static_cast<unsigned>(hr)<<std::dec<<"\n";
