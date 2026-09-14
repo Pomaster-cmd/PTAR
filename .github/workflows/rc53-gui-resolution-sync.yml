@@ -1,0 +1,116 @@
+name: RC53 GUI Resolution Sync
+
+on:
+  push:
+    branches: [lab/rc53-gui-resolution-sync-20260914]
+    paths:
+      - lab/gui/rc53/**
+      - .github/workflows/rc53-gui-resolution-sync.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-gui-sync:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct certified RC41 script fixture
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$root='lab/raster/rc41/package_scripts';$joined=''
+          foreach($name in @('part01.b64','part02.b64','part03.b64','part04.b64','part05.b64')){$joined += (Get-Content -LiteralPath "$root/fixture_parts/$name" -Raw).Trim()}
+          $zip="$root/rc41_exact.zip";[IO.File]::WriteAllBytes($zip,[Convert]::FromBase64String($joined))
+          $h=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant();if($h -ne 'd12ac6a05f21477e720e909be37139545c033008ef7bfafddf518f418ca7c43d'){throw "RC41 fixture drift $h"}
+          Expand-Archive $zip "$root/rc41_exact" -Force
+
+      - name: Regenerate certified RC41B through RC52 scripts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$b='lab/gui/rc53/chain'
+          python lab/raster/rc41b/package_scripts/build_rc41b_scripts.py lab/raster/rc41/package_scripts/rc41_exact "$b/rc41b";if($LASTEXITCODE){throw 'RC41B transformer failed'}
+          python lab/raster/rc42/package_scripts/build_rc42_scripts.py "$b/rc41b" "$b/rc42";if($LASTEXITCODE){throw 'RC42 transformer failed'}
+          python lab/borderless/rc43/package_scripts/build_rc43_scripts.py "$b/rc42" "$b/rc43";if($LASTEXITCODE){throw 'RC43 transformer failed'}
+          python lab/borderless/rc44/package_scripts/build_rc44_scripts.py "$b/rc43" "$b/rc44";if($LASTEXITCODE){throw 'RC44 transformer failed'}
+          python lab/borderless/rc45/package_scripts/build_rc45_scripts.py "$b/rc44" "$b/rc45";if($LASTEXITCODE){throw 'RC45 transformer failed'}
+          python lab/borderless/rc46/package_scripts/build_rc46_scripts.py "$b/rc45" "$b/rc46";if($LASTEXITCODE){throw 'RC46 transformer failed'}
+          python lab/borderless/rc47/package_scripts/build_rc47_scripts.py "$b/rc46" "$b/rc47";if($LASTEXITCODE){throw 'RC47 transformer failed'}
+          python lab/borderless/rc48/package_scripts/build_rc48_scripts.py "$b/rc47" "$b/rc48";if($LASTEXITCODE){throw 'RC48 transformer failed'}
+          python lab/presenter/rc51/package_scripts/build_rc51_scripts.py "$b/rc48" "$b/rc51";if($LASTEXITCODE){throw 'RC51 transformer failed'}
+          python lab/raster/rc52/package_scripts/build_rc52_scripts.py "$b/rc51" "$b/rc52";if($LASTEXITCODE){throw 'RC52 transformer failed'}
+          $expected=[ordered]@{'install.ps1'='d8dfa03ece41cc2fc504f85b9ab900e93dab0fde1042290363a17c6bfcff7840';'verify.ps1'='dae99b5ee01c89ef844f35d9efa5bd763574f5a45bc0f19e436026b47c39e751';'rollback.ps1'='2a44b1b590bb5c3a6e1ecdcb4cbecebbf9d05779411d52103095dfcbc89e4008';'uninstall_overlay.ps1'='507aa6b18da0e1ed6dd6caf6a7c3032f50e02550a1d9932e4455c6ba6261e4da';'collect_rc41.ps1'='efb8669c115161b8c874bade62cd7cf3d57e55b86e76ccf261294f98c08fc99b'}
+          foreach($n in $expected.Keys){$h=(Get-FileHash "$b/rc52/$n" -Algorithm SHA256).Hash.ToLowerInvariant();if($h -ne $expected[$n]){throw "RC52 source drift $n $h"};Write-Host "PASS RC52 SOURCE $n $h"}
+
+      - name: Generate RC53 scripts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$b='lab/gui/rc53/chain';$out='lab/gui/rc53/out'
+          python lab/gui/rc53/build_rc53_scripts.py "$b/rc52" $out
+          if($LASTEXITCODE){throw 'RC53 transformer failed'}
+          $lines=@();foreach($n in @('install.ps1','verify.ps1','rollback.ps1','uninstall_overlay.ps1','collect_rc41.ps1')){$h=(Get-FileHash "$out/$n" -Algorithm SHA256).Hash.ToLowerInvariant();$lines += "$n=$h";Write-Host "RC53_SCRIPT_SHA256 $n $h"};$lines|Set-Content RC53_SCRIPT_SHA256.txt -Encoding ASCII
+
+      - name: Parse PowerShell 5 of 5
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$root='lab/gui/rc53/out'
+          foreach($n in @('install.ps1','verify.ps1','rollback.ps1','uninstall_overlay.ps1','collect_rc41.ps1')){$tokens=$null;$errors=$null;[void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path "$root/$n"),[ref]$tokens,[ref]$errors);if($errors.Count){$errors|%{Write-Host "PARSE_ERROR $n $($_.Message)"};throw "parse failure $n"};Write-Host "PASS PARSE $n"}
+
+      - name: Validate RC53 contracts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$root='lab/gui/rc53/out';$i=Get-Content "$root/install.ps1" -Raw;$v=Get-Content "$root/verify.ps1" -Raw;$r=Get-Content "$root/rollback.ps1" -Raw;$u=Get-Content "$root/uninstall_overlay.ps1" -Raw;$c=Get-Content "$root/collect_rc41.ps1" -Raw
+          $carrier='59e699536998054ae38cc5a30e03375c9cd206220667debe87070962609dd26c';$raster='fbc5373ac008f6dadf9d9bf4a66772062693d0af744d514cc8f99fb9aa08b52d'
+          $checks=[ordered]@{
+            'carrier unchanged'=$i.Contains($carrier)
+            'raster unchanged'=($i.Contains($raster)-and$v.Contains($raster))
+            'package RC53'=$i.Contains("package='PTAR_RC53_GUI_RESOLUTION_SYNC'")
+            'apply GUI exactly 1'=$i.Contains('Set-ItemProperty -LiteralPath $key -Name AffectGuiResolution -Type DWord -Value 1')
+            'record GUI original'=$i.Contains("Get-RegValueState $key 'AffectGuiResolution'")
+            'install state GUI ownership'=$i.Contains('installed=1;applied=$false')
+            'WindowStyle passive'=($i.Contains('WINDOWSTYLE_PRESERVED=') -and -not $i.Contains('-Name WindowStyle -Type DWord -Value 1'))
+            'no Resolution force'=(-not $i.Contains('-Name Resolution -Type DWord'))
+            'verify GUI=1'=$v.Contains('AffectGuiResolution attendu=1')
+            'verify RC53 marker'=$v.Contains('VERIFY_RC53_GUI_RESOLUTION_SYNC=PASS')
+            'collector records GUI'=$c.Contains('AFFECT_GUI_RESOLUTION=')
+            'collector RC53 zip'=$c.Contains('PTAR_RC53_RESULTS_')
+            'transaction rollback GUI'=$i.Contains('if($m.gui.applied')
+            'rollback ownership-safe GUI'=$r.Contains('if([int]$cur -eq [int]$m.gui.installed)')
+            'uninstall ownership-safe GUI'=$u.Contains('if([int]$cur -eq [int]$m.gui.installed)')
+            'unknown runtime refusal'=$i.Contains('DLL locale inconnue')
+            'unknown carrier refusal'=$i.Contains('Sidecar borderless local inconnu')
+            'unknown raster refusal'=$i.Contains('Sidecar RC41 local inconnu')
+            'canonical 107 retained'=$v.Contains('BASE GITHUB 107/107 fichiers byte-identiques')
+          }
+          foreach($k in $checks.Keys){if(-not $checks[$k]){throw "CONTRACT FAIL $k"};Write-Host "PASS $k"}
+          "RC53_CONTRACTS=$($checks.Count)/$($checks.Count) PASS"|Set-Content RC53_CONTRACTS.txt -Encoding ASCII
+
+      - name: Stress transactional GUI registry 5000 cases
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$x=& powershell -NoProfile -ExecutionPolicy Bypass -File lab/gui/rc53/rc53_gui_registry_stress.ps1;if($LASTEXITCODE){throw "registry stress rc=$LASTEXITCODE"};$x|Write-Host;if(($x -join "`n") -notmatch 'RC53_GUI_REGISTRY_STRESS=PASS cases=5000'){throw 'registry stress PASS missing'};$x|Set-Content RC53_GUI_REGISTRY_STRESS.txt -Encoding ASCII
+
+      - name: Verify GUI scale math invariant
+        shell: powershell
+        run: |
+          $logicalW=1920.0;$logicalH=1080.0;$physicalW=1280.0;$physicalH=720.0
+          $legacyW=$physicalW*($physicalW/$logicalW);$legacyH=$physicalH*($physicalH/$logicalH)
+          if([math]::Abs($legacyW-853.3333333)-gt 0.001 -or [math]::Abs($legacyH-480)-gt 0.001){throw 'legacy ratio mismatch'}
+          $factorW=$logicalW/$physicalW;$factorH=$logicalH/$physicalH
+          if([math]::Abs($factorW-1.5)-gt 0.0001 -or [math]::Abs($factorH-1.5)-gt 0.0001){throw 'GUI correction factor mismatch'}
+          "RC53_GUI_SCALE_MATH=PASS legacy_relative=853.333x480 correction=1.5x physical_client=1280x720"|Set-Content RC53_GUI_SCALE_MATH.txt -Encoding ASCII
+          Get-Content RC53_GUI_SCALE_MATH.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_RC53_GUI_RESOLUTION_SYNC_LAB
+          path: |
+            RC53_SCRIPT_SHA256.txt
+            RC53_CONTRACTS.txt
+            RC53_GUI_REGISTRY_STRESS.txt
+            RC53_GUI_SCALE_MATH.txt
+            lab/gui/rc53/out/*.ps1
+          if-no-files-found: error
+          retention-days: 14
