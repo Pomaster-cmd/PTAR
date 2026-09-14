@@ -133,7 +133,7 @@ jobs:
         if: always()
         shell: powershell
         run: |
-          if(Test-Path 'lab/display/rc50_set_mode.exe' -and $env:ORIG_W -and $env:ORIG_H){
+          if((Test-Path 'lab/display/rc50_set_mode.exe') -and $env:ORIG_W -and $env:ORIG_H){
             & 'lab/display/rc50_set_mode.exe' $env:ORIG_W $env:ORIG_H
             Write-Host "DISPLAY_RESTORE_RC=$LASTEXITCODE target=$env:ORIG_W x $env:ORIG_H"
           }
