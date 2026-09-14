@@ -19,6 +19,10 @@ static bool vp_is(ID3D11DeviceContext* ctx,float x,float y,float w,float h){
 static D3D11_TEXTURE2D_DESC rt_desc(UINT w,UINT h,UINT bind= D3D11_BIND_RENDER_TARGET|D3D11_BIND_SHADER_RESOURCE){
     D3D11_TEXTURE2D_DESC d{};d.Width=w;d.Height=h;d.MipLevels=1;d.ArraySize=1;d.Format=DXGI_FORMAT_R8G8B8A8_UNORM;d.SampleDesc.Count=1;d.Usage=D3D11_USAGE_DEFAULT;d.BindFlags=bind;return d;
 }
+static bool write_result(const char* text){
+    HANDLE h=CreateFileA("RC41_RESOURCE_WARP_RESULT.txt",GENERIC_WRITE,FILE_SHARE_READ,nullptr,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,nullptr);
+    if(h==INVALID_HANDLE_VALUE)return false;DWORD wr=0;const DWORD n=(DWORD)lstrlenA(text);const BOOL ok=WriteFile(h,text,n,&wr,nullptr);CloseHandle(h);return ok&&wr==n;
+}
 
 int main(){
     ID3D11Device* dev=nullptr;ID3D11DeviceContext* ctx=nullptr;D3D_FEATURE_LEVEL fl{};
@@ -69,10 +73,12 @@ int main(){
     ID3D11Texture2D* restored=nullptr;
     if(FAILED(dev->CreateTexture2D(&probe,nullptr,&restored))||!dims(restored,1920,1080)||resource_has_family_tag(restored))return 28;
 
-    std::printf("RC41_RESOURCE_WARP=PASS feature_level=0x%x exact_logical_rt=1920x1080->1280x720 depth=PASS dsv_only_mapping=PASS same_size_nonfamily=PASS remapped=%llu rtv_tagged=%llu dsv_tagged=%llu vp_mapped=%llu restore=PASS\n",
-                static_cast<unsigned>(fl),static_cast<unsigned long long>(rs.textureRemapped),static_cast<unsigned long long>(rs.rtvTagged),
-                static_cast<unsigned long long>(rs.dsvTagged),static_cast<unsigned long long>(hs.viewportMapped));
-    std::fflush(stdout);
+    char result[640]{};
+    wsprintfA(result,"RC41_RESOURCE_WARP=PASS feature_level=0x%x exact_logical_rt=1920x1080->1280x720 depth=PASS dsv_only_mapping=PASS same_size_nonfamily=PASS remapped=%llu rtv_tagged=%llu dsv_tagged=%llu vp_mapped=%llu restore=PASS\r\n",
+              static_cast<unsigned>(fl),static_cast<unsigned long long>(rs.textureRemapped),static_cast<unsigned long long>(rs.rtvTagged),
+              static_cast<unsigned long long>(rs.dsvTagged),static_cast<unsigned long long>(hs.viewportMapped));
+    if(!write_result(result))return 29;
+    std::fputs(result,stdout);std::fflush(stdout);
 
     safe_release(restored);safe_release(sameRTV);safe_release(samePhysical);safe_release(familyDSV);safe_release(familyDepth);safe_release(familyRTV);safe_release(familyRT);safe_release(primary);safe_release(ctx);safe_release(dev);
     return 0;
