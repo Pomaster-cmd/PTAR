@@ -5,7 +5,7 @@ import re
 import sys
 
 OLD_BORDERLESS = "ce497e72837f95503f877f73239c63a692c90b8646dbf7a3bbd4ba8082083416"
-NEW_BORDERLESS = "ed32aabe51a43c3ec0b8d1b7dbd363bd0ac49ff0d5d6e22b2b39f9f41b8cc6c8"
+NEW_BORDERLESS = "3fca95b75a1dbf41434dd45858300e9d64312a2138f2e0799c8ab1bae3ee3beb"
 
 
 def read_ps(path: Path) -> str:
