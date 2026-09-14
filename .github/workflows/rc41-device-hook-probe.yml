@@ -1,0 +1,41 @@
+name: RC41 Device Hook Probe
+
+on:
+  push:
+    branches:
+      - build/rc41-logical-native-subraster-20260913
+    paths:
+      - lab/raster/rc41/ptar_rc41_device_hook_probe.cpp
+      - .github/workflows/rc41-device-hook-probe.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-device-probe:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Win8.1-compatible device hook probe
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          if not exist lab\raster\rc41\device_probe_out mkdir lab\raster\rc41\device_probe_out
+          cl /nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 lab\raster\rc41\ptar_rc41_device_hook_probe.cpp /Fe:lab\raster\rc41\device_probe_out\device_hook_probe.exe d3d11.lib dxgi.lib /link /SUBSYSTEM:CONSOLE,6.03
+          if errorlevel 1 exit /b 11
+      - name: Run passthrough probe with exact crash capture
+        shell: cmd
+        run: |
+          pushd lab\raster\rc41\device_probe_out
+          device_hook_probe.exe > STDOUT.txt 2>&1
+          set RC=%ERRORLEVEL%
+          echo RC41_DEVICE_HOOK_EXIT=%RC%
+          if exist DEVICE_HOOK_STAGE.txt type DEVICE_HOOK_STAGE.txt
+          if exist STDOUT.txt type STDOUT.txt
+          if exist DEVICE_HOOK_RESULT.txt type DEVICE_HOOK_RESULT.txt
+          if not "%RC%"=="0" popd & exit /b 41
+          if not exist DEVICE_HOOK_RESULT.txt popd & exit /b 42
+          findstr /C:"RC41_DEVICE_HOOK_PROBE=PASS" DEVICE_HOOK_RESULT.txt >nul || (popd & exit /b 43)
+          popd
