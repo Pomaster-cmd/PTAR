@@ -24,8 +24,8 @@ s=s.replace(anchor,helper,1)
 
 # After the exact runtime has created its swapchain/presenter and before frame testing,
 # force the topology observed on the user's Win8.1 field machine: top-level + unowned.
-anchor = 'ID3D11Texture2D* bb=nullptr;ID3D11RenderTargetView* rtv=nullptr;if(FAILED(swap->GetBuffer(0,__uuidof(ID3D11Texture2D),reinterpret_cast<void**>(&bb)))||FAILED(dev->CreateRenderTargetView(bb,nullptr,&rtv))){restore_pref(rb);fclose(log);return 13;}D3D11_TEXTURE2D_DESC bd{};bb->GetDesc(&bd);fwprintf(log,L"ENGINE_BACKBUFFER observed=%ux%u\\n",bd.Width,bd.Height);fflush(log);rel(bb);\n\n'
-insert = anchor + r'''    HWND presenter=wait_p1u46_presenter();
+anchor = '    const float magenta[4]={1.0f,0.0f,0.75f,1.0f};'
+field_block = r'''    HWND presenter=wait_p1u46_presenter();
     if(!presenter){fwprintf(log,L"FAIL presenter not found\n");restore_pref(rb);fclose(log);return 14;}
     LONG_PTR ps=GetWindowLongPtrW(presenter,GWL_STYLE),pex=GetWindowLongPtrW(presenter,GWL_EXSTYLE);
     HWND owner0=GetWindow(presenter,GW_OWNER),parent0=GetParent(presenter);
@@ -39,9 +39,10 @@ insert = anchor + r'''    HWND presenter=wait_p1u46_presenter();
     ps=GetWindowLongPtrW(presenter,GWL_STYLE);pex=GetWindowLongPtrW(presenter,GWL_EXSTYLE);
     fwprintf(log,L"PRESENTER_FIELD_EMULATED hwnd=%p owner=%p parent=%p style=0x%llX ex=0x%llX gle=%lu\n",presenter,owner1,parent1,(unsigned long long)ps,(unsigned long long)pex,GetLastError());fflush(log);
     if((ps&WS_CHILD)||owner1!=nullptr){fwprintf(log,L"FAIL forced-unowned topology did not stick before stress\n");restore_pref(rb);fclose(log);return 16;}
-'''
-if anchor not in s: raise SystemExit('field host guard: post-D3D anchor missing')
-s=s.replace(anchor,insert,1)
+
+''' + anchor
+if anchor not in s: raise SystemExit('field host guard: render-loop anchor missing')
+s=s.replace(anchor,field_block,1)
 
 old = 'last=swap->Present(1,0);pump();if(FAILED(last))'
 new = '''last=swap->Present(1,0);pump();
