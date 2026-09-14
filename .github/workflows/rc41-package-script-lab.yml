@@ -25,20 +25,23 @@ jobs:
           $root='lab/raster/rc41/package_scripts'
           $parts=Join-Path $root 'fixture_parts'
           $expectedParts=[ordered]@{
-            'part01.b64'='4ea9186032354ee15a7efbcfd9a9bb4b805427537f2aa1b519074968e7617203'
-            'part02.b64'='0bc02eaee5fb3d2c740dac5ce2edfc749cce5e89b3b92084ee0a781b7d65cf24'
-            'part03.b64'='51f8bd0200347ba9bd61ba0a18c09c4fdd78b590b291975e1acfb752e9de2dbb'
-            'part04.b64'='231935d5f2bfdef0246cf7f906b05db7b3ab9a983d1875ba8c2f8ff075fa3949'
-            'part05.b64'='293e124c6a69eb2abb4e988407eec0ba0ae5944acf6e4f1fc51cbe207c976096'
+            'part01.b64'='0d25dce0eb80be4ea52533c48fb8e823b2e774faaf0a4be1c40998318d1c53e2'
+            'part02.b64'='e4b0c89ce7d45e241afda09a67ef980ef74e46502c9bde138f1a496cd8afae12'
+            'part03.b64'='51be0d479a5f532b12cf3834cf109aae1816e4e5fff0c1f3b770438b9e910c2b'
+            'part04.b64'='dc1c2ff8b1e94318fed4b7ae4e8986f250a7ab963e5a4a12709f671deb3375ae'
+            'part05.b64'='b5383c1e804cd219f47beb64a3a7b2801fd2d9c0459bbcaa5610e6768f8809c9'
           }
           $joined=''
           foreach($name in $expectedParts.Keys){
             $path=Join-Path $parts $name
             if(-not(Test-Path -LiteralPath $path -PathType Leaf)){ throw "missing fixture part: $name" }
-            $partHash=(Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant()
-            if($partHash -ne $expectedParts[$name]){ throw "fixture part hash mismatch $name : $partHash" }
+            $part=(Get-Content -LiteralPath $path -Raw).Trim()
+            $sha=[Security.Cryptography.SHA256]::Create()
+            try { $bytes=[Text.Encoding]::ASCII.GetBytes($part); $partHash=([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-','').ToLowerInvariant() }
+            finally { $sha.Dispose() }
+            if($partHash -ne $expectedParts[$name]){ throw "fixture part normalized hash mismatch $name : $partHash" }
             Write-Host "PASS PART $name $partHash"
-            $joined += (Get-Content -LiteralPath $path -Raw).Trim()
+            $joined += $part
           }
           $zip="$root/scripts_exact.zip"
           [IO.File]::WriteAllBytes($zip,[Convert]::FromBase64String($joined))
