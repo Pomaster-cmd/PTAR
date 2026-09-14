@@ -1,0 +1,123 @@
+name: RC41B Package Script Lab
+
+on:
+  push:
+    branches:
+      - build/rc41b-bootstrap-diagnostic-20260914
+    paths:
+      - lab/raster/rc41b/package_scripts/fixture_parts2/**
+      - .github/workflows/rc41b-package-script-lab.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-rc41b-package-scripts:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reassemble exact RC41B script fixture
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $parts='lab/raster/rc41b/package_scripts/fixture_parts2'
+          $expected=[ordered]@{
+            'part01.b64'='34ed3319f85e1f5b31d5985c6bf40fe2c6d74d96fb22feec356ad439017e1d37'
+            'part02.b64'='4ce80252830a7e7bbd2044fd1305c5bd121309422128a06750de19d3a6febb9a'
+            'part03.b64'='47a3dc9a8153e27fd5aac409cbdf4187e2f373aeb9b6533250d3cf50dd1713b2'
+            'part04.b64'='885dae42683a2c5c82612a9f609e29da6c5f5bfa4dcb87ed0cdb59b046f6af29'
+            'part05.b64'='c6fcfb0a7a36b13c25ac06a85da4fd0b2f55b1829f547b4d9b5bf4c87c3b553f'
+            'part06.b64'='25832e9deb6d9b8223b7e1e89db176b165ed095fe209b614b60c7d2e3d2c238c'
+            'part07.b64'='810306be7e2b5c86e5f5077be378f8a2c9f4d8abb42a4d37b23f116c2ae0f48e'
+            'part08.b64'='ecdc43fa3c0cb1b6328205bc7ec51dabdb57f68237d8c2c07407988620395e4e'
+          }
+          $joined=''
+          foreach($n in $expected.Keys){
+            $p=Join-Path $parts $n
+            if(-not(Test-Path -LiteralPath $p -PathType Leaf)){throw "missing $n"}
+            $s=(Get-Content -LiteralPath $p -Raw).Trim()
+            $sha=[Security.Cryptography.SHA256]::Create()
+            try{$h=([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::ASCII.GetBytes($s)))).Replace('-','').ToLowerInvariant()}finally{$sha.Dispose()}
+            if($h -ne $expected[$n]){throw "part hash mismatch $n $h"}
+            Write-Host "PASS PART $n $h"
+            $joined += $s
+          }
+          [IO.File]::WriteAllBytes('scripts_exact.zip',[Convert]::FromBase64String($joined))
+          $zh=(Get-FileHash 'scripts_exact.zip' -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($zh -ne '5015536c613d3e5cfc0bb27075b1f5cb4c23d4bd68f0f35506ba535dd5624661'){throw "fixture ZIP mismatch $zh"}
+          Expand-Archive 'scripts_exact.zip' 'exact' -Force
+          Write-Host "RC41B_SCRIPT_FIXTURE_SHA256=$zh"
+      - name: Verify exact script hashes
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $e=[ordered]@{
+            'install.ps1'='6cb0aaeedfaaf0a75cc43421da6a1ae667081c6258d27a62d3064ccf0962f871'
+            'verify.ps1'='4362e86eef53b850fa4234f2610dcf1f8b73c7805adf3918cbb1cf20729c9941'
+            'rollback.ps1'='baa84d9cca910bdf071428bf5f60fbbf5bc96659fb08cc2d76d069198274bf8d'
+            'uninstall_overlay.ps1'='687f8434b0d0250b3f70ac15c21de83057f562c36cb4299685aa6f94ffcd52ff'
+            'collect_rc41b.ps1'='4089b8e04ce8db7055a404aff9708e5c89d7d87032198a4df63546b2c706fe30'
+            'decode_bootstrap.ps1'='78459ca6e0972800bb86baf4cabacc420885ee3e8da868e36a55411eb09cb83a'
+          }
+          foreach($n in $e.Keys){$h=(Get-FileHash (Join-Path 'exact' $n) -Algorithm SHA256).Hash.ToLowerInvariant();if($h -ne $e[$n]){throw "$n hash mismatch $h"};Write-Host "PASS HASH $n $h"}
+      - name: Parse exact scripts with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$lines=@()
+          foreach($n in @('install.ps1','verify.ps1','rollback.ps1','uninstall_overlay.ps1','collect_rc41b.ps1','decode_bootstrap.ps1')){
+            $tokens=$null;$errors=$null
+            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path (Join-Path 'exact' $n)),[ref]$tokens,[ref]$errors)
+            if($errors.Count){$errors|ForEach-Object{Write-Host "PARSE_ERROR $n $($_.Message)"};throw "parser rejected $n"}
+            $lines += "PASS PARSE $n"
+          }
+          $lines|Set-Content 'RC41B_PACKAGE_SCRIPT_PARSE.txt' -Encoding ASCII
+          Get-Content 'RC41B_PACKAGE_SCRIPT_PARSE.txt'
+      - name: Validate RC41B package safety contracts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $i=Get-Content 'exact/install.ps1' -Raw;$v=Get-Content 'exact/verify.ps1' -Raw;$r=Get-Content 'exact/rollback.ps1' -Raw;$u=Get-Content 'exact/uninstall_overlay.ps1' -Raw;$c=Get-Content 'exact/collect_rc41b.ps1' -Raw;$d=Get-Content 'exact/decode_bootstrap.ps1' -Raw
+          $all=$i+$v+$r+$u+$c+$d
+          $checks=[ordered]@{
+            'install exact RC41B runtime'=$i.Contains('febd4ddb12d0370dea66bece7598a8da29981362082812941320ac9b2c75b32b')
+            'install accepts prior RC41 runtime'=$i.Contains('6f1686992bef971c9995df9f0cb91b93c6946988e12a837e5de956df37c9082b')
+            'install exact RC40 borderless'=$i.Contains('ce497e72837f95503f877f73239c63a692c90b8646dbf7a3bbd4ba8082083416')
+            'install exact RC41 raster'=$i.Contains('15a8f276816f3123a79a2d8e6932b6bf42b3826288ea5f016c124afec99fbbcf')
+            'install refuses unknown runtime'=$i.Contains('DLL locale inconnue')
+            'install refuses unknown borderless'=$i.Contains('Sidecar borderless local inconnu')
+            'install refuses unknown raster'=$i.Contains('Sidecar RC41 local inconnu')
+            'RC41B does not force AffectGuiResolution'=(-not $i.Contains('-Name AffectGuiResolution -Type DWord -Value 1'))
+            'verify RC41B hook offset'=$v.Contains('0x38EE') -and $v.Contains('0xE8,0xCD,0xC1,0x4F,0x03')
+            'verify old RC41 loader preserved'=$v.Contains('0x4E800')
+            'verify new RC41B loader'=$v.Contains('0x4E8C0')
+            'verify rc38 virtual size B6E'=$v.Contains('0xB6E')
+            'verify canonical base 107'=$v.Contains('107/107')
+            'rollback exact RC41B ownership'=$r.Contains('febd4ddb12d0370dea66bece7598a8da29981362082812941320ac9b2c75b32b')
+            'rollback canonical runtime'=$r.Contains('864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c')
+            'rollback refuses unknown active runtime'=$r.Contains('Fichier actif inconnu/modifie')
+            'rollback removes bootstrap state'=$r.Contains('ptar_rc41_bootstrap.bin')
+            'uninstall delegates canonical engine'=$u.Contains('& $Engine -Root $Root')
+            'uninstall ownership aware'=$u.Contains('OVERLAY_OWNERSHIP.tsv')
+            'uninstall removes bootstrap state'=$u.Contains('ptar_rc41_bootstrap.bin')
+            'collector invokes canonical diag'=$c.Contains('diag\collect.ps1')
+            'collector captures bootstrap binary'=$c.Contains('ptar_rc41_bootstrap.bin')
+            'collector runs decoder'=$c.Contains('decode_bootstrap.ps1')
+            'collector captures raster log'=$c.Contains('ptar_rc41.log')
+            'collector emits RC41B result'=$c.Contains('PTAR_RC41B_RESULTS_')
+            'decoder exact 64-byte state'=$d.Contains('Length -ne 64')
+            'decoder exact magic'=$d.Contains('RC41BST1')
+            'decoder exposes load error'=$d.Contains('LAST_ERROR')
+            'decoder exposes autostart rc'=$d.Contains('AUTOSTART_RC')
+            'no RC33B dependency'=(-not $all.Contains('RC33B'))
+          }
+          $lines=@();foreach($k in $checks.Keys){if(-not $checks[$k]){throw "RC41B PACKAGE CONTRACT FAIL: $k"};Write-Host "PASS $k";$lines += "PASS $k"}
+          $lines|Set-Content 'RC41B_PACKAGE_SCRIPT_CONTRACT.txt' -Encoding ASCII
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_RC41B_PACKAGE_SCRIPT_LAB
+          path: |
+            RC41B_PACKAGE_SCRIPT_PARSE.txt
+            RC41B_PACKAGE_SCRIPT_CONTRACT.txt
+          if-no-files-found: error
+          retention-days: 7
