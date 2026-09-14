@@ -33,6 +33,7 @@ jobs:
           $swapCpp=Get-Content "$root/ptar_rc41_swapchain_hooks.cpp" -Raw
           $swapPolicy=Get-Content "$root/ptar_rc41_swapchain_policy.h" -Raw
           $swapWarp=Get-Content "$root/ptar_rc41_swapchain_warp_harness.cpp" -Raw
+          $dual=Get-Content "$root/ptar_rc41_dual_interface_harness.cpp" -Raw
           $checks=[ordered]@{
             'logical and physical spaces are distinct'=($contract.Contains('SizeU logical') -and $contract.Contains('SizeU physical'))
             'viewport mapping is primary-family gated'=$contract.Contains('primaryFamilyBound')
@@ -50,9 +51,10 @@ jobs:
             'swapchain virtualization is game-caller only'=$swapPolicy.Contains('domain==CallerDomain::Game')
             'successful resize refreshes primary resource'=($swapCpp.Contains('if(self->onResize_) self->onResize_') -and $hookcpp.Contains('update_primary_resource'))
             'swapchain WARP gate requires repeated resize renewal'=($swapWarp.Contains('kResizes=128') -and $swapWarp.Contains('classifier_no_hold=PASS'))
+            'distinct base and derived swapchain interfaces are independently shadowed'=($swapCpp.Contains('baseShadowVtable_') -and $swapCpp.Contains('derivedShadowVtable_') -and $dual.Contains('base_ptr_distinct=1'))
           }
           foreach($k in $checks.Keys){ if(-not $checks[$k]){ throw "RC41 CONTRACT FAIL: $k" }; Write-Host "PASS $k" }
-          'RC41_STATIC_ARCHITECTURE=16/16 PASS' | Set-Content "$root/STATIC_ARCHITECTURE.txt" -Encoding ASCII
+          'RC41_STATIC_ARCHITECTURE=17/17 PASS' | Set-Content "$root/STATIC_ARCHITECTURE.txt" -Encoding ASCII
 
       - name: Build RC41 lab gates
         shell: cmd
@@ -71,6 +73,8 @@ jobs:
           if errorlevel 1 exit /b 14
           cl %CFLAGS% lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc41\ptar_rc41_context_hooks.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_swapchain_warp_harness.cpp /Fe:lab\raster\rc41\out\swapchain_warp_harness.exe user32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:CONSOLE,6.03
           if errorlevel 1 exit /b 15
+          cl %CFLAGS% lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_dual_interface_harness.cpp /Fe:lab\raster\rc41\out\dual_interface_harness.exe user32.lib dxgi.lib /link /SUBSYSTEM:CONSOLE,6.03
+          if errorlevel 1 exit /b 16
 
       - name: Run RC41 geometry stress
         shell: cmd
@@ -107,6 +111,13 @@ jobs:
           if errorlevel 1 (type lab\raster\rc41\out\SWAPCHAIN_WARP_STRESS.txt & exit /b 25)
           type lab\raster\rc41\out\SWAPCHAIN_WARP_STRESS.txt
 
+      - name: Run RC41 distinct COM interface shadow gate
+        shell: cmd
+        run: |
+          lab\raster\rc41\out\dual_interface_harness.exe > lab\raster\rc41\out\DUAL_INTERFACE.txt 2>&1
+          if errorlevel 1 (type lab\raster\rc41\out\DUAL_INTERFACE.txt & exit /b 26)
+          type lab\raster\rc41\out\DUAL_INTERFACE.txt
+
       - name: Package RC41 evidence
         shell: powershell
         run: |
@@ -114,12 +125,13 @@ jobs:
           $o='lab/raster/rc41/out'
           $summary=@(
             'RC41_LAB_STATUS=PASS',
-            'STATIC_ARCHITECTURE=16/16 PASS',
+            'STATIC_ARCHITECTURE=17/17 PASS',
             (Get-Content "$o/MATH_STRESS.txt" -Raw).Trim(),
             (Get-Content "$o/FRAMING_ORACLE.txt" -Raw).Trim(),
             (Get-Content "$o/WARP_TARGET_CLASSIFIER.txt" -Raw).Trim(),
             (Get-Content "$o/HOOK_WARP_STRESS.txt" -Raw).Trim(),
-            (Get-Content "$o/SWAPCHAIN_WARP_STRESS.txt" -Raw).Trim()
+            (Get-Content "$o/SWAPCHAIN_WARP_STRESS.txt" -Raw).Trim(),
+            (Get-Content "$o/DUAL_INTERFACE.txt" -Raw).Trim()
           )
           $summary | Set-Content "$o/RC41_SUMMARY.txt" -Encoding ASCII
           Copy-Item 'lab/raster/rc41/STATIC_ARCHITECTURE.txt' "$o/STATIC_ARCHITECTURE.txt" -Force
