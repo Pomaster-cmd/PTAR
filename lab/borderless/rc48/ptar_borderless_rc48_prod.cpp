@@ -119,9 +119,6 @@ static bool rc48_restore_top_level(bool countRepair,bool force=false) noexcept {
     rc48_capture_original();
     const LONG_PTR cur=GetWindowLongPtrW(g_presenter,GWL_STYLE);
     bool changed=false;
-    // GetParent() returns the owner for a top-level WS_POPUP. Therefore owner==game
-    // is NOT evidence that the presenter is still a child. WS_CHILD is the only
-    // discriminator used here.
     if(cur&WS_CHILD){
         SetLastError(ERROR_SUCCESS);
         SetParent(g_presenter,nullptr);
@@ -140,11 +137,6 @@ static bool rc48_restore_top_level(bool countRepair,bool force=false) noexcept {
     }
     InterlockedExchange(&g_rc48IsChild,0);
 
-    // Re-establish the already field-validated borderless presenter contract right
-    // here, after child->top-level conversion. SetParent preserves the old child
-    // rectangle; relying on a later SetWindowPos created a transient/sticky small
-    // presenter in stress. The top-level transition therefore owns its full native
-    // geometry atomically before returning to inherited RC46 enforcement.
     if(!force && !rc48_windowed_mode()){
         LONG_PTR ex=GetWindowLongPtrW(g_presenter,GWL_EXSTYLE);
         const LONG_PTR desiredEx=(ex | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW) &
@@ -157,6 +149,9 @@ static bool rc48_restore_top_level(bool countRepair,bool force=false) noexcept {
         RECT actual{};GetWindowRect(g_presenter,&actual);
         if(!ok || actual.left!=g_rc45Monitor.left || actual.top!=g_rc45Monitor.top ||
            actual.right-actual.left!=(LONG)g_outputW || actual.bottom-actual.top!=(LONG)g_outputH){
+            // A mode change may have won while this repair was in flight. That is
+            // not a fatal geometry error: the new mode owns the presenter now.
+            if(rc48_windowed_mode()) return false;
             logfmt("FAIL RC48 borderless geometry restore",actual.left,actual.top,actual.right,actual.bottom);
             return false;
         }
@@ -206,6 +201,7 @@ static BOOL WINAPI RC48_SetWindowPos(HWND h,HWND after,int x,int y,int cx,int cy
         }
     } else if(!rc48_windowed_mode()) {
         if(!rc48_restore_top_level(false)) return FALSE;
+        if(rc48_windowed_mode()) return FALSE;
         return SetWindowPos(h,HWND_NOTOPMOST,g_rc45Monitor.left,g_rc45Monitor.top,
                             (int)g_outputW,(int)g_outputH,
                             (flags|SWP_NOACTIVATE|SWP_SHOWWINDOW)&~(SWP_NOMOVE|SWP_NOSIZE|SWP_NOZORDER));
@@ -218,11 +214,6 @@ static BOOL WINAPI RC48_ShowWindow(HWND h,int cmd){
     return ShowWindow(h,cmd);
 }
 
-// RC46's presenter guard was correct for a top-level popup: its WM_WINDOWPOSCHANGING
-// clamp writes screen coordinates. Once RC48 converts that same HWND into WS_CHILD,
-// those values become parent-client coordinates and are effectively added twice
-// (the exact 2x offset reproduced by the integration lab). RC48 sits above RC46
-// only on the presenter WndProc and translates that one contract to child space.
 static LRESULT CALLBACK RC48PresenterProc(HWND h,UINT m,WPARAM w,LPARAM l){
     LRESULT r=g_rc48PresenterNext?call_next(g_rc48PresenterNext,h,m,w,l):DefWindowProcW(h,m,w,l);
     if(h==g_presenter && m==WM_WINDOWPOSCHANGING && l && rc48_windowed_mode() && IsWindow(g_game)){
@@ -258,23 +249,26 @@ static bool rc48_ensure_presenter_wrapper() noexcept {
 }
 
 static DWORD WINAPI RC48InvariantWorker(LPVOID){
-    LONG last=-1;
     while(!InterlockedCompareExchange(&g_rc48Stop,0,0)){
         if(!InterlockedCompareExchange(&g_rc45Installed,0,0) || !IsWindow(g_game) || !IsWindow(g_presenter)){Sleep(10);continue;}
         rc48_ensure_presenter_wrapper();
+        // RC45/RC38 hold g_internal while a mode transition is changing style and
+        // geometry. The repair worker must never compete with that authoritative
+        // transaction. Older RC48 drafts did so and the 2500-pair stress exposed
+        // an actual cross-mode race after hundreds of successful transitions.
+        if(InterlockedCompareExchange(&g_internal,0,0)){Sleep(1);continue;}
         const LONG mode=InterlockedCompareExchange(&g_rc45Borderless,0,0);
         const LONG_PTR s=GetWindowLongPtrW(g_presenter,GWL_STYLE);
         if(mode==0){
             const bool geometryBad=!rc48_windowed_geometry_ok();
-            if(last!=0 || !(s&WS_CHILD) || (s&WS_POPUP) || GetParent(g_presenter)!=g_game || geometryBad)
-                rc48_make_child(last==0 || geometryBad);
+            if(!(s&WS_CHILD) || (s&WS_POPUP) || GetParent(g_presenter)!=g_game || geometryBad)
+                rc48_make_child(geometryBad);
         } else {
             RECT r{};GetWindowRect(g_presenter,&r);
             const bool geometryBad=r.left!=g_rc45Monitor.left||r.top!=g_rc45Monitor.top||
                                    r.right-r.left!=(LONG)g_outputW||r.bottom-r.top!=(LONG)g_outputH;
-            if(last!=1 || (s&WS_CHILD) || geometryBad) rc48_restore_top_level(last==1);
+            if((s&WS_CHILD) || geometryBad) rc48_restore_top_level(geometryBad);
         }
-        last=InterlockedCompareExchange(&g_rc45Borderless,0,0);
         Sleep(25);
     }
     return 0;
