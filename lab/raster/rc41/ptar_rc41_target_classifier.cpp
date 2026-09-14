@@ -1,4 +1,5 @@
 #include "ptar_rc41_target_classifier.h"
+#include "ptar_rc41_resource_tag.h"
 
 namespace ptar_rc41 {
 
@@ -28,6 +29,7 @@ bool TargetClassifier::set_primary_resource(ID3D11Resource* resource) noexcept {
 
 bool TargetClassifier::is_primary(ID3D11RenderTargetView* rtv) const noexcept {
     if(!rtv) return false;
+    if(view_or_resource_has_family_tag(rtv)) return true;
     ID3D11Resource* resource=nullptr;
     rtv->GetResource(&resource);
     if(!resource) return false;
@@ -44,8 +46,27 @@ bool TargetClassifier::is_primary(ID3D11RenderTargetView* rtv) const noexcept {
     return same;
 }
 
-bool TargetClassifier::any_primary(UINT count, ID3D11RenderTargetView* const* rtvs) const noexcept {
-    if(!count || !rtvs || count==D3D11_KEEP_RENDER_TARGETS_AND_DEPTH_STENCIL) return false;
+bool TargetClassifier::is_primary(ID3D11DepthStencilView* dsv) const noexcept {
+    if(!dsv) return false;
+    if(view_or_resource_has_family_tag(dsv)) return true;
+    ID3D11Resource* resource=nullptr;
+    dsv->GetResource(&resource);
+    if(!resource) return false;
+    IUnknown* identity=nullptr;
+    const HRESULT hr=resource->QueryInterface(IID_IUnknown,reinterpret_cast<void**>(&identity));
+    resource->Release();
+    if(FAILED(hr)||!identity) return false;
+    bool same=false;
+    AcquireSRWLockShared(&lock_);
+    same=(primaryIdentity_ && identity==primaryIdentity_);
+    ReleaseSRWLockShared(&lock_);
+    identity->Release();
+    return same;
+}
+
+bool TargetClassifier::any_primary(UINT count, ID3D11RenderTargetView* const* rtvs,ID3D11DepthStencilView* dsv) const noexcept {
+    if(dsv && is_primary(dsv)) return true;
+    if(count==D3D11_KEEP_RENDER_TARGETS_AND_DEPTH_STENCIL || !count || !rtvs) return false;
     for(UINT i=0;i<count;++i){ if(is_primary(rtvs[i])) return true; }
     return false;
 }
