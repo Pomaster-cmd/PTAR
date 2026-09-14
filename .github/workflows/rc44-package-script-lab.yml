@@ -1,0 +1,112 @@
+name: RC44 Package Script Lab
+
+on:
+  push:
+    branches: [build/rc44-inquisitor-frameless-transition-20260914]
+    paths:
+      - lab/borderless/rc44/package_scripts/**
+      - .github/workflows/rc44-package-script-lab.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-rc44-package-scripts:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct certified RC41 script fixture
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $root='lab/raster/rc41/package_scripts';$joined=''
+          foreach($name in @('part01.b64','part02.b64','part03.b64','part04.b64','part05.b64')){$joined += (Get-Content -LiteralPath "$root/fixture_parts/$name" -Raw).Trim()}
+          $zip="$root/rc41_exact.zip";[IO.File]::WriteAllBytes($zip,[Convert]::FromBase64String($joined))
+          $h=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant();if($h -ne 'd12ac6a05f21477e720e909be37139545c033008ef7bfafddf518f418ca7c43d'){throw "RC41 fixture drift $h"}
+          Expand-Archive $zip "$root/rc41_exact" -Force
+
+      - name: Regenerate RC41B RC42 RC43 chain
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          python lab/raster/rc41b/package_scripts/build_rc41b_scripts.py lab/raster/rc41/package_scripts/rc41_exact lab/borderless/rc44/package_scripts/rc41b
+          if($LASTEXITCODE -ne 0){throw 'RC41B transformer failed'}
+          python lab/raster/rc42/package_scripts/build_rc42_scripts.py lab/borderless/rc44/package_scripts/rc41b lab/borderless/rc44/package_scripts/rc42
+          if($LASTEXITCODE -ne 0){throw 'RC42 transformer failed'}
+          python lab/borderless/rc43/package_scripts/build_rc43_scripts.py lab/borderless/rc44/package_scripts/rc42 lab/borderless/rc44/package_scripts/rc43
+          if($LASTEXITCODE -ne 0){throw 'RC43 transformer failed'}
+          $expected=[ordered]@{
+            'install.ps1'='c873805c84ff63db88d11d751ab0e036471a1aec4125a5baa9f061d3fd53bd35'
+            'verify.ps1'='da5b77941d722e0240b87212d8c2714d49d67510838e3d90152f80acf0629700'
+            'rollback.ps1'='b604f9bcd1063f4637c4f143bbde6aeb9759dfac1bda3f31cefe2173953e1456'
+            'uninstall_overlay.ps1'='ec9af3b32f3e12795211d85aeddee9dcd3a51da54d2a86233559aa7458a3c068'
+            'collect_rc41.ps1'='9a39a4222c69b9d3e5ea1f2f8a0e860446ff8bbdf2b04ccf7930828128522d48'
+          }
+          foreach($name in $expected.Keys){$h=(Get-FileHash "lab/borderless/rc44/package_scripts/rc43/$name" -Algorithm SHA256).Hash.ToLowerInvariant();if($h -ne $expected[$name]){throw "RC43 source drift $name $h"}}
+
+      - name: Generate exact RC44 scripts and verify hashes
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $out='lab/borderless/rc44/package_scripts/out'
+          python lab/borderless/rc44/package_scripts/build_rc44_scripts.py lab/borderless/rc44/package_scripts/rc43 $out
+          if($LASTEXITCODE -ne 0){throw 'RC44 transformer failed'}
+          $expected=[ordered]@{
+            'install.ps1'='607819a3d95e24cd1ad4bcf827de0b07800823a98fbd7d468d8f85c3ba7bf580'
+            'verify.ps1'='fc6ed6a7235182f53cd0b66a50ba40e7d10cd3d24595c1225d70f4569a4694fb'
+            'rollback.ps1'='de10055d5fd52507c1f9e74615d6f8b8aa1a155da2e0f1b2635a62e557b8b150'
+            'uninstall_overlay.ps1'='cdcd3c010effba0954e88c1deaaf1a9543fe6634ac2021bb0975e74670939343'
+            'collect_rc41.ps1'='45810d723a19dccfb64fb3167c9e1fce150bf0e2693d66680075618bde14c944'
+          }
+          foreach($name in $expected.Keys){$h=(Get-FileHash "$out/$name" -Algorithm SHA256).Hash.ToLowerInvariant();if($h -ne $expected[$name]){throw "RC44 hash mismatch $name $h"};Write-Host "PASS RC44 HASH $name $h"}
+
+      - name: Parse RC44 scripts with Windows PowerShell
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$root='lab/borderless/rc44/package_scripts/out'
+          foreach($name in @('install.ps1','verify.ps1','rollback.ps1','uninstall_overlay.ps1','collect_rc41.ps1')){
+            $tokens=$null;$errors=$null;[void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path "$root/$name"),[ref]$tokens,[ref]$errors)
+            if($errors.Count){$errors|ForEach-Object{Write-Host "PARSE_ERROR $name $($_.Message)"};throw "PowerShell parse failure $name"};Write-Host "PASS PARSE $name"
+          }
+
+      - name: Validate RC44 safety contracts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$root='lab/borderless/rc44/package_scripts/out'
+          $i=Get-Content "$root/install.ps1" -Raw;$v=Get-Content "$root/verify.ps1" -Raw;$r=Get-Content "$root/rollback.ps1" -Raw;$u=Get-Content "$root/uninstall_overlay.ps1" -Raw;$c=Get-Content "$root/collect_rc41.ps1" -Raw
+          $old='cd38729a93b8594203196bdda89efc343db0854f024aaba3a5663009a7503612';$new='13f544d39bbe39811a83c1f5b3bf823d18ef00edf6c9d8cc8ac891208bdc8551';$raster='7ffe7aa1b9afa42d5f22557cae29a4f65e17379c2a2f181f879427277839f1ca'
+          $checks=[ordered]@{
+            'install exact RC44 carrier'=$i.Contains("`$ExpectedBorderless='$new'")
+            'upgrade accepts RC43 carrier'=($i.Contains($old) -and $i.Contains($new))
+            'RC42 raster remains exact'=($i.Contains($raster) -and $v.Contains($raster))
+            'no WindowStyle force'=(-not $i.Contains('Set-ItemProperty -LiteralPath $key -Name WindowStyle -Type DWord -Value 1'))
+            'WindowStyle remains passive'=($i.Contains('WINDOWSTYLE_PRESERVED=') -and $i.Contains('$m.windowstyle.applied=$false'))
+            'no AffectGuiResolution force'=(-not $i.Contains('-Name AffectGuiResolution -Type DWord -Value 1'))
+            'package marker RC44'=$i.Contains("package='PTAR_RC44_INQUISITOR_FRAMELESS_BORDERLESS_FIX'")
+            'mode marker RC44'=$i.Contains('MODE=RC44_INQUISITOR_FRAMELESS_BORDERLESS_FIX_WITH_RC42_RASTER')
+            'verify marker RC44'=$v.Contains('VERIFY_RC44_INQUISITOR_FRAMELESS_BORDERLESS_FIX=PASS')
+            'rollback accepts RC44 carrier'=($r.Contains($new) -and $r.Contains('KnownBorder'))
+            'uninstall accepts RC44 carrier'=($u.Contains($new) -and $u.Contains('borderExpected'))
+            'collector emits RC44 zip'=$c.Contains('PTAR_RC44_RESULTS_')
+            'collector includes borderless log'=$c.Contains('ptar_borderless_rc38.log')
+            'collector includes raster log'=$c.Contains('ptar_rc41.log')
+            'collector includes bootstrap log'=$c.Contains('ptar_rc41_bootstrap.log')
+            'unknown runtime refusal retained'=$i.Contains('DLL locale inconnue')
+            'unknown carrier refusal retained'=$i.Contains('Sidecar borderless local inconnu')
+            'unknown raster refusal retained'=$i.Contains('Sidecar RC41 local inconnu')
+            'transaction rollback retained'=$i.Contains('Installation transaction annulee')
+            'canonical 107 verification retained'=$v.Contains('BASE GITHUB 107/107 fichiers byte-identiques')
+          }
+          foreach($k in $checks.Keys){if(-not $checks[$k]){throw "CONTRACT FAIL $k"};Write-Host "PASS $k"}
+          'RC44_PACKAGE_SCRIPTS=20/20 PASS' | Set-Content RC44_PACKAGE_SCRIPT_CONTRACT.txt -Encoding ASCII
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_RC44_PACKAGE_SCRIPT_LAB
+          path: |
+            RC44_PACKAGE_SCRIPT_CONTRACT.txt
+            lab/borderless/rc44/package_scripts/out/*.ps1
+          if-no-files-found: error
+          retention-days: 7
