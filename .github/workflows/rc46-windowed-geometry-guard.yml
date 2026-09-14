@@ -1,0 +1,162 @@
+name: RC46 Windowed Geometry Guard Lab
+
+on:
+  push:
+    branches: [build/rc46-windowed-geometry-guard-20260914]
+    paths:
+      - lab/borderless/rc46/**
+      - .github/workflows/rc46-windowed-geometry-guard.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-rc46-geometry:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Static RC46 architecture contract
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $s=Get-Content 'lab/borderless/rc46/ptar_borderless_rc46_prod.cpp' -Raw
+          $h=Get-Content 'lab/borderless/rc46/ptar_borderless_rc46_geometry_host.cpp' -Raw
+          $checks=[ordered]@{
+            'monitor-covering game coercion rejected'=$s.Contains('RC46_CLAMPED_MONITOR_WINDOWPOS')
+            'post-commit game hijack restored'=$s.Contains('RC46_RESTORED_WINDOW_AFTER_MONITOR_COERCION')
+            'monitor-covering rect never replaces saved window'=($s.Contains('RC46_REJECTED_MONITOR_COVERING_WINDOW_SAVE') -and $s.Contains('rc46_capture_real_windowed_state'))
+            'presenter external SetWindowPos clamped to client'=($s.Contains('RC46_PRESENTER_WINDOWPOS_CLAMP') -and $s.Contains('RC46PresenterProc'))
+            'interactive user sizing remains authoritative'=($s.Contains('WM_ENTERSIZEMOVE') -and $s.Contains('WM_EXITSIZEMOVE'))
+            'WindowStyle preference retained'=($s.Contains('rc45_read_windowstyle_preference') -and $s.Contains('g_rc45LastWindowStylePreference'))
+            'validated borderless geometry retained'=$s.Contains('rc45_enter_borderless')
+            'RC42 bootstrap retained'=$s.Contains('RC41B_StartBootstrap')
+            'exact field monitor-sized client regression covered'=$h.Contains('field-monitor-coercion-not-rejected')
+            'presenter origin regression covered'=$h.Contains('presenter-origin-coercion-not-rejected')
+            'user move then coercion regression covered'=$h.Contains('second-coercion-did-not-restore-user-rect')
+            '500 coercion cycles covered'=$h.Contains('kCoercionStress=500')
+          }
+          foreach($k in $checks.Keys){if(-not $checks[$k]){throw "RC46 CONTRACT FAIL: $k"};Write-Host "PASS $k"}
+          git diff --quiet 0f69490bb2210e96e94213643c382bdf89dfee10 HEAD -- lab/raster
+          if($LASTEXITCODE -ne 0){throw 'RC42 raster scope changed unexpectedly'}
+          Write-Host 'PASS RC42 raster tree unchanged from validated base'
+          'RC46_STATIC_CONTRACT=13/13 PASS' | Set-Content RC46_STATIC_CONTRACT.txt -Encoding ASCII
+
+      - name: Build reproducible RC46 carrier and exact field host
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          if not exist lab\borderless\rc46\out mkdir lab\borderless\rc46\out
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603
+          cl %CFLAGS% /LD lab\borderless\rc46\ptar_borderless_rc46_prod.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fe:lab\borderless\rc46\out\ptar_borderless.dll user32.lib advapi32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 11
+          copy /y lab\borderless\rc46\out\ptar_borderless.dll lab\borderless\rc46\out\ptar_borderless_first.dll >nul
+          cl %CFLAGS% lab\borderless\rc46\ptar_borderless_rc46_geometry_host.cpp /Fe:lab\borderless\rc46\out\geometry_host.exe user32.lib advapi32.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 12
+          dumpbin /exports lab\borderless\rc46\out\ptar_borderless.dll > lab\borderless\rc46\out\EXPORTS.txt
+          dumpbin /imports lab\borderless\rc46\out\ptar_borderless.dll > lab\borderless\rc46\out\IMPORTS.txt
+          dumpbin /headers lab\borderless\rc46\out\ptar_borderless.dll > lab\borderless\rc46\out\HEADERS.txt
+          findstr /C:"PTAR_BorderlessAutoStart" lab\borderless\rc46\out\EXPORTS.txt >nul || exit /b 13
+          findstr /C:"PTAR_BorderlessAttachStable" lab\borderless\rc46\out\EXPORTS.txt >nul || exit /b 14
+          findstr /C:"PTAR_BorderlessQueryMode" lab\borderless\rc46\out\EXPORTS.txt >nul || exit /b 15
+
+      - name: Run exact RC45 field regression gate
+        shell: cmd
+        run: |
+          pushd lab\borderless\rc46\out
+          geometry_host.exe > GEOMETRY_HOST.txt 2>&1
+          if errorlevel 1 (type GEOMETRY_HOST.txt & popd & exit /b 21)
+          type GEOMETRY_HOST.txt
+          findstr /C:"RC46_GEOMETRY_HOST=PASS" GEOMETRY_HOST.txt >nul || (popd & exit /b 22)
+          findstr /C:"field_rect_guard=PASS" GEOMETRY_HOST.txt >nul || (popd & exit /b 23)
+          findstr /C:"presenter_origin_guard=PASS" GEOMETRY_HOST.txt >nul || (popd & exit /b 24)
+          findstr /C:"interactive_move=PASS" GEOMETRY_HOST.txt >nul || (popd & exit /b 25)
+          findstr /C:"borderless_roundtrip=PASS" GEOMETRY_HOST.txt >nul || (popd & exit /b 26)
+          popd
+
+      - name: Verify RC46 same-target reproducibility
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          del /q lab\borderless\rc46\out\ptar_borderless.dll
+          cl /nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /LD lab\borderless\rc46\ptar_borderless_rc46_prod.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fe:lab\borderless\rc46\out\ptar_borderless.dll user32.lib advapi32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 31
+          fc /b lab\borderless\rc46\out\ptar_borderless_first.dll lab\borderless\rc46\out\ptar_borderless.dll >nul || exit /b 32
+          echo RC46_SAME_TARGET_REPRODUCIBILITY=PASS
+
+      - name: Build inherited borderless stress gates
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          if not exist lab\borderless\rc46\gates mkdir lab\borderless\rc46\gates
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\borderless
+          set LFLAGS=/link /SUBSYSTEM:CONSOLE,6.03
+          cl %CFLAGS% lab\borderless\ptar_borderless_geometry_stress.cpp /Fe:lab\borderless\rc46\gates\geometry_stress.exe user32.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_input_stress.cpp /Fe:lab\borderless\rc46\gates\input_stress.exe user32.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_event_parity.cpp /Fe:lab\borderless\rc46\gates\event_parity.exe user32.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_user32_virtualization.cpp /Fe:lab\borderless\rc46\gates\user32_virtualization.exe user32.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_thread_affinity.cpp /Fe:lab\borderless\rc46\gates\thread_affinity.exe user32.lib d3d11.lib dxgi.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_dpi_policy.cpp /Fe:lab\borderless\rc46\gates\dpi_policy.exe user32.lib gdi32.lib shcore.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_lifecycle_stress.cpp /Fe:lab\borderless\rc46\gates\lifecycle_stress.exe user32.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_window_stress.cpp /Fe:lab\borderless\rc46\gates\window_stress.exe user32.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_takeover_harness.cpp /Fe:lab\borderless\rc46\gates\takeover_harness.exe user32.lib gdi32.lib d3d11.lib dxgi.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_warp_stress.cpp /Fe:lab\borderless\rc46\gates\warp_stress.exe user32.lib d3d11.lib dxgi.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_occlusion_focus_stress.cpp /Fe:lab\borderless\rc46\gates\occlusion_focus_stress.exe user32.lib d3d11.lib dxgi.lib %LFLAGS% || exit /b 1
+
+      - name: Run inherited borderless stress gates
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $tests=@('geometry_stress','input_stress','event_parity','user32_virtualization','thread_affinity','dpi_policy','lifecycle_stress','window_stress','takeover_harness','warp_stress','occlusion_focus_stress')
+          $summary=@()
+          foreach($n in $tests){$exe="lab/borderless/rc46/gates/$n.exe";$log="lab/borderless/rc46/gates/$($n.ToUpper()).txt";& $exe *> $log;$rc=$LASTEXITCODE;Get-Content $log;$summary += "$n RC=$rc";if($rc -ne 0){throw "$n failed RC=$rc"}}
+          $summary += 'RC46_INHERITED_BORDERLESS_GATES=11/11 PASS';$summary | Set-Content 'lab/borderless/rc46/gates/GATES_SUMMARY.txt' -Encoding ASCII
+
+      - name: Rebuild and run unchanged RC42 production host
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          if not exist lab\borderless\rc46\rc42gate mkdir lab\borderless\rc46\rc42gate
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\raster\rc41
+          cl %CFLAGS% /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc41\ptar_rc41_context_hooks.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fe:lab\borderless\rc46\rc42gate\ptar_rc41.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 41
+          cl %CFLAGS% lab\raster\rc41\ptar_rc41_prod_host.cpp /Fe:lab\borderless\rc46\rc42gate\prod_host.exe user32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 42
+          pushd lab\borderless\rc46\rc42gate
+          prod_host.exe > RC42_PROD_HOST.txt 2>&1
+          if errorlevel 1 (type RC42_PROD_HOST.txt & popd & exit /b 43)
+          type RC42_PROD_HOST.txt
+          findstr /C:"RC41_PROD_HOST=PASS" RC42_PROD_HOST.txt >nul || (popd & exit /b 44)
+          popd
+
+      - name: Package RC46 evidence
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $o='lab/borderless/rc46/out';$hash=(Get-FileHash "$o/ptar_borderless.dll" -Algorithm SHA256).Hash.ToLowerInvariant();$size=(Get-Item "$o/ptar_borderless.dll").Length
+          @(
+            'RC46_WINDOWED_GEOMETRY_GUARD=PASS',
+            'STATIC_CONTRACT=13/13 PASS',
+            'FIELD_MONITOR_COERCION_GUARD=PASS',
+            'PRESENTER_ORIGIN_COERCION_GUARD=PASS',
+            'INTERACTIVE_WINDOW_MOVE=PASS',
+            'WINDOWED_BORDERLESS_ROUNDTRIP=PASS',
+            'COERCION_STRESS=500 CYCLES PASS',
+            'INHERITED_BORDERLESS_GATES=11/11 PASS',
+            'RC42_RASTER_TREE_UNCHANGED=PASS',
+            'RC42_PRODUCTION_HOST=PASS',
+            'SAME_TARGET_REPRODUCIBILITY=PASS',
+            "RC46_CARRIER_SHA256=$hash",
+            "RC46_CARRIER_SIZE=$size"
+          ) | Set-Content "$o/RC46_SUMMARY.txt" -Encoding ASCII
+          Get-Content "$o/RC46_SUMMARY.txt"
+          Compress-Archive -Path RC46_STATIC_CONTRACT.txt,"$o/*.txt","$o/ptar_borderless.dll","lab/borderless/rc46/gates/*.txt","lab/borderless/rc46/rc42gate/RC42_PROD_HOST.txt" -DestinationPath RC46_WINDOWED_GEOMETRY_GUARD_EVIDENCE.zip -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_RC46_WINDOWED_GEOMETRY_GUARD
+          path: RC46_WINDOWED_GEOMETRY_GUARD_EVIDENCE.zip
+          if-no-files-found: error
+          retention-days: 7
