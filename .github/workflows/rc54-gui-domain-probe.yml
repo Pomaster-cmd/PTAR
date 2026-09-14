@@ -1,0 +1,114 @@
+name: RC54 GUI Domain Probe Lab
+
+on:
+  push:
+    branches: [lab/rc54-gui-domain-probe-20260914]
+    paths:
+      - 'lab/gui/rc54/**'
+      - '.github/workflows/rc54-gui-domain-probe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-probe:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate exact RC52 raster source then RC54 probe sources
+        shell: cmd
+        run: |
+          python lab\raster\rc52\build_rc52_context_hooks.py lab\gui\rc54\generated\ptar_rc41_context_hooks_rc52.cpp || exit /b 10
+          python lab\gui\rc54\build_rc54_probe_sources.py lab\gui\rc54\generated\ptar_rc41_context_hooks_rc52.cpp lab\gui\rc54\generated\ptar_rc41_context_hooks_rc54.cpp lab\gui\rc54\generated\ptar_rc41_swapchain_hooks_rc54.cpp || exit /b 11
+          python lab\gui\rc54\normalize_rc54_probe_sources.py lab\gui\rc54\generated\ptar_rc41_context_hooks_rc54.cpp lab\gui\rc54\generated\ptar_rc41_swapchain_hooks_rc54.cpp || exit /b 12
+          python lab\gui\rc54\build_rc54_prod_probe.py lab\gui\rc54\generated\ptar_rc41_prod_rc54.cpp || exit /b 13
+          findstr /C:"RC54_DESC api=GetDesc" lab\gui\rc54\generated\ptar_rc41_swapchain_hooks_rc54.cpp >nul || exit /b 14
+          findstr /C:"RC54_VP rva=" lab\gui\rc54\generated\ptar_rc41_context_hooks_rc54.cpp >nul || exit /b 15
+          findstr /C:"RC54_ENV dpi_aware=" lab\gui\rc54\generated\ptar_rc41_prod_rc54.cpp >nul || exit /b 16
+
+      - name: Build RC54 sidecar and hosts
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 20
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\raster\rc41
+          mkdir lab\gui\rc54\build 2>nul
+          cl %CFLAGS% /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\gui\rc54\generated\ptar_rc41_context_hooks_rc54.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\gui\rc54\generated\ptar_rc41_swapchain_hooks_rc54.cpp lab\gui\rc54\generated\ptar_rc41_prod_rc54.cpp /Fo:lab\gui\rc54\build\ /Fe:lab\gui\rc54\build\ptar_rc41.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 21
+          cl %CFLAGS% lab\raster\rc52\ptar_rc52_raster_state_host.cpp lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\gui\rc54\generated\ptar_rc41_context_hooks_rc54.cpp /Fo:lab\gui\rc54\build\ /Fe:lab\gui\rc54\build\raster_host.exe d3d11.lib user32.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 22
+          cl %CFLAGS% lab\raster\rc41\ptar_rc41_prod_host.cpp /Fo:lab\gui\rc54\build\prod_host.obj /Fe:lab\gui\rc54\build\prod_host.exe d3d11.lib dxgi.lib user32.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 23
+          certutil -hashfile lab\gui\rc54\build\ptar_rc41.dll SHA256
+
+      - name: Prove RC52 raster behavior unchanged under probe
+        shell: cmd
+        run: |
+          pushd lab\gui\rc54\build
+          raster_host.exe || exit /b 30
+          type RC52_RASTER_STATE_HOST.txt
+          findstr /C:"STARTUP_UNBOUND_PHYSICAL=PASS actual_vp=1280.000x720.000" RC52_RASTER_STATE_HOST.txt >nul || exit /b 31
+          findstr /C:"LIVE_UNBOUND_PHYSICAL=PASS actual_vp=1280.000x720.000" RC52_RASTER_STATE_HOST.txt >nul || exit /b 32
+          findstr /C:"LIVE_UNBOUND_LOGICAL=PASS actual_vp=1280.000x720.000" RC52_RASTER_STATE_HOST.txt >nul || exit /b 33
+          findstr /C:"REBIND_AFTER_PHYSICAL=PASS actual_vp=1280.000x720.000" RC52_RASTER_STATE_HOST.txt >nul || exit /b 34
+          findstr /C:"RC52_RASTER_STATE_HOST=PASS failures=0" RC52_RASTER_STATE_HOST.txt >nul || exit /b 35
+          popd
+
+      - name: Prove full RC41 contract and probe observability
+        shell: cmd
+        run: |
+          pushd lab\gui\rc54\build
+          prod_host.exe || exit /b 40
+          type RC41_PROD_HOST_RESULT.txt
+          findstr /C:"RC41_PROD_HOST=PASS" RC41_PROD_HOST_RESULT.txt >nul || exit /b 41
+          if not exist ptar_rc54_gui_probe.log exit /b 42
+          findstr /C:"RC54_DESC api=GetDesc" ptar_rc54_gui_probe.log >nul || exit /b 43
+          findstr /C:"RC54_VP rva=" ptar_rc54_gui_probe.log >nul || exit /b 44
+          if not exist ptar_rc41.log exit /b 45
+          findstr /C:"RC54_ENV dpi_aware=" ptar_rc41.log >nul || exit /b 46
+          findstr /C:"RC54_GUI_DOMAIN_PROBE_ACTIVE behavior=RC52-identical trace_only=1" ptar_rc41.log >nul || exit /b 47
+          popd
+
+      - name: Stress probe sidecar without contract drift
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$dir='lab/gui/rc54/build'
+          1..32 | ForEach-Object {
+            Push-Location $dir
+            try { & .\prod_host.exe | Out-Null; if($LASTEXITCODE -ne 0){throw "prod host stress failure iteration=$_ rc=$LASTEXITCODE"} }
+            finally { Pop-Location }
+          }
+          1..64 | ForEach-Object {
+            Push-Location $dir
+            try { & .\raster_host.exe | Out-Null; if($LASTEXITCODE -ne 0){throw "raster host stress failure iteration=$_ rc=$LASTEXITCODE"} }
+            finally { Pop-Location }
+          }
+          $sha=(Get-FileHash "$dir/ptar_rc41.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $size=(Get-Item "$dir/ptar_rc41.dll").Length
+          $probe=Get-Content "$dir/ptar_rc54_gui_probe.log"
+          $desc=($probe|Where-Object{$_ -match 'RC54_DESC'}).Count;$vp=($probe|Where-Object{$_ -match 'RC54_VP'}).Count
+          @(
+            'RC54_GUI_DOMAIN_PROBE=PASS',
+            'BEHAVIOR=RC52_IDENTICAL',
+            'RC52_RASTER_HOST=64/64 PASS',
+            'RC41_PROD_HOST=32/32 PASS',
+            ('PROBE_DESC_LINES='+$desc),
+            ('PROBE_VIEWPORT_LINES='+$vp),
+            ('RC54_RASTER_SHA256='+$sha),
+            ('RC54_RASTER_SIZE='+$size)
+          )|Set-Content 'lab/gui/rc54/RC54_GUI_DOMAIN_PROBE_SUMMARY.txt' -Encoding ASCII
+          Get-Content 'lab/gui/rc54/RC54_GUI_DOMAIN_PROBE_SUMMARY.txt'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_RC54_GUI_DOMAIN_PROBE
+          path: |
+            lab/gui/rc54/RC54_GUI_DOMAIN_PROBE_SUMMARY.txt
+            lab/gui/rc54/build/ptar_rc41.dll
+            lab/gui/rc54/build/RC52_RASTER_STATE_HOST.txt
+            lab/gui/rc54/build/RC41_PROD_HOST_RESULT.txt
+            lab/gui/rc54/build/ptar_rc54_gui_probe.log
+            lab/gui/rc54/build/ptar_rc41.log
+            lab/gui/rc54/generated/*.cpp
+          if-no-files-found: error
+          retention-days: 14
