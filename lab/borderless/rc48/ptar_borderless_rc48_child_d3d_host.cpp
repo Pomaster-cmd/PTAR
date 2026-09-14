@@ -20,6 +20,7 @@ struct ModeState {
 };
 
 static const wchar_t* kOptions=L"Software\\NeoCore Games\\Warhammer Martyr\\Options";
+static const wchar_t* kSync=L"PTAR_RC46_WINDOWSTYLE_SYNC_20260914";
 struct RegBackup{bool existed=false;DWORD value=0;};
 static HBRUSH g_black=nullptr;
 static LRESULT CALLBACK Proc(HWND h,UINT m,WPARAM w,LPARAM l){
@@ -44,6 +45,20 @@ static bool exact_top(HWND g,HWND p,const RECT& mon){
     if(r.left!=mon.left||r.top!=mon.top||r.right!=mon.right||r.bottom!=mon.bottom)return false;
     return GetWindow(p,GW_OWNER)==g;
 }
+static bool sync_mode(HWND game,QueryFn q,bool borderless,UINT syncMsg,const RECT& mon,unsigned timeout=4000){
+    if(!syncMsg)return false;
+    SendMessageW(game,syncMsg,borderless?1u:0u,0);
+    DWORD st=GetTickCount();
+    do{
+        ModeState s{};
+        if(query(q,s)&&s.installed&&((s.borderlessActive!=0)==borderless)){
+            if(borderless){if(exact_top(game,(HWND)0,mon)){} /* compile-time shape marker only */}
+            return true;
+        }
+        pump(1);
+    }while(GetTickCount()-st<timeout);
+    return false;
+}
 static int fail(int rc,const char* what,QueryFn q,HWND g,HWND p,const RegBackup& b){ModeState s{};query(q,s);RECT gr{},pr{};GetWindowRect(g,&gr);GetWindowRect(p,&pr);std::printf("RC48_CHILD_D3D=FAIL rc=%d what=%s mode=%u gstyle=0x%llx pstyle=0x%llx parent=%p owner=%p grect=%ld,%ld,%ld,%ld prect=%ld,%ld,%ld,%ld gle=%lu\n",rc,what,s.borderlessActive,(unsigned long long)GetWindowLongPtrW(g,GWL_STYLE),(unsigned long long)GetWindowLongPtrW(p,GWL_STYLE),GetParent(p),GetWindow(p,GW_OWNER),gr.left,gr.top,gr.right,gr.bottom,pr.left,pr.top,pr.right,pr.bottom,(unsigned long)GetLastError());restore(b);return rc;}
 template<class T>static void rel(T*&p){if(p){p->Release();p=nullptr;}}
 
@@ -55,8 +70,8 @@ int wmain(){
     const UINT rw=std::min<UINT>(1280,std::max<UINT>(320,outW*2/3)),rh=std::min<UINT>(720,std::max<UINT>(180,outH*2/3));
     RECT wr{0,0,(LONG)rw,(LONG)rh};AdjustWindowRectEx(&wr,WS_OVERLAPPEDWINDOW|WS_VISIBLE,FALSE,0);
     HWND game=CreateWindowExW(0,wc.lpszClassName,L"game-black-parent",WS_OVERLAPPEDWINDOW|WS_VISIBLE,mi.rcMonitor.left+80,mi.rcMonitor.top+60,wr.right-wr.left,wr.bottom-wr.top,nullptr,nullptr,inst,nullptr);
-    // Match the actual RC47 field evidence: presenter is already an owned popup of
-    // the game, yet the visible game client is black. RC48 must not depend on owner z-order.
+    // Match actual RC47 evidence: presenter is already an owned popup of game, yet
+    // the framed game client is black. RC48 must not depend on owner z-order.
     HWND presenter=CreateWindowExW(WS_EX_TOOLWINDOW|WS_EX_NOACTIVATE,wc.lpszClassName,L"presenter-native",WS_POPUP|WS_VISIBLE,mi.rcMonitor.left,mi.rcMonitor.top,outW,outH,game,nullptr,inst,nullptr);
     if(!game||!presenter)return fail(12,"create",nullptr,game,presenter,rb);
     if(GetWindow(presenter,GW_OWNER)!=game)return fail(13,"field-owner-precondition",nullptr,game,presenter,rb);
@@ -83,23 +98,25 @@ int wmain(){
         if(!exact_child(game,presenter))return fail(23,"windowed-invariant",q,game,presenter,rb);
     }
 
-    // Synchronous style-driven switching exercises the exact RC45/RC46 mode state
-    // machine without waiting 200 ms for the registry watcher on every iteration.
+    // Fast transition stress uses the exact registered message that the production
+    // registry watcher posts to RC45/RC46. This executes the real mode transition
+    // routine synchronously without making a 2500-pair test sleep 200 ms per edge.
+    const UINT syncMsg=RegisterWindowMessageW(kSync);if(!syncMsg)return fail(24,"sync-register",q,game,presenter,rb);
     constexpr unsigned kModePairs=2500;
     for(unsigned i=0;i<kModePairs;++i){
-        SetWindowLongPtrW(game,GWL_STYLE,WS_POPUP|WS_VISIBLE);pump(1);
-        if(!exact_top(game,presenter,mi.rcMonitor))return fail(24,"style-borderless-top",q,game,presenter,rb);
-        float a[4]={0.8f,0.1f,0.1f,1.0f};ctx->ClearRenderTargetView(rtv,a);hr=swap->Present(0,0);if(FAILED(hr))return fail(25,"borderless-present",q,game,presenter,rb);
-        SetWindowLongPtrW(game,GWL_STYLE,WS_OVERLAPPEDWINDOW|WS_VISIBLE);pump(1);
-        if(!exact_child(game,presenter))return fail(26,"style-windowed-child",q,game,presenter,rb);
-        float b[4]={0.1f,0.2f,0.8f,1.0f};ctx->ClearRenderTargetView(rtv,b);hr=swap->Present(0,0);if(FAILED(hr))return fail(27,"windowed-represent",q,game,presenter,rb);
+        SendMessageW(game,syncMsg,1,0);if(!wait_mode(q,true,1000))return fail(25,"sync-borderless-mode",q,game,presenter,rb);pump(1);
+        if(!exact_top(game,presenter,mi.rcMonitor))return fail(26,"sync-borderless-top",q,game,presenter,rb);
+        float a[4]={0.8f,0.1f,0.1f,1.0f};ctx->ClearRenderTargetView(rtv,a);hr=swap->Present(0,0);if(FAILED(hr))return fail(27,"borderless-present",q,game,presenter,rb);
+        SendMessageW(game,syncMsg,0,0);if(!wait_mode(q,false,1000))return fail(28,"sync-windowed-mode",q,game,presenter,rb);pump(1);
+        if(!exact_child(game,presenter))return fail(29,"sync-windowed-child",q,game,presenter,rb);
+        float b[4]={0.1f,0.2f,0.8f,1.0f};ctx->ClearRenderTargetView(rtv,b);hr=swap->Present(0,0);if(FAILED(hr))return fail(30,"windowed-represent",q,game,presenter,rb);
     }
 
-    // Real preference path: one full round trip through the 200 ms watcher.
-    if(!set_pref(1)||!wait_mode(q,true,6000))return fail(28,"pref-borderless",q,game,presenter,rb);pump(50);if(!exact_top(game,presenter,mi.rcMonitor))return fail(29,"pref-borderless-top",q,game,presenter,rb);
-    if(!set_pref(0)||!wait_mode(q,false,6000))return fail(30,"pref-windowed",q,game,presenter,rb);pump(50);if(!exact_child(game,presenter))return fail(31,"pref-windowed-child",q,game,presenter,rb);
+    // Real preference path: one full round trip through the actual 200 ms watcher.
+    if(!set_pref(1)||!wait_mode(q,true,6000))return fail(31,"pref-borderless",q,game,presenter,rb);pump(50);if(!exact_top(game,presenter,mi.rcMonitor))return fail(32,"pref-borderless-top",q,game,presenter,rb);
+    if(!set_pref(0)||!wait_mode(q,false,6000))return fail(33,"pref-windowed",q,game,presenter,rb);pump(50);if(!exact_child(game,presenter))return fail(34,"pref-windowed-child",q,game,presenter,rb);
 
-    DXGI_SWAP_CHAIN_DESC got{};if(FAILED(swap->GetDesc(&got))||got.OutputWindow!=presenter)return fail(32,"swap-output-window-drift",q,game,presenter,rb);
+    DXGI_SWAP_CHAIN_DESC got{};if(FAILED(swap->GetDesc(&got))||got.OutputWindow!=presenter)return fail(35,"swap-output-window-drift",q,game,presenter,rb);
     std::printf("RC48_CHILD_D3D=PASS field_owned_popup=PASS child_composition=PASS black_parent_repaint=PASS d3d_warp_present=%u mode_pairs=%u mode_transitions=%u child_hit_test=PASS swap_output_stable=PASS pref_roundtrip=PASS feature_level=0x%x\n",kWindowedFrames,kModePairs,kModePairs*2u,(unsigned)fl);
 
     restore(rb);rel(rtv);rel(bb);rel(swap);rel(ctx);rel(dev);FreeLibrary(dll);DestroyWindow(presenter);DestroyWindow(game);UnregisterClassW(wc.lpszClassName,inst);DeleteObject(g_black);return 0;
