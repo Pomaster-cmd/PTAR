@@ -1,0 +1,168 @@
+name: RC43 Windowed Borderless Coexist Lab
+
+on:
+  push:
+    branches: [build/rc43-windowed-borderless-coexist-20260914]
+    paths:
+      - lab/borderless/rc43/**
+      - .github/workflows/rc43-windowed-borderless-coexist.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-rc43-coexist:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Static RC43 scope and state-machine contract
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $s=Get-Content 'lab/borderless/rc43/ptar_borderless_rc43_prod.cpp' -Raw
+          $p=Get-Content 'lab/borderless/rc43/ptar_borderless_mode_policy.h' -Raw
+          $h=Get-Content 'lab/borderless/rc43/ptar_borderless_rc43_coexist_host.cpp' -Raw
+          $checks=[ordered]@{
+            'windowed style classifier'=($p.Contains('RequestedWindowMode::Windowed') -and $p.Contains('WS_CAPTION') -and $p.Contains('WS_THICKFRAME'))
+            'borderless style classifier'=($p.Contains('RequestedWindowMode::Borderless') -and $p.Contains('WS_POPUP'))
+            'windowed transition disables authority'=$s.Contains('InterlockedExchange(&g_active,0)')
+            'windowed transition hides presenter'=$s.Contains('SWP_HIDEWINDOW')
+            'windowed transition releases mapped input'=($s.Contains('ClipCursor(nullptr)') -and $s.Contains('ReleaseCapture()'))
+            'borderless transition reuses validated GameProc'=$s.Contains('return GameProc(h,m,w,l)')
+            'borderless geometry reuse'=$s.Contains('enforce_geometry()')
+            'initial windowed mode supported'=$s.Contains('RC43_INITIAL_MODE=WINDOWED')
+            'RC42 bootstrap remains independent'=$s.Contains('RC41B_StartBootstrap(g_self,g_rc43Runtime)')
+            'transition stress present'=$h.Contains('kCycles=500')
+          }
+          foreach($k in $checks.Keys){if(-not $checks[$k]){throw "RC43 CONTRACT FAIL: $k"};Write-Host "PASS $k"}
+          git diff --quiet 0f69490bb2210e96e94213643c382bdf89dfee10 HEAD -- lab/raster
+          if($LASTEXITCODE -ne 0){throw 'RC42 raster scope changed unexpectedly'}
+          Write-Host 'PASS RC42 raster tree unchanged from validated base'
+          'RC43_STATIC_CONTRACT=11/11 PASS' | Set-Content RC43_STATIC_CONTRACT.txt -Encoding ASCII
+
+      - name: Build reproducible RC43 carrier and coexist host
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          if not exist lab\borderless\rc43\out mkdir lab\borderless\rc43\out
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603
+          cl %CFLAGS% /LD lab\borderless\rc43\ptar_borderless_rc43_prod.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fe:lab\borderless\rc43\out\ptar_borderless.dll user32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 11
+          copy /y lab\borderless\rc43\out\ptar_borderless.dll lab\borderless\rc43\out\ptar_borderless_first.dll >nul
+          cl %CFLAGS% lab\borderless\rc43\ptar_borderless_rc43_coexist_host.cpp /Fe:lab\borderless\rc43\out\coexist_host.exe user32.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 12
+          dumpbin /exports lab\borderless\rc43\out\ptar_borderless.dll > lab\borderless\rc43\out\EXPORTS.txt
+          dumpbin /imports lab\borderless\rc43\out\ptar_borderless.dll > lab\borderless\rc43\out\IMPORTS.txt
+          dumpbin /headers lab\borderless\rc43\out\ptar_borderless.dll > lab\borderless\rc43\out\HEADERS.txt
+          findstr /C:"PTAR_BorderlessAutoStart" lab\borderless\rc43\out\EXPORTS.txt >nul || exit /b 13
+          findstr /C:"PTAR_BorderlessAttachStable" lab\borderless\rc43\out\EXPORTS.txt >nul || exit /b 14
+          findstr /C:"PTAR_BorderlessQueryMode" lab\borderless\rc43\out\EXPORTS.txt >nul || exit /b 15
+          findstr /C:"PTAR_BorderlessQuery" lab\borderless\rc43\out\EXPORTS.txt >nul || exit /b 16
+
+      - name: Run live RC43 coexistence gate
+        shell: cmd
+        run: |
+          pushd lab\borderless\rc43\out
+          coexist_host.exe > COEXIST_HOST.txt 2>&1
+          if errorlevel 1 (type COEXIST_HOST.txt & popd & exit /b 21)
+          type COEXIST_HOST.txt
+          findstr /C:"RC43_COEXIST_HOST=PASS" COEXIST_HOST.txt >nul || (popd & exit /b 22)
+          findstr /C:"initial_windowed=PASS" COEXIST_HOST.txt >nul || (popd & exit /b 23)
+          findstr /C:"borderless_restore=PASS" COEXIST_HOST.txt >nul || (popd & exit /b 24)
+          popd
+
+      - name: Verify RC43 same-target reproducibility
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          del /q lab\borderless\rc43\out\ptar_borderless.dll
+          cl /nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /LD lab\borderless\rc43\ptar_borderless_rc43_prod.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fe:lab\borderless\rc43\out\ptar_borderless.dll user32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 31
+          fc /b lab\borderless\rc43\out\ptar_borderless_first.dll lab\borderless\rc43\out\ptar_borderless.dll >nul || exit /b 32
+          echo RC43_SAME_TARGET_REPRODUCIBILITY=PASS
+
+      - name: Build inherited borderless stress gates
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          if not exist lab\borderless\rc43\gates mkdir lab\borderless\rc43\gates
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\borderless
+          set LFLAGS=/link /SUBSYSTEM:CONSOLE,6.03
+          cl %CFLAGS% lab\borderless\ptar_borderless_geometry_stress.cpp /Fe:lab\borderless\rc43\gates\geometry_stress.exe user32.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_input_stress.cpp /Fe:lab\borderless\rc43\gates\input_stress.exe user32.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_event_parity.cpp /Fe:lab\borderless\rc43\gates\event_parity.exe user32.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_user32_virtualization.cpp /Fe:lab\borderless\rc43\gates\user32_virtualization.exe user32.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_thread_affinity.cpp /Fe:lab\borderless\rc43\gates\thread_affinity.exe user32.lib d3d11.lib dxgi.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_dpi_policy.cpp /Fe:lab\borderless\rc43\gates\dpi_policy.exe user32.lib gdi32.lib shcore.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_lifecycle_stress.cpp /Fe:lab\borderless\rc43\gates\lifecycle_stress.exe user32.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_window_stress.cpp /Fe:lab\borderless\rc43\gates\window_stress.exe user32.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_takeover_harness.cpp /Fe:lab\borderless\rc43\gates\takeover_harness.exe user32.lib gdi32.lib d3d11.lib dxgi.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_warp_stress.cpp /Fe:lab\borderless\rc43\gates\warp_stress.exe user32.lib d3d11.lib dxgi.lib %LFLAGS% || exit /b 1
+          cl %CFLAGS% lab\borderless\ptar_borderless_occlusion_focus_stress.cpp /Fe:lab\borderless\rc43\gates\occlusion_focus_stress.exe user32.lib d3d11.lib dxgi.lib %LFLAGS% || exit /b 1
+
+      - name: Run inherited borderless stress gates
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $tests=@('geometry_stress','input_stress','event_parity','user32_virtualization','thread_affinity','dpi_policy','lifecycle_stress','window_stress','takeover_harness','warp_stress','occlusion_focus_stress')
+          $summary=@()
+          foreach($n in $tests){
+            $exe="lab/borderless/rc43/gates/$n.exe";$log="lab/borderless/rc43/gates/$($n.ToUpper()).txt"
+            & $exe *> $log;$rc=$LASTEXITCODE
+            Get-Content $log
+            $summary += "$n RC=$rc"
+            if($rc -ne 0){throw "$n failed RC=$rc"}
+          }
+          $summary += 'RC43_INHERITED_BORDERLESS_GATES=11/11 PASS'
+          $summary | Set-Content 'lab/borderless/rc43/gates/GATES_SUMMARY.txt' -Encoding ASCII
+
+      - name: Rebuild and run unchanged RC42 production host
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          if not exist lab\borderless\rc43\rc42gate mkdir lab\borderless\rc43\rc42gate
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\raster\rc41
+          cl %CFLAGS% /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc41\ptar_rc41_context_hooks.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fe:lab\borderless\rc43\rc42gate\ptar_rc41.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 41
+          cl %CFLAGS% lab\raster\rc41\ptar_rc41_prod_host.cpp /Fe:lab\borderless\rc43\rc42gate\prod_host.exe user32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 42
+          pushd lab\borderless\rc43\rc42gate
+          prod_host.exe > RC42_PROD_HOST.txt 2>&1
+          if errorlevel 1 (type RC42_PROD_HOST.txt & popd & exit /b 43)
+          type RC42_PROD_HOST.txt
+          findstr /C:"RC41_PROD_HOST=PASS" RC42_PROD_HOST.txt >nul || (popd & exit /b 44)
+          popd
+
+      - name: Package RC43 evidence
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $o='lab/borderless/rc43/out'
+          $hash=(Get-FileHash "$o/ptar_borderless.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $size=(Get-Item "$o/ptar_borderless.dll").Length
+          @(
+            'RC43_WINDOWED_BORDERLESS_COEXIST=PASS',
+            'STATIC_CONTRACT=11/11 PASS',
+            'INITIAL_WINDOWED_PASSIVE=PASS',
+            'WINDOWED_NATIVE_STYLE_GEOMETRY=PASS',
+            'BORDERLESS_REENTRY=PASS',
+            'TRANSITION_STRESS=500 CYCLES PASS',
+            'INHERITED_BORDERLESS_GATES=11/11 PASS',
+            'RC42_RASTER_TREE_UNCHANGED=PASS',
+            'RC42_PRODUCTION_HOST=PASS',
+            'SAME_TARGET_REPRODUCIBILITY=PASS',
+            "RC43_CARRIER_SHA256=$hash",
+            "RC43_CARRIER_SIZE=$size"
+          ) | Set-Content "$o/RC43_SUMMARY.txt" -Encoding ASCII
+          Get-Content "$o/RC43_SUMMARY.txt"
+          Compress-Archive -Path RC43_STATIC_CONTRACT.txt,"$o/*.txt","$o/ptar_borderless.dll","lab/borderless/rc43/gates/*.txt","lab/borderless/rc43/rc42gate/RC42_PROD_HOST.txt" -DestinationPath RC43_WINDOWED_BORDERLESS_COEXIST_EVIDENCE.zip -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_RC43_WINDOWED_BORDERLESS_COEXIST
+          path: RC43_WINDOWED_BORDERLESS_COEXIST_EVIDENCE.zip
+          if-no-files-found: error
+          retention-days: 7
