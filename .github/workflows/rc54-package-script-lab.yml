@@ -1,0 +1,101 @@
+name: RC54 Package Script Lab
+
+on:
+  push:
+    branches: [lab/rc54-gui-domain-probe-20260914]
+    paths:
+      - 'lab/gui/rc54/package_scripts/**'
+      - '.github/workflows/rc54-package-script-lab.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package-scripts:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct certified RC41 exact scripts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$root='lab/raster/rc41/package_scripts';$joined=''
+          foreach($name in @('part01.b64','part02.b64','part03.b64','part04.b64','part05.b64')){$joined += (Get-Content -LiteralPath "$root/fixture_parts/$name" -Raw).Trim()}
+          $zip="$root/rc41_exact.zip";[IO.File]::WriteAllBytes($zip,[Convert]::FromBase64String($joined))
+          $h=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant();if($h -ne 'd12ac6a05f21477e720e909be37139545c033008ef7bfafddf518f418ca7c43d'){throw "RC41 fixture drift $h"}
+          Expand-Archive $zip "$root/rc41_exact" -Force
+
+      - name: Regenerate exact chain through RC53
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$b='lab/gui/rc54/chain'
+          python lab/raster/rc41b/package_scripts/build_rc41b_scripts.py lab/raster/rc41/package_scripts/rc41_exact "$b/rc41b";if($LASTEXITCODE){throw 'RC41B'}
+          python lab/raster/rc42/package_scripts/build_rc42_scripts.py "$b/rc41b" "$b/rc42";if($LASTEXITCODE){throw 'RC42'}
+          python lab/borderless/rc43/package_scripts/build_rc43_scripts.py "$b/rc42" "$b/rc43";if($LASTEXITCODE){throw 'RC43'}
+          python lab/borderless/rc44/package_scripts/build_rc44_scripts.py "$b/rc43" "$b/rc44";if($LASTEXITCODE){throw 'RC44'}
+          python lab/borderless/rc45/package_scripts/build_rc45_scripts.py "$b/rc44" "$b/rc45";if($LASTEXITCODE){throw 'RC45'}
+          python lab/borderless/rc46/package_scripts/build_rc46_scripts.py "$b/rc45" "$b/rc46";if($LASTEXITCODE){throw 'RC46'}
+          python lab/borderless/rc47/package_scripts/build_rc47_scripts.py "$b/rc46" "$b/rc47";if($LASTEXITCODE){throw 'RC47'}
+          python lab/borderless/rc48/package_scripts/build_rc48_scripts.py "$b/rc47" "$b/rc48";if($LASTEXITCODE){throw 'RC48'}
+          python lab/presenter/rc51/package_scripts/build_rc51_scripts.py "$b/rc48" "$b/rc51";if($LASTEXITCODE){throw 'RC51'}
+          python lab/raster/rc52/package_scripts/build_rc52_scripts.py "$b/rc51" "$b/rc52";if($LASTEXITCODE){throw 'RC52'}
+          python lab/gui/rc53/build_rc53_scripts.py "$b/rc52" "$b/rc53";if($LASTEXITCODE){throw 'RC53'}
+          $expected=[ordered]@{'install.ps1'='0717e778a6519db4bb01fe7b9d2ababcf0057d06ccda983e20714b014af4a778';'verify.ps1'='b22c6aebbd1a1945d28eb977048e3fe46fa7e4e8429eb4c8f442073183a3a75e';'rollback.ps1'='0b52cb64c63b38206c49eababe021874820b4fdad26081332399238e0842a3a7';'uninstall_overlay.ps1'='bd77890e7593aeeb674c9ee0cb45faaa5afe75786fd993730876b6c384299fe8';'collect_rc41.ps1'='a670154e48a73b677a641383e271a72867468646f692b38f2cd588c43b48552b'}
+          foreach($n in $expected.Keys){$h=(Get-FileHash "$b/rc53/$n" -Algorithm SHA256).Hash.ToLowerInvariant();if($h -ne $expected[$n]){throw "RC53 source drift $n $h"};Write-Host "PASS RC53 SOURCE $n $h"}
+
+      - name: Generate RC54 field scripts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$b='lab/gui/rc54/chain';$out='lab/gui/rc54/out'
+          python lab/gui/rc54/package_scripts/build_rc54_scripts.py "$b/rc53" $out
+          if($LASTEXITCODE){throw 'RC54 transformer failed'}
+          $lines=@();foreach($n in @('install.ps1','verify.ps1','rollback.ps1','uninstall_overlay.ps1','collect_rc41.ps1')){$h=(Get-FileHash "$out/$n" -Algorithm SHA256).Hash.ToLowerInvariant();$lines += "$n=$h";Write-Host "RC54_SCRIPT_SHA256 $n $h"};$lines|Set-Content RC54_SCRIPT_SHA256.txt -Encoding ASCII
+
+      - name: Parse PowerShell 5 of 5
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$root='lab/gui/rc54/out'
+          foreach($n in @('install.ps1','verify.ps1','rollback.ps1','uninstall_overlay.ps1','collect_rc41.ps1')){$tokens=$null;$errors=$null;[void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path "$root/$n"),[ref]$tokens,[ref]$errors);if($errors.Count){$errors|%{Write-Host "PARSE_ERROR $n $($_.Message)"};throw "parse failure $n"};Write-Host "PASS PARSE $n"}
+
+      - name: Validate RC54 safety contracts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$root='lab/gui/rc54/out';$i=Get-Content "$root/install.ps1" -Raw;$v=Get-Content "$root/verify.ps1" -Raw;$r=Get-Content "$root/rollback.ps1" -Raw;$u=Get-Content "$root/uninstall_overlay.ps1" -Raw;$c=Get-Content "$root/collect_rc41.ps1" -Raw
+          $new='dc23f3bbb2780b92809d5ae218d5cf42186682985e1be7608e7e9ee812ddb80e';$old='fbc5373ac008f6dadf9d9bf4a66772062693d0af744d514cc8f99fb9aa08b52d';$carrier='59e699536998054ae38cc5a30e03375c9cd206220667debe87070962609dd26c'
+          $checks=[ordered]@{
+            'RC54 package name'=$i.Contains("package='PTAR_RC54_GUI_DOMAIN_PROBE'")
+            'RC54 raster expected install'=$i.Contains("`$ExpectedRaster='$new'")
+            'RC54 raster expected verify'=$v.Contains("`$ExpectedRaster='$new'")
+            'RC52 accepted install migration'=($i.Contains($old)-and$i.Contains($new))
+            'RC52 accepted rollback migration'=($r.Contains($old)-and$r.Contains($new))
+            'RC54 uninstall owns raster'=$u.Contains($new)
+            'carrier remains RC51'=($i.Contains($carrier)-and$v.Contains($carrier))
+            'runtime unknown refusal'=$i.Contains('DLL locale inconnue')
+            'carrier unknown refusal'=$i.Contains('Sidecar borderless local inconnu')
+            'raster unknown refusal'=$i.Contains('Sidecar RC41 local inconnu')
+            'WindowStyle remains passive'=($i.Contains('WINDOWSTYLE_PRESERVED=')-and -not $i.Contains('-Name WindowStyle -Type DWord -Value 1'))
+            'no Resolution force'=(-not $i.Contains('-Name Resolution -Type DWord'))
+            'RC53 GUI state retained'=$i.Contains('AFFECTGUIRESOLUTION_APPLIED=1')
+            'GUI rollback ownership safe'=$r.Contains('if([int]$cur -eq [int]$m.gui.installed)')
+            'GUI uninstall ownership safe'=$u.Contains('if([int]$cur -eq [int]$m.gui.installed)')
+            'verify RC54 marker'=$v.Contains('VERIFY_RC54_GUI_DOMAIN_PROBE=PASS')
+            'collector RC54 results'=$c.Contains('PTAR_RC54_RESULTS_')
+            'collector active payload'=$c.Contains('RC54_ACTIVE_PAYLOAD_SHA256.txt')
+            'collector includes probe log'=$c.Contains("ptar_rc54_gui_probe.log'),'ptar_rc54_gui_probe.log")
+            'collector absent probe marker'=$c.Contains('RC54_GUI_PROBE_LOG_ABSENT.txt')
+            'canonical 107 gate'=$v.Contains('BASE GITHUB 107/107 fichiers byte-identiques')
+          }
+          foreach($k in $checks.Keys){if(-not $checks[$k]){throw "CONTRACT FAIL $k"};Write-Host "PASS $k"}
+          "RC54_SAFETY_CONTRACTS=$($checks.Count)/$($checks.Count) PASS"|Set-Content RC54_PACKAGE_CONTRACTS.txt -Encoding ASCII
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_RC54_PACKAGE_SCRIPT_LAB
+          path: |
+            RC54_SCRIPT_SHA256.txt
+            RC54_PACKAGE_CONTRACTS.txt
+            lab/gui/rc54/out/*.ps1
+          if-no-files-found: error
+          retention-days: 14
