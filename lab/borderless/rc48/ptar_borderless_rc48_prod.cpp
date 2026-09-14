@@ -61,8 +61,6 @@ static bool rc48_make_child(bool countRepair) noexcept {
         SetWindowLongPtrW(g_presenter,GWL_STYLE,desired);
         changed=true;
     }
-    // A concurrent Borderless transition must win; never attach the presenter as
-    // a child after the controller has switched modes.
     if(!rc48_windowed_mode()) return false;
     if(GetParent(g_presenter)!=g_game){
         SetLastError(ERROR_SUCCESS);
@@ -92,17 +90,18 @@ static bool rc48_make_child(bool countRepair) noexcept {
 
 static bool rc48_restore_top_level(bool countRepair,bool force=false) noexcept {
     if(!IsWindow(g_presenter)) return false;
-    // Prevent the invariant worker from undoing a Windowed transition based on a
-    // stale mode sample. Only detach while Borderless is still authoritative,
-    // except during process detach where force=true restores a neutral HWND.
     if(!force && rc48_windowed_mode()) return true;
     rc48_capture_original();
     const LONG_PTR cur=GetWindowLongPtrW(g_presenter,GWL_STYLE);
     bool changed=false;
-    if(cur&WS_CHILD || GetParent(g_presenter)==g_game){
+    // GetParent() returns the owner for a top-level WS_POPUP. Therefore owner==game
+    // is NOT evidence that the presenter is still a child. WS_CHILD is the only
+    // discriminator used here; otherwise the borderless worker would repeatedly
+    // detach a perfectly valid owned popup and collapse its geometry.
+    if(cur&WS_CHILD){
         SetLastError(ERROR_SUCCESS);
         SetParent(g_presenter,nullptr);
-        if(GetParent(g_presenter)==g_game){
+        if((GetWindowLongPtrW(g_presenter,GWL_STYLE)&WS_CHILD) && GetParent(g_presenter)==g_game){
             logfmt("FAIL RC48 SetParent desktop",reinterpret_cast<LONG_PTR>(g_game),GetLastError(),0,0);
             return false;
         }
@@ -136,7 +135,7 @@ static LONG_PTR WINAPI RC48_SetWindowLongPtrW(HWND h,int index,LONG_PTR value){
             if(rc48_windowed_mode()) InterlockedExchange(&g_rc48IsChild,1);
             return prior;
         }
-        if(GetWindowLongPtrW(h,GWL_STYLE)&WS_CHILD || GetParent(h)==g_game) rc48_restore_top_level(false);
+        if(GetWindowLongPtrW(h,GWL_STYLE)&WS_CHILD) rc48_restore_top_level(false);
         value=(value & ~(LONG_PTR)WS_CHILD)|WS_POPUP;
         return SetWindowLongPtrW(h,index,value);
     }
@@ -171,12 +170,11 @@ static DWORD WINAPI RC48InvariantWorker(LPVOID){
     while(!InterlockedCompareExchange(&g_rc48Stop,0,0)){
         if(!InterlockedCompareExchange(&g_rc45Installed,0,0) || !IsWindow(g_game) || !IsWindow(g_presenter)){Sleep(10);continue;}
         const LONG mode=InterlockedCompareExchange(&g_rc45Borderless,0,0);
+        const LONG_PTR s=GetWindowLongPtrW(g_presenter,GWL_STYLE);
         if(mode==0){
-            const LONG_PTR s=GetWindowLongPtrW(g_presenter,GWL_STYLE);
             if(last!=0 || !(s&WS_CHILD) || (s&WS_POPUP) || GetParent(g_presenter)!=g_game) rc48_make_child(last==0);
         } else {
-            const LONG_PTR s=GetWindowLongPtrW(g_presenter,GWL_STYLE);
-            if(last!=1 || (s&WS_CHILD) || GetParent(g_presenter)==g_game) rc48_restore_top_level(last==1);
+            if(last!=1 || (s&WS_CHILD)) rc48_restore_top_level(last==1);
         }
         last=InterlockedCompareExchange(&g_rc45Borderless,0,0);
         Sleep(25);
