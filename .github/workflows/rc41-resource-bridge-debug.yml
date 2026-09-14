@@ -1,0 +1,47 @@
+name: RC41 Resource Bridge Crash Characterization
+
+on:
+  push:
+    branches:
+      - build/rc41-logical-native-subraster-20260913
+    paths:
+      - lab/raster/rc41/ptar_rc41_resource_*
+      - lab/raster/rc41/ptar_rc41_target_classifier.*
+      - lab/raster/rc41/ptar_rc41_context_hooks.*
+      - lab/raster/rc41/ptar_rc41_swapchain_policy.*
+      - .github/workflows/rc41-resource-bridge-debug.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-resource-debug:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build focused resource bridge harness
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          if not exist lab\raster\rc41\debug_out mkdir lab\raster\rc41\debug_out
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\raster\rc41
+          cl %CFLAGS% lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc41\ptar_rc41_context_hooks.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_resource_warp_harness.cpp /Fe:lab\raster\rc41\debug_out\resource_debug.exe user32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:CONSOLE,6.03
+          if errorlevel 1 exit /b 11
+      - name: Run focused resource bridge harness with exact exit capture
+        shell: cmd
+        run: |
+          pushd lab\raster\rc41\debug_out
+          if exist RC41_RESOURCE_STAGE.txt del /q RC41_RESOURCE_STAGE.txt
+          if exist RC41_RESOURCE_WARP_RESULT.txt del /q RC41_RESOURCE_WARP_RESULT.txt
+          resource_debug.exe > STDOUT.txt 2>&1
+          set RC=%ERRORLEVEL%
+          echo RC41_RESOURCE_DEBUG_EXIT=%RC%
+          if exist RC41_RESOURCE_STAGE.txt type RC41_RESOURCE_STAGE.txt
+          if exist STDOUT.txt type STDOUT.txt
+          if exist RC41_RESOURCE_WARP_RESULT.txt type RC41_RESOURCE_WARP_RESULT.txt
+          if not "%RC%"=="0" popd & exit /b 41
+          if not exist RC41_RESOURCE_WARP_RESULT.txt popd & exit /b 42
+          findstr /C:"RC41_RESOURCE_WARP=PASS" RC41_RESOURCE_WARP_RESULT.txt >nul || (popd & exit /b 43)
+          popd
