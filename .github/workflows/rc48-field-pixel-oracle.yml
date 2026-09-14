@@ -1,0 +1,47 @@
+name: RC48 Field Pixel Oracle
+
+on:
+  push:
+    branches: [lab/rc48-field-parity-black-screen-20260914]
+    paths:
+      - lab/borderless/rc48/ptar_rc48_field_pixel_oracle.cpp
+      - lab/borderless/rc48/ptar_borderless_rc48_prod.cpp
+      - .github/workflows/rc48-field-pixel-oracle.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-field-pixel:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build RC48 and field-style pixel oracle
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 1
+          if not exist lab\borderless\rc48\field_pixel mkdir lab\borderless\rc48\field_pixel
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603
+          cl %CFLAGS% /LD lab\borderless\rc48\ptar_borderless_rc48_prod.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fe:lab\borderless\rc48\field_pixel\ptar_borderless.dll user32.lib advapi32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 11
+          cl %CFLAGS% lab\borderless\rc48\ptar_rc48_field_pixel_oracle.cpp /Fe:lab\borderless\rc48\field_pixel\field_pixel.exe user32.lib advapi32.lib gdi32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 12
+      - name: Run visible composition oracle
+        shell: cmd
+        run: |
+          pushd lab\borderless\rc48\field_pixel
+          field_pixel.exe > FIELD_PIXEL.txt 2>&1
+          set RC=%ERRORLEVEL%
+          type FIELD_PIXEL.txt
+          if not "%RC%"=="0" (popd & exit /b %RC%)
+          findstr /C:"RC48_FIELD_PIXEL_ORACLE=PASS" FIELD_PIXEL.txt >nul || (popd & exit /b 31)
+          popd
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PTAR_RC48_FIELD_PIXEL_ORACLE
+          path: |
+            lab/borderless/rc48/field_pixel/FIELD_PIXEL.txt
+            lab/borderless/rc48/field_pixel/ptar_borderless_rc38.log
+          if-no-files-found: warn
+          retention-days: 7
