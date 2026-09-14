@@ -35,6 +35,8 @@ jobs:
         run: |
           $ErrorActionPreference='Stop';Add-Type -AssemblyName System.Windows.Forms
           $o='lab/presenter/rc51/stress';New-Item -ItemType Directory -Force $o | Out-Null
+          New-Item -ItemType Directory -Force 'lab/presenter/rc51/repro_a' | Out-Null
+          New-Item -ItemType Directory -Force 'lab/presenter/rc51/repro_b' | Out-Null
           $base=(Get-FileHash payload/d3d11.dll -Algorithm SHA256).Hash.ToLowerInvariant()
           if($base -ne '864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c'){throw "canonical runtime drift $base"}
           python lab/borderless/rc48/rebuild_exact_field_runtime.py payload/d3d11.dll "$o/d3d11.dll"
@@ -58,8 +60,9 @@ jobs:
           call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
           if errorlevel 1 exit /b 1
           set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603
-          cl %CFLAGS% /LD lab\presenter\rc51\ptar_borderless_rc51_generated.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fe:lab\presenter\rc51\stress\ptar_borderless.dll user32.lib advapi32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 20
-          cl %CFLAGS% /LD lab\presenter\rc51\ptar_borderless_rc51_generated.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fe:lab\presenter\rc51\stress\ptar_borderless_repro.dll user32.lib advapi32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 21
+          cl %CFLAGS% /LD lab\presenter\rc51\ptar_borderless_rc51_generated.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fo:lab\presenter\rc51\repro_a\ /Fe:lab\presenter\rc51\repro_a\ptar_borderless.dll user32.lib advapi32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 20
+          cl %CFLAGS% /LD lab\presenter\rc51\ptar_borderless_rc51_generated.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fo:lab\presenter\rc51\repro_b\ /Fe:lab\presenter\rc51\repro_b\ptar_borderless.dll user32.lib advapi32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 21
+          copy /y lab\presenter\rc51\repro_a\ptar_borderless.dll lab\presenter\rc51\stress\ptar_borderless.dll >nul
           cl %CFLAGS% /I lab\raster\rc41 /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc41\ptar_rc41_context_hooks.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fe:lab\presenter\rc51\stress\ptar_rc42.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 22
           copy /y lab\presenter\rc51\stress\ptar_rc42.dll lab\presenter\rc51\stress\ptar_rc41.dll >nul
           cl %CFLAGS% lab\presenter\rc51\ptar_rc51_auto_stress_host.cpp /Fe:lab\presenter\rc51\stress\Warhammer.exe user32.lib advapi32.lib gdi32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:WINDOWS,6.03 || exit /b 23
@@ -70,12 +73,14 @@ jobs:
           $ErrorActionPreference='Stop';$o='lab/presenter/rc51/stress'
           $runtime=(Get-FileHash "$o/d3d11.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
           $raster=(Get-FileHash "$o/ptar_rc42.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
-          $a=(Get-FileHash "$o/ptar_borderless.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
-          $b=(Get-FileHash "$o/ptar_borderless_repro.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $a=(Get-FileHash 'lab/presenter/rc51/repro_a/ptar_borderless.dll' -Algorithm SHA256).Hash.ToLowerInvariant()
+          $b=(Get-FileHash 'lab/presenter/rc51/repro_b/ptar_borderless.dll' -Algorithm SHA256).Hash.ToLowerInvariant()
+          $field=(Get-FileHash "$o/ptar_borderless.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
           if($runtime -ne '6f1686992bef971c9995df9f0cb91b93c6946988e12a837e5de956df37c9082b'){throw "runtime drift $runtime"}
           if($raster -ne '7ffe7aa1b9afa42d5f22557cae29a4f65e17379c2a2f181f879427277839f1ca'){throw "RC42 drift $raster"}
           if($a -ne $b){throw "RC51 /Brepro mismatch $a $b"}
-          @("RUNTIME=$runtime","RASTER=$raster","RC51=$a","RC51_REPRO=$b","REPRODUCIBLE=PASS") | Set-Content 'lab/presenter/rc51/STRESS_COMPONENTS.txt' -Encoding ASCII
+          if($field -ne $a){throw "RC51 copied field candidate drift $field $a"}
+          @("RUNTIME=$runtime","RASTER=$raster","RC51=$a","RC51_REPRO=$b","FIELD_COPY=$field","REPRODUCIBLE=PASS") | Set-Content 'lab/presenter/rc51/STRESS_COMPONENTS.txt' -Encoding ASCII
           Get-Content 'lab/presenter/rc51/STRESS_COMPONENTS.txt'
 
       - name: Run autonomous mode resize minimize stress
@@ -112,6 +117,8 @@ jobs:
             lab/presenter/rc51/stress/*.txt
             lab/presenter/rc51/stress/*.log
             lab/presenter/rc51/stress/ptar_borderless.dll
+            lab/presenter/rc51/repro_a/ptar_borderless.dll
+            lab/presenter/rc51/repro_b/ptar_borderless.dll
             lab/presenter/rc51/ptar_borderless_rc51_generated.cpp
           if-no-files-found: warn
           retention-days: 7
