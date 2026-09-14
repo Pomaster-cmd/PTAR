@@ -43,8 +43,10 @@ int wmain(){
     DestroyWindow(probe);
     const UINT outW=UINT(mi.rcMonitor.right-mi.rcMonitor.left),outH=UINT(mi.rcMonitor.bottom-mi.rcMonitor.top);
     const UINT renderW=(outW>=640?640:outW),renderH=(outH>=360?360:outH);
+    const LONG_PTR windowed=WS_OVERLAPPEDWINDOW|WS_VISIBLE;
+    const LONG initialX=mi.rcMonitor.left+47,initialY=mi.rcMonitor.top+39,initialW=533,initialH=401;
 
-    HWND game=CreateWindowExW(0,wc.lpszClassName,L"game",WS_POPUP|WS_VISIBLE,mi.rcMonitor.left,mi.rcMonitor.top,renderW,renderH,nullptr,nullptr,inst,nullptr);
+    HWND game=CreateWindowExW(0,wc.lpszClassName,L"game",windowed,initialX,initialY,initialW,initialH,nullptr,nullptr,inst,nullptr);
     HWND presenter=CreateWindowExW(WS_EX_TOOLWINDOW,wc.lpszClassName,L"presenter",WS_POPUP|WS_VISIBLE,mi.rcMonitor.left,mi.rcMonitor.top,outW,outH,game,nullptr,inst,nullptr);
     if(!game||!presenter)return 13;
 
@@ -53,47 +55,50 @@ int wmain(){
     auto query=reinterpret_cast<QueryFn>(GetProcAddress(dll,"PTAR_BorderlessQueryMode"));
     if(!attach||!query)return 15;
     if(attach(game,presenter,renderW,renderH,outW,outH)!=0)return 16;
-    if(!wait_mode(query,true))return 17;
-    if(!client_is(game,renderW,renderH)||!client_is(presenter,outW,outH)||!IsWindowVisible(presenter))return 18;
 
-    // Borderless -> windowed: the game's own style and geometry must become authoritative.
-    const LONG_PTR windowed=WS_OVERLAPPEDWINDOW|WS_VISIBLE;
+    // Starting in a genuine windowed style must remain completely passive.
+    if(!wait_mode(query,false))return 17;
+    if(!outer_is(game,initialX,initialY,initialW,initialH))return 18;
+    if(IsWindowVisible(presenter))return 19;
+    LONG_PTR gs=GetWindowLongPtrW(game,GWL_STYLE);
+    if((gs&WS_CAPTION)==0 || (gs&WS_THICKFRAME)==0)return 20;
+
+    // Windowed -> borderless: engage the already validated authority path.
+    SetWindowLongPtrW(game,GWL_STYLE,WS_POPUP|WS_VISIBLE);
+    if(!wait_mode(query,true))return 21;
+    Sleep(20);
+    if(!client_is(game,renderW,renderH)||!client_is(presenter,outW,outH)||!IsWindowVisible(presenter))return 22;
+    RECT gr{};GetWindowRect(game,&gr);
+    if(gr.left!=mi.rcMonitor.left||gr.top!=mi.rcMonitor.top)return 23;
+
+    // Borderless -> windowed: game geometry/style become authoritative again.
     SetWindowLongPtrW(game,GWL_STYLE,windowed);
-    if(!wait_mode(query,false))return 19;
+    if(!wait_mode(query,false))return 24;
     const LONG wx=mi.rcMonitor.left+73,wy=mi.rcMonitor.top+61,ww=517,wh=389;
     SetWindowPos(game,nullptr,wx,wy,ww,wh,SWP_NOZORDER|SWP_FRAMECHANGED|SWP_SHOWWINDOW);
     Sleep(20);
-    if(!outer_is(game,wx,wy,ww,wh))return 20;
-    if(IsWindowVisible(presenter))return 21;
-    LONG_PTR gs=GetWindowLongPtrW(game,GWL_STYLE);
-    if((gs&WS_CAPTION)==0 || (gs&WS_THICKFRAME)==0)return 22;
-
-    // Windowed -> borderless: reuse the already validated RC40 takeover path.
-    SetWindowLongPtrW(game,GWL_STYLE,WS_POPUP|WS_VISIBLE);
-    if(!wait_mode(query,true))return 23;
-    Sleep(20);
-    if(!client_is(game,renderW,renderH)||!client_is(presenter,outW,outH)||!IsWindowVisible(presenter))return 24;
-    RECT gr{};GetWindowRect(game,&gr);
-    if(gr.left!=mi.rcMonitor.left||gr.top!=mi.rcMonitor.top)return 25;
+    if(!outer_is(game,wx,wy,ww,wh))return 25;
+    if(IsWindowVisible(presenter))return 26;
+    gs=GetWindowLongPtrW(game,GWL_STYLE);
+    if((gs&WS_CAPTION)==0 || (gs&WS_THICKFRAME)==0)return 27;
 
     constexpr unsigned kCycles=500;
     for(unsigned i=0;i<kCycles;++i){
+        SetWindowLongPtrW(game,GWL_STYLE,WS_POPUP|WS_VISIBLE);
+        if(!wait_mode(query,true,1000))return 30;
+        if(!client_is(game,renderW,renderH)||!client_is(presenter,outW,outH)||!IsWindowVisible(presenter))return 31;
         SetWindowLongPtrW(game,GWL_STYLE,windowed);
-        if(!wait_mode(query,false,1000))return 30;
+        if(!wait_mode(query,false,1000))return 32;
         LONG x=mi.rcMonitor.left+LONG(20+(i%37)),y=mi.rcMonitor.top+LONG(30+(i%29));
         SetWindowPos(game,nullptr,x,y,420,310,SWP_NOZORDER|SWP_FRAMECHANGED|SWP_SHOWWINDOW);
-        if(!outer_is(game,x,y,420,310)||IsWindowVisible(presenter))return 31;
-        SetWindowLongPtrW(game,GWL_STYLE,WS_POPUP|WS_VISIBLE);
-        if(!wait_mode(query,true,1000))return 32;
-        if(!client_is(game,renderW,renderH)||!client_is(presenter,outW,outH)||!IsWindowVisible(presenter))return 33;
+        if(!outer_is(game,x,y,420,310)||IsWindowVisible(presenter))return 33;
     }
 
     ModeState final{};final.size=sizeof(final);if(query(&final)!=0)return 40;
     if(final.transitionsToWindowed<kCycles+1ull||final.transitionsToBorderless<kCycles+1ull)return 41;
 
-    std::printf("RC43_COEXIST_HOST=PASS output=%ux%u render=%ux%u cycles=%u to_windowed=%llu to_borderless=%llu windowed_native_geometry=PASS borderless_restore=PASS\n",
+    std::printf("RC43_COEXIST_HOST=PASS output=%ux%u render=%ux%u cycles=%u to_windowed=%llu to_borderless=%llu initial_windowed=PASS windowed_native_geometry=PASS borderless_restore=PASS\n",
                 outW,outH,renderW,renderH,kCycles,final.transitionsToWindowed,final.transitionsToBorderless);
-    FreeLibrary(dll);
-    DestroyWindow(presenter);DestroyWindow(game);UnregisterClassW(wc.lpszClassName,inst);
+    DestroyWindow(presenter);DestroyWindow(game);FreeLibrary(dll);UnregisterClassW(wc.lpszClassName,inst);
     return 0;
 }
