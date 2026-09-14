@@ -24,6 +24,10 @@ static bool write_text(const char* path,const char* text){
     if(h==INVALID_HANDLE_VALUE)return false;DWORD wr=0;const DWORD n=(DWORD)lstrlenA(text);const BOOL ok=WriteFile(h,text,n,&wr,nullptr);CloseHandle(h);return ok&&wr==n;
 }
 static void stage(const char* text){ write_text("RC41_RESOURCE_STAGE.txt",text); }
+static bool shadow_contract_ok(const ResourceBridgeStats& rs){
+    const uint32_t expected=(rs.deviceInterfaceVersion==0)?43u:(rs.deviceInterfaceVersion==1)?50u:(rs.deviceInterfaceVersion==2)?54u:(rs.deviceInterfaceVersion==3)?65u:(rs.deviceInterfaceVersion==4)?67u:(rs.deviceInterfaceVersion==5)?69u:0u;
+    return expected!=0u && rs.shadowSlots==expected;
+}
 
 int main(){
     stage("00 ENTER\r\n");
@@ -38,6 +42,8 @@ int main(){
     ResourceBridge bridge;ContextHooks hooks;
     if(!game||!runtime||!sidecar||!bridge.configure(contract,game,runtime,sidecar)||!hooks.configure(contract,primary))return 12;stage("03 CONFIGURED\r\n");
     if(!bridge.install(dev)||!hooks.install(ctx))return 13;stage("04 INSTALLED\r\n");
+    ResourceBridgeStats installStats=bridge.stats();
+    if(!shadow_contract_ok(installStats))return 30;stage("04A SHADOW_CONTRACT\r\n");
 
     ResourcePolicy policy(contract);D3D11_TEXTURE2D_DESC probe=rt_desc(1920,1080);
     D3D11_SUBRESOURCE_DATA fakeInit{};
@@ -69,15 +75,16 @@ int main(){
     if(!vp_is(ctx,300,150,600,300))return 26;stage("17 SAME_VP\r\n");
 
     ResourceBridgeStats rs=bridge.stats();HookStats hs=hooks.stats();
-    if(rs.textureRemapped!=2||rs.textureFallbacks!=0||rs.rtvTagged!=1||rs.dsvTagged!=1||hs.viewportMapped<2)return 27;stage("18 STATS\r\n");
+    if(!shadow_contract_ok(rs)||rs.textureRemapped!=2||rs.textureFallbacks!=0||rs.rtvTagged!=1||rs.dsvTagged!=1||hs.viewportMapped<2)return 27;stage("18 STATS\r\n");
 
     ctx->ClearState();hooks.uninstall();bridge.uninstall();stage("19 UNINSTALLED\r\n");
     ID3D11Texture2D* restored=nullptr;
     if(FAILED(dev->CreateTexture2D(&probe,nullptr,&restored))||!dims(restored,1920,1080)||resource_has_family_tag(restored))return 28;stage("20 RESTORED\r\n");
 
-    char result[640]{};
-    std::snprintf(result,sizeof(result),"RC41_RESOURCE_WARP=PASS feature_level=0x%x exact_logical_rt=1920x1080->1280x720 depth=PASS dsv_only_mapping=PASS same_size_nonfamily=PASS remapped=%llu rtv_tagged=%llu dsv_tagged=%llu vp_mapped=%llu restore=PASS\r\n",
-                  static_cast<unsigned>(fl),static_cast<unsigned long long>(rs.textureRemapped),static_cast<unsigned long long>(rs.rtvTagged),
+    char result[768]{};
+    std::snprintf(result,sizeof(result),"RC41_RESOURCE_WARP=PASS feature_level=0x%x exact_logical_rt=1920x1080->1280x720 depth=PASS dsv_only_mapping=PASS same_size_nonfamily=PASS device_interface=%u shadow_slots=%u remapped=%llu rtv_tagged=%llu dsv_tagged=%llu vp_mapped=%llu restore=PASS\r\n",
+                  static_cast<unsigned>(fl),static_cast<unsigned>(rs.deviceInterfaceVersion),static_cast<unsigned>(rs.shadowSlots),
+                  static_cast<unsigned long long>(rs.textureRemapped),static_cast<unsigned long long>(rs.rtvTagged),
                   static_cast<unsigned long long>(rs.dsvTagged),static_cast<unsigned long long>(hs.viewportMapped));
     if(!write_text("RC41_RESOURCE_WARP_RESULT.txt",result))return 29;stage("21 RESULT_WRITTEN\r\n");
     std::fputs(result,stdout);std::fflush(stdout);
