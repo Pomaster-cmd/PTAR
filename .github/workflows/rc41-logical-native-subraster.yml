@@ -34,6 +34,11 @@ jobs:
           $swapPolicy=Get-Content "$root/ptar_rc41_swapchain_policy.h" -Raw
           $swapWarp=Get-Content "$root/ptar_rc41_swapchain_warp_harness.cpp" -Raw
           $dual=Get-Content "$root/ptar_rc41_dual_interface_harness.cpp" -Raw
+          $resourcePolicy=Get-Content "$root/ptar_rc41_resource_policy.h" -Raw
+          $resourceBridge=Get-Content "$root/ptar_rc41_resource_bridge.h" -Raw
+          $resourceBridgeCpp=Get-Content "$root/ptar_rc41_resource_bridge.cpp" -Raw
+          $resourceTag=Get-Content "$root/ptar_rc41_resource_tag.h" -Raw
+          $resourceWarp=Get-Content "$root/ptar_rc41_resource_warp_harness.cpp" -Raw
           $checks=[ordered]@{
             'logical and physical spaces are distinct'=($contract.Contains('SizeU logical') -and $contract.Contains('SizeU physical'))
             'viewport mapping is primary-family gated'=$contract.Contains('primaryFamilyBound')
@@ -42,7 +47,7 @@ jobs:
             'offscreen targets remain passthrough'=$warp.Contains('offscreen_passthrough=PASS')
             'RC41 contains no new HWND geometry policy'=(-not $all.Contains('SetWindowPos(') -and -not $all.Contains('SetWindowLongPtr'))
             'RC41 contains no USER32 virtualization'=(-not $all.Contains('GetCursorPos(') -and -not $all.Contains('ClipCursor('))
-            'D3D11 hook slots are explicit'=($hooks.Contains('kSlotOMSetRenderTargets=33') -and $hooks.Contains('kSlotOMSetRenderTargetsAndUAV=34') -and $hooks.Contains('kSlotRSSetViewports=44') -and $hooks.Contains('kSlotRSSetScissorRects=45'))
+            'D3D11 context hook slots are explicit'=($hooks.Contains('kSlotOMSetRenderTargets=33') -and $hooks.Contains('kSlotOMSetRenderTargetsAndUAV=34') -and $hooks.Contains('kSlotRSSetViewports=44') -and $hooks.Contains('kSlotRSSetScissorRects=45'))
             'context hook is instance-local shadow vtable'=($hooks.Contains('shadowVtable_') -and $hookcpp.Contains('InterlockedCompareExchangePointer'))
             'ClearState invalidates target state'=($hooks.Contains('kSlotClearState=110') -and $hookcpp.Contains('hook_clear_state'))
             'command-list execution reclassifies target state'=($hooks.Contains('kSlotExecuteCommandList=58') -and $hookcpp.Contains('refresh_primary_from_context(ctx)'))
@@ -52,9 +57,14 @@ jobs:
             'successful resize refreshes primary resource'=($swapCpp.Contains('if(self->onResize_) self->onResize_') -and $hookcpp.Contains('update_primary_resource'))
             'swapchain WARP gate requires repeated resize renewal'=($swapWarp.Contains('kResizes=128') -and $swapWarp.Contains('classifier_no_hold=PASS'))
             'distinct base and derived swapchain interfaces are independently shadowed'=($swapCpp.Contains('baseShadowVtable_') -and $swapCpp.Contains('derivedShadowVtable_') -and $dual.Contains('base_ptr_distinct=1'))
+            'resource bridge only remaps exact logical game render/depth family'=($resourcePolicy.Contains('domain!=CallerDomain::Game') -and $resourcePolicy.Contains('in.Width!=contract_.logical.w') -and $resourcePolicy.Contains('D3D11_BIND_RENDER_TARGET|D3D11_BIND_DEPTH_STENCIL'))
+            'resource bridge fails open for initial/shared resources'=($resourcePolicy.Contains('if(initialData)') -and $resourcePolicy.Contains('D3D11_RESOURCE_MISC_SHARED') -and $resourceBridgeCpp.Contains('textureFallbacks_'))
+            'resource-family ownership is private-data lifetime safe'=($resourceTag.Contains('SetPrivateData') -and $resourceTag.Contains('needs no persistent') -and $classifier.Contains('view_or_resource_has_family_tag'))
+            'D3D11 device resource hook slots are explicit'=($resourceBridge.Contains('kSlotCreateTexture2D=5') -and $resourceBridge.Contains('kSlotCreateRenderTargetView=9') -and $resourceBridge.Contains('kSlotCreateDepthStencilView=10'))
+            'resource WARP gate covers depth-only and non-family isolation'=($resourceWarp.Contains('dsv_only_mapping=PASS') -and $resourceWarp.Contains('same_size_nonfamily=PASS'))
           }
           foreach($k in $checks.Keys){ if(-not $checks[$k]){ throw "RC41 CONTRACT FAIL: $k" }; Write-Host "PASS $k" }
-          'RC41_STATIC_ARCHITECTURE=17/17 PASS' | Set-Content "$root/STATIC_ARCHITECTURE.txt" -Encoding ASCII
+          'RC41_STATIC_ARCHITECTURE=22/22 PASS' | Set-Content "$root/STATIC_ARCHITECTURE.txt" -Encoding ASCII
 
       - name: Build RC41 lab gates
         shell: cmd
@@ -75,6 +85,8 @@ jobs:
           if errorlevel 1 exit /b 15
           cl %CFLAGS% lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_dual_interface_harness.cpp /Fe:lab\raster\rc41\out\dual_interface_harness.exe user32.lib dxgi.lib /link /SUBSYSTEM:CONSOLE,6.03
           if errorlevel 1 exit /b 16
+          cl %CFLAGS% lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc41\ptar_rc41_context_hooks.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_resource_warp_harness.cpp /Fe:lab\raster\rc41\out\resource_warp_harness.exe user32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:CONSOLE,6.03
+          if errorlevel 1 exit /b 17
 
       - name: Run RC41 geometry stress
         shell: cmd
@@ -118,6 +130,13 @@ jobs:
           if errorlevel 1 (type lab\raster\rc41\out\DUAL_INTERFACE.txt & exit /b 26)
           type lab\raster\rc41\out\DUAL_INTERFACE.txt
 
+      - name: Run RC41 selective resource-family bridge gate
+        shell: cmd
+        run: |
+          lab\raster\rc41\out\resource_warp_harness.exe > lab\raster\rc41\out\RESOURCE_WARP_STRESS.txt 2>&1
+          if errorlevel 1 (type lab\raster\rc41\out\RESOURCE_WARP_STRESS.txt & exit /b 27)
+          type lab\raster\rc41\out\RESOURCE_WARP_STRESS.txt
+
       - name: Package RC41 evidence
         shell: powershell
         run: |
@@ -125,13 +144,14 @@ jobs:
           $o='lab/raster/rc41/out'
           $summary=@(
             'RC41_LAB_STATUS=PASS',
-            'STATIC_ARCHITECTURE=17/17 PASS',
+            'STATIC_ARCHITECTURE=22/22 PASS',
             (Get-Content "$o/MATH_STRESS.txt" -Raw).Trim(),
             (Get-Content "$o/FRAMING_ORACLE.txt" -Raw).Trim(),
             (Get-Content "$o/WARP_TARGET_CLASSIFIER.txt" -Raw).Trim(),
             (Get-Content "$o/HOOK_WARP_STRESS.txt" -Raw).Trim(),
             (Get-Content "$o/SWAPCHAIN_WARP_STRESS.txt" -Raw).Trim(),
-            (Get-Content "$o/DUAL_INTERFACE.txt" -Raw).Trim()
+            (Get-Content "$o/DUAL_INTERFACE.txt" -Raw).Trim(),
+            (Get-Content "$o/RESOURCE_WARP_STRESS.txt" -Raw).Trim()
           )
           $summary | Set-Content "$o/RC41_SUMMARY.txt" -Encoding ASCII
           Copy-Item 'lab/raster/rc41/STATIC_ARCHITECTURE.txt' "$o/STATIC_ARCHITECTURE.txt" -Force
