@@ -5,7 +5,7 @@
 #include <dxgi1_2.h>
 #include <cmath>
 #include <cstdint>
-#include <iostream>
+#include <cstdio>
 #include "ptar_rc41_resource_tag.h"
 
 using AttachFn=int (WINAPI*)(IDXGISwapChain*,ID3D11DeviceContext*,UINT,UINT);
@@ -77,14 +77,14 @@ int main(){
         st={};st.size=sizeof(st);if(query(&st)!=0||st.active){rc=29;break;}
         DXGI_SWAP_CHAIN_DESC physical{};if(FAILED(sc->GetDesc(&physical))||physical.BufferDesc.Width!=1280||physical.BufferDesc.Height!=720){rc=30;break;}
         ID3D11Texture2D* restored=nullptr;if(FAILED(dev->CreateTexture2D(&ld,nullptr,&restored))||!texture_is(restored,1920,1080)||ptar_rc41::resource_has_family_tag(restored)){safe_release(restored);rc=31;break;}safe_release(restored);
-        std::cout<<"RC41_PROD_HOST=PASS feature_level=0x"<<std::hex<<static_cast<unsigned>(fl)<<std::dec
-                 <<" logical=1920x1080 physical=1280x720 resource_family=PASS resizes="<<kLoops
-                 <<" vp_mapped="<<finalStats.viewportMapped<<" getdesc_virtualized="<<finalStats.getDescVirtualized
-                 <<" resize_remapped="<<finalStats.resizeRemapped<<" refresh="<<finalStats.primaryRefreshes
-                 <<" texture_remapped="<<finalStats.textureRemapped<<" rtv_tagged="<<finalStats.rtvTagged
-                 <<" unload_restore=PASS\n";
+        std::printf("RC41_PROD_HOST=PASS feature_level=0x%x logical=1920x1080 physical=1280x720 resource_family=PASS resizes=%u vp_mapped=%llu getdesc_virtualized=%llu resize_remapped=%llu refresh=%llu texture_remapped=%llu rtv_tagged=%llu unload_restore=PASS\n",
+                    static_cast<unsigned>(fl),static_cast<unsigned>(kLoops),static_cast<unsigned long long>(finalStats.viewportMapped),
+                    static_cast<unsigned long long>(finalStats.getDescVirtualized),static_cast<unsigned long long>(finalStats.resizeRemapped),
+                    static_cast<unsigned long long>(finalStats.primaryRefreshes),static_cast<unsigned long long>(finalStats.textureRemapped),
+                    static_cast<unsigned long long>(finalStats.rtvTagged));
+        std::fflush(stdout);
     }while(false);
     if(detach)detach();FreeLibrary(dll);ctx->ClearState();safe_release(ctx);safe_release(dev);safe_release(sc);DestroyWindow(hwnd);UnregisterClassW(wc.lpszClassName,inst);
-    if(rc)std::cerr<<"RC41_PROD_HOST=FAIL rc="<<rc<<" hr=0x"<<std::hex<<static_cast<unsigned>(hr)<<std::dec<<"\n";
+    if(rc){std::fprintf(stderr,"RC41_PROD_HOST=FAIL rc=%d hr=0x%x\n",rc,static_cast<unsigned>(hr));std::fflush(stderr);}
     return rc;
 }
