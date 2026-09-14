@@ -5,12 +5,14 @@
 #include <dxgi1_2.h>
 #include <cstdint>
 #include "ptar_rc41_context_hooks.h"
+#include "ptar_rc41_resource_bridge.h"
 #include "ptar_rc41_swapchain_hooks.h"
 
 using namespace ptar_rc41;
 
 namespace {
 HMODULE g_self=nullptr;
+ResourceBridge g_resourceBridge;
 ContextHooks g_contextHooks;
 SwapchainHooks g_swapchainHooks;
 volatile LONG g_starting=0;
@@ -22,6 +24,7 @@ struct RC41State {
     UINT active;
     UINT logicalW,logicalH;
     UINT physicalW,physicalH;
+    UINT resourceBridgeInstalled;
     UINT contextInstalled;
     UINT swapchainInstalled;
     uint64_t viewportMapped;
@@ -29,6 +32,10 @@ struct RC41State {
     uint64_t getDescVirtualized;
     uint64_t resizeRemapped;
     uint64_t primaryRefreshes;
+    uint64_t textureRemapped;
+    uint64_t textureFallbacks;
+    uint64_t rtvTagged;
+    uint64_t dsvTagged;
 };
 
 static void log_line(const char* text) noexcept {
@@ -83,6 +90,7 @@ static void refresh_primary(void*,IDXGISwapChain* sc) noexcept {
 static void fail_cleanup() noexcept {
     g_swapchainHooks.uninstall();
     g_contextHooks.uninstall();
+    g_resourceBridge.uninstall();
     g_logicalW=g_logicalH=g_physicalW=g_physicalH=0;
     InterlockedExchange(&g_active,0);
     InterlockedExchange(&g_starting,0);
@@ -95,17 +103,32 @@ static int attach_core(IDXGISwapChain* sc,ID3D11DeviceContext* ctx,UINT logicalW
     const bool exact=(uint64_t(physicalW)*3u==uint64_t(logicalW)*2u && uint64_t(physicalH)*3u==uint64_t(logicalH)*2u);
     if(!exact){backbuffer->Release();log_dims("FAIL RC41 non-x1.5 geometry",physicalW,physicalH,logicalW,logicalH);return -32;}
     const Contract contract{{logicalW,logicalH},{physicalW,physicalH}};
-    if(!g_contextHooks.configure(contract,backbuffer)){backbuffer->Release();log_line("FAIL RC41 context configure; fail-open");return -33;}
-    backbuffer->Release();
-    if(!g_contextHooks.install(ctx)){log_line("FAIL RC41 context hook install; fail-open");return -34;}
-
     HMODULE game=GetModuleHandleW(nullptr);
     if(!runtimeModule)runtimeModule=GetModuleHandleW(L"d3d11.dll");
-    if(!game||!runtimeModule||!g_self||!g_swapchainHooks.configure(contract,game,runtimeModule,g_self,refresh_primary,nullptr)){
-        log_line("FAIL RC41 swapchain configure; fail-open");g_contextHooks.uninstall();return -35;
+    if(!game||!runtimeModule||!g_self){backbuffer->Release();log_line("FAIL RC41 module identity unavailable; fail-open");return -33;}
+
+    ID3D11Device* device=nullptr;ctx->GetDevice(&device);
+    if(!device){backbuffer->Release();log_line("FAIL RC41 D3D11 device unavailable; fail-open");return -34;}
+    if(!g_resourceBridge.configure(contract,game,runtimeModule,g_self) || !g_resourceBridge.install(device)){
+        device->Release();backbuffer->Release();log_line("FAIL RC41 resource bridge install; fail-open");return -35;
+    }
+    device->Release();
+
+    if(!g_contextHooks.configure(contract,backbuffer)){
+        backbuffer->Release();g_resourceBridge.uninstall();log_line("FAIL RC41 context configure; fail-open");return -36;
+    }
+    backbuffer->Release();
+    if(!g_contextHooks.install(ctx)){
+        g_resourceBridge.uninstall();log_line("FAIL RC41 context hook install; fail-open");return -37;
+    }
+
+    if(!g_swapchainHooks.configure(contract,game,runtimeModule,g_self,refresh_primary,nullptr)){
+        log_line("FAIL RC41 swapchain configure; fail-open");g_contextHooks.uninstall();g_resourceBridge.uninstall();return -38;
     }
     g_logicalW=logicalW;g_logicalH=logicalH;g_physicalW=physicalW;g_physicalH=physicalH;
-    if(!g_swapchainHooks.install(sc)){log_line("FAIL RC41 swapchain hook install; fail-open");g_contextHooks.uninstall();g_logicalW=g_logicalH=g_physicalW=g_physicalH=0;return -36;}
+    if(!g_swapchainHooks.install(sc)){
+        log_line("FAIL RC41 swapchain hook install; fail-open");g_contextHooks.uninstall();g_resourceBridge.uninstall();g_logicalW=g_logicalH=g_physicalW=g_physicalH=0;return -39;
+    }
     InterlockedExchange(&g_active,1);InterlockedExchange(&g_starting,0);
     log_dims("ACTIVE_RC41_LOGICAL_NATIVE_SUBRASTER logical/physical",logicalW,logicalH,physicalW,physicalH);
     return 0;
@@ -140,9 +163,10 @@ extern "C" __declspec(dllexport) int WINAPI PTAR_RC41_Query(RC41State* out){
     RC41State s{};s.size=sizeof(s);s.active=InterlockedCompareExchange(&g_active,0,0)?1u:0u;
     s.logicalW=g_logicalW;s.logicalH=g_logicalH;s.physicalW=g_physicalW;s.physicalH=g_physicalH;
     if(s.active){
-        HookStats c=g_contextHooks.stats();SwapchainHookStats q=g_swapchainHooks.stats();
-        s.contextInstalled=g_contextHooks.installed()?1u:0u;s.swapchainInstalled=g_swapchainHooks.installed()?1u:0u;
+        ResourceBridgeStats r=g_resourceBridge.stats();HookStats c=g_contextHooks.stats();SwapchainHookStats q=g_swapchainHooks.stats();
+        s.resourceBridgeInstalled=g_resourceBridge.installed()?1u:0u;s.contextInstalled=g_contextHooks.installed()?1u:0u;s.swapchainInstalled=g_swapchainHooks.installed()?1u:0u;
         s.viewportMapped=c.viewportMapped;s.scissorMapped=c.scissorMapped;s.getDescVirtualized=q.getDescVirtualized;s.resizeRemapped=q.resizeRemapped;s.primaryRefreshes=c.primaryRefreshes;
+        s.textureRemapped=r.textureRemapped;s.textureFallbacks=r.textureFallbacks;s.rtvTagged=r.rtvTagged;s.dsvTagged=r.dsvTagged;
     }
     *out=s;return 0;
 }
