@@ -27,7 +27,7 @@ static void print_state(const char* tag,QueryFn query,HWND game,HWND presenter){
         s.transitionsToWindowed,s.transitionsToBorderless,gr.left,gr.top,gr.right,gr.bottom,pr.left,pr.top,pr.right,pr.bottom);
 }
 static int fail(int code,const char* what,QueryFn query,HWND game,HWND presenter){
-    std::printf("RC43_COEXIST_HOST=FAIL rc=%d what=%s gle=%lu\n",code,what,(unsigned long)GetLastError());
+    std::printf("RC44_COEXIST_HOST=FAIL rc=%d what=%s gle=%lu\n",code,what,(unsigned long)GetLastError());
     if(query&&game&&presenter)print_state("FAIL_STATE",query,game,presenter);
     return code;
 }
@@ -51,7 +51,7 @@ static void request_style(HWND h,LONG_PTR style){
 
 int wmain(){
     HINSTANCE inst=GetModuleHandleW(nullptr);
-    WNDCLASSW wc{};wc.lpfnWndProc=WndProc;wc.hInstance=inst;wc.lpszClassName=L"PTAR_RC43_COEXIST_HOST";
+    WNDCLASSW wc{};wc.lpfnWndProc=WndProc;wc.hInstance=inst;wc.lpszClassName=L"PTAR_RC44_COEXIST_HOST";
     if(!RegisterClassW(&wc)&&GetLastError()!=ERROR_CLASS_ALREADY_EXISTS)return 10;
 
     HWND probe=CreateWindowExW(0,wc.lpszClassName,L"probe",WS_POPUP,0,0,64,64,nullptr,nullptr,inst,nullptr);
@@ -62,7 +62,12 @@ int wmain(){
     const UINT outW=UINT(mi.rcMonitor.right-mi.rcMonitor.left),outH=UINT(mi.rcMonitor.bottom-mi.rcMonitor.top);
     const UINT renderW=(outW>=640?640:outW),renderH=(outH>=360?360:outH);
     const LONG_PTR windowed=WS_OVERLAPPEDWINDOW|WS_VISIBLE;
+    // Exact field style observed in PTAR_RC43_RESULTS_20260914_115205.zip:
+    // 0x14CF0000 -> 0x14000000 on the Windowed -> Borderless switch.
+    const LONG_PTR fieldFrameless=WS_VISIBLE|WS_CLIPSIBLINGS;
     const LONG initialX=mi.rcMonitor.left+47,initialY=mi.rcMonitor.top+39,initialW=533,initialH=401;
+
+    if((ULONG_PTR)fieldFrameless!=0x14000000ull){std::printf("RC44_FIELD_STYLE_CONSTANT_MISMATCH=0x%llx\n",(unsigned long long)fieldFrameless);return 9;}
 
     HWND game=CreateWindowExW(0,wc.lpszClassName,L"game",windowed,initialX,initialY,initialW,initialH,nullptr,nullptr,inst,nullptr);
     HWND presenter=CreateWindowExW(WS_EX_TOOLWINDOW,wc.lpszClassName,L"presenter",WS_POPUP|WS_VISIBLE,mi.rcMonitor.left,mi.rcMonitor.top,outW,outH,game,nullptr,inst,nullptr);
@@ -80,15 +85,15 @@ int wmain(){
     LONG_PTR gs=GetWindowLongPtrW(game,GWL_STYLE);
     if((gs&WS_CAPTION)==0 || (gs&WS_THICKFRAME)==0)return fail(20,"windowed-style-lost",query,game,presenter);
 
-    request_style(game,WS_POPUP|WS_VISIBLE);
-    if(!wait_mode(query,true))return fail(21,"windowed-to-borderless",query,game,presenter);
+    request_style(game,fieldFrameless);
+    if(!wait_mode(query,true))return fail(21,"windowed-to-field-frameless-borderless",query,game,presenter);
     Sleep(20);
-    if(!client_is(game,renderW,renderH)||!client_is(presenter,outW,outH)||!IsWindowVisible(presenter))return fail(22,"borderless-geometry",query,game,presenter);
+    if(!client_is(game,renderW,renderH)||!client_is(presenter,outW,outH)||!IsWindowVisible(presenter))return fail(22,"field-borderless-geometry",query,game,presenter);
     RECT gr{};GetWindowRect(game,&gr);
-    if(gr.left!=mi.rcMonitor.left||gr.top!=mi.rcMonitor.top)return fail(23,"borderless-origin",query,game,presenter);
+    if(gr.left!=mi.rcMonitor.left||gr.top!=mi.rcMonitor.top)return fail(23,"field-borderless-origin",query,game,presenter);
 
     request_style(game,windowed);
-    if(!wait_mode(query,false))return fail(24,"borderless-to-windowed",query,game,presenter);
+    if(!wait_mode(query,false))return fail(24,"field-borderless-to-windowed",query,game,presenter);
     const LONG wx=mi.rcMonitor.left+73,wy=mi.rcMonitor.top+61,ww=517,wh=389;
     SetWindowPos(game,nullptr,wx,wy,ww,wh,SWP_NOZORDER|SWP_FRAMECHANGED|SWP_SHOWWINDOW);
     Sleep(20);
@@ -97,11 +102,17 @@ int wmain(){
     gs=GetWindowLongPtrW(game,GWL_STYLE);
     if((gs&WS_CAPTION)==0 || (gs&WS_THICKFRAME)==0)return fail(27,"windowed-style-not-restored",query,game,presenter);
 
+    // Retain compatibility with the previously-tested WS_POPUP borderless style too.
+    request_style(game,WS_POPUP|WS_VISIBLE);
+    if(!wait_mode(query,true))return fail(28,"popup-borderless-compat",query,game,presenter);
+    request_style(game,windowed);
+    if(!wait_mode(query,false))return fail(29,"popup-to-windowed-compat",query,game,presenter);
+
     constexpr unsigned kCycles=500;
     for(unsigned i=0;i<kCycles;++i){
-        request_style(game,WS_POPUP|WS_VISIBLE);
-        if(!wait_mode(query,true,1000))return fail(30,"stress-enter-borderless",query,game,presenter);
-        if(!client_is(game,renderW,renderH)||!client_is(presenter,outW,outH)||!IsWindowVisible(presenter))return fail(31,"stress-borderless-geometry",query,game,presenter);
+        request_style(game,fieldFrameless);
+        if(!wait_mode(query,true,1000))return fail(30,"stress-enter-field-borderless",query,game,presenter);
+        if(!client_is(game,renderW,renderH)||!client_is(presenter,outW,outH)||!IsWindowVisible(presenter))return fail(31,"stress-field-borderless-geometry",query,game,presenter);
         request_style(game,windowed);
         if(!wait_mode(query,false,1000))return fail(32,"stress-enter-windowed",query,game,presenter);
         LONG x=mi.rcMonitor.left+LONG(20+(i%37)),y=mi.rcMonitor.top+LONG(30+(i%29));
@@ -110,9 +121,9 @@ int wmain(){
     }
 
     ModeState final{};if(!query_state(query,final))return fail(40,"final-query",query,game,presenter);
-    if(final.transitionsToWindowed<kCycles+1ull||final.transitionsToBorderless<kCycles+1ull)return fail(41,"transition-counters",query,game,presenter);
+    if(final.transitionsToWindowed<kCycles+2ull||final.transitionsToBorderless<kCycles+2ull)return fail(41,"transition-counters",query,game,presenter);
 
-    std::printf("RC43_COEXIST_HOST=PASS output=%ux%u render=%ux%u cycles=%u to_windowed=%llu to_borderless=%llu initial_windowed=PASS windowed_native_geometry=PASS borderless_restore=PASS\n",
+    std::printf("RC44_COEXIST_HOST=PASS output=%ux%u render=%ux%u cycles=%u exact_field_style=0x14000000 popup_compat=PASS to_windowed=%llu to_borderless=%llu initial_windowed=PASS windowed_native_geometry=PASS borderless_restore=PASS\n",
                 outW,outH,renderW,renderH,kCycles,final.transitionsToWindowed,final.transitionsToBorderless);
     DestroyWindow(presenter);DestroyWindow(game);FreeLibrary(dll);UnregisterClassW(wc.lpszClassName,inst);
     return 0;
