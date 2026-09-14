@@ -1,0 +1,109 @@
+name: RC52 Raster State Quarantine Lab
+
+on:
+  push:
+    branches:
+      - lab/rc52-raster-state-quarantine-20260914
+    paths:
+      - 'lab/raster/rc52/**'
+      - '.github/workflows/rc52-raster-state-quarantine.yml'
+  workflow_dispatch:
+
+jobs:
+  windows-raster-race:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Generate RC52 context hooks
+        shell: cmd
+        run: |
+          python lab\raster\rc52\build_rc52_context_hooks.py lab\raster\rc52\ptar_rc41_context_hooks_rc52.cpp || exit /b 10
+          findstr /C:"requestedViewportCount_=0;haveViewportState_=false" lab\raster\rc52\ptar_rc41_context_hooks_rc52.cpp >nul || exit /b 11
+          findstr /C:"requestedScissorCount_=0;haveScissorState_=false" lab\raster\rc52\ptar_rc41_context_hooks_rc52.cpp >nul || exit /b 12
+
+      - name: Build legacy reproducer and fixed race host
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 20
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\raster\rc41
+          mkdir lab\raster\rc52\legacy 2>nul
+          mkdir lab\raster\rc52\fixed 2>nul
+          cl %CFLAGS% lab\raster\rc52\ptar_rc52_raster_state_host.cpp lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc41\ptar_rc41_context_hooks.cpp /Fo:lab\raster\rc52\legacy\ /Fe:lab\raster\rc52\legacy\legacy.exe d3d11.lib user32.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 21
+          cl %CFLAGS% lab\raster\rc52\ptar_rc52_raster_state_host.cpp lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc52\ptar_rc41_context_hooks_rc52.cpp /Fo:lab\raster\rc52\fixed\ /Fe:lab\raster\rc52\fixed\fixed.exe d3d11.lib user32.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 22
+
+      - name: Prove legacy double-map and RC52 correction
+        shell: cmd
+        run: |
+          pushd lab\raster\rc52\legacy
+          legacy.exe
+          set LEGACY_RC=%ERRORLEVEL%
+          type RC52_RASTER_STATE_HOST.txt
+          if "%LEGACY_RC%"=="0" exit /b 30
+          findstr /C:"STARTUP_UNBOUND_PHYSICAL=FAIL actual_vp=853.333x480.000" RC52_RASTER_STATE_HOST.txt >nul || exit /b 31
+          findstr /C:"LIVE_UNBOUND_PHYSICAL=FAIL actual_vp=853.333x480.000" RC52_RASTER_STATE_HOST.txt >nul || exit /b 32
+          popd
+          pushd lab\raster\rc52\fixed
+          fixed.exe || exit /b 33
+          type RC52_RASTER_STATE_HOST.txt
+          findstr /C:"STARTUP_UNBOUND_PHYSICAL=PASS actual_vp=1280.000x720.000" RC52_RASTER_STATE_HOST.txt >nul || exit /b 34
+          findstr /C:"LIVE_UNBOUND_PHYSICAL=PASS actual_vp=1280.000x720.000" RC52_RASTER_STATE_HOST.txt >nul || exit /b 35
+          findstr /C:"LIVE_UNBOUND_LOGICAL=PASS actual_vp=1280.000x720.000" RC52_RASTER_STATE_HOST.txt >nul || exit /b 36
+          findstr /C:"REBIND_AFTER_PHYSICAL=PASS actual_vp=1280.000x720.000" RC52_RASTER_STATE_HOST.txt >nul || exit /b 37
+          findstr /C:"RC52_RASTER_STATE_HOST=PASS failures=0" RC52_RASTER_STATE_HOST.txt >nul || exit /b 38
+          popd
+
+      - name: Build production RC52 raster sidecar
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 40
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\raster\rc41
+          cl %CFLAGS% /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc52\ptar_rc41_context_hooks_rc52.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fo:lab\raster\rc52\fixed\ /Fe:lab\raster\rc52\fixed\ptar_rc41.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 41
+          certutil -hashfile lab\raster\rc52\fixed\ptar_rc41.dll SHA256
+
+      - name: Run inherited RC41 production host against RC52 raster
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 50
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\raster\rc41
+          cl %CFLAGS% lab\raster\rc41\ptar_rc41_prod_host.cpp /Fo:lab\raster\rc52\fixed\prod_host.obj /Fe:lab\raster\rc52\fixed\prod_host.exe d3d11.lib dxgi.lib user32.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 51
+          pushd lab\raster\rc52\fixed
+          prod_host.exe || exit /b 52
+          type RC41_PROD_HOST_RESULT.txt
+          findstr /C:"RC41_PROD_HOST=PASS" RC41_PROD_HOST_RESULT.txt >nul || exit /b 53
+          popd
+
+      - name: Stress deterministic exact raster policy
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $fixed='lab/raster/rc52/fixed/fixed.exe'
+          1..64 | ForEach-Object {
+            Push-Location 'lab/raster/rc52/fixed'
+            try {
+              & .\fixed.exe
+              if($LASTEXITCODE -ne 0){ throw "RC52 race stress failed iteration $_ rc=$LASTEXITCODE" }
+            } finally { Pop-Location }
+          }
+          $sha=(Get-FileHash 'lab/raster/rc52/fixed/ptar_rc41.dll' -Algorithm SHA256).Hash.ToLowerInvariant()
+          "RC52_RASTER_STATE_QUARANTINE=PASS`nLEGACY_DOUBLE_MAP_REPRODUCED=853.333x480`nFIXED_PHYSICAL=1280x720`nSTRESS_CYCLES=64 PASS`nRC41_PROD_HOST=PASS`nRC52_RASTER_SHA256=$sha" | Set-Content 'lab/raster/rc52/RC52_RASTER_STATE_QUARANTINE_SUMMARY.txt' -Encoding ASCII
+          Get-Content 'lab/raster/rc52/RC52_RASTER_STATE_QUARANTINE_SUMMARY.txt'
+
+      - name: Upload RC52 raster evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PTAR_RC52_RASTER_STATE_QUARANTINE
+          path: |
+            lab/raster/rc52/RC52_RASTER_STATE_QUARANTINE_SUMMARY.txt
+            lab/raster/rc52/legacy/RC52_RASTER_STATE_HOST.txt
+            lab/raster/rc52/fixed/RC52_RASTER_STATE_HOST.txt
+            lab/raster/rc52/fixed/RC41_PROD_HOST_RESULT.txt
+            lab/raster/rc52/fixed/ptar_rc41.dll
+            lab/raster/rc52/ptar_rc41_context_hooks_rc52.cpp
+          retention-days: 14
