@@ -37,6 +37,8 @@ static volatile LONG64 g_rc48Repairs=0;
 static volatile LONG64 g_rc48WindowedSetPos=0;
 static volatile LONG64 g_rc48BorderlessGeometryRepair=0;
 static volatile LONG64 g_rc48WindowedGeometryRepair=0;
+static volatile LONG g_rc48PresenterWrapped=0;
+static WNDPROC g_rc48PresenterNext=nullptr;
 
 static void rc48_capture_original() noexcept {
     if(InterlockedCompareExchange(&g_rc48HaveOriginal,0,0) || !IsWindow(g_presenter)) return;
@@ -213,10 +215,50 @@ static BOOL WINAPI RC48_ShowWindow(HWND h,int cmd){
     return ShowWindow(h,cmd);
 }
 
+// RC46's presenter guard was correct for a top-level popup: its WM_WINDOWPOSCHANGING
+// clamp writes screen coordinates. Once RC48 converts that same HWND into WS_CHILD,
+// those values become parent-client coordinates and are effectively added twice
+// (the exact 2x offset reproduced by the integration lab). RC48 sits above RC46
+// only on the presenter WndProc and translates that one contract to child space.
+static LRESULT CALLBACK RC48PresenterProc(HWND h,UINT m,WPARAM w,LPARAM l){
+    LRESULT r=g_rc48PresenterNext?call_next(g_rc48PresenterNext,h,m,w,l):DefWindowProcW(h,m,w,l);
+    if(h==g_presenter && m==WM_WINDOWPOSCHANGING && l && rc48_windowed_mode() && IsWindow(g_game)){
+        WINDOWPOS* p=reinterpret_cast<WINDOWPOS*>(l);
+        RECT c{};
+        if(GetClientRect(g_game,&c)){
+            p->x=0;
+            p->y=0;
+            p->cx=c.right-c.left;
+            p->cy=c.bottom-c.top;
+            p->flags&=~(SWP_NOMOVE|SWP_NOSIZE);
+        }
+    }
+    return r;
+}
+
+static bool rc48_ensure_presenter_wrapper() noexcept {
+    if(!IsWindow(g_presenter) || !InterlockedCompareExchange(&g_rc45Installed,0,0)) return false;
+    const LONG_PTR cur=get_wndproc(g_presenter);
+    if(cur==(LONG_PTR)RC48PresenterProc){
+        InterlockedExchange(&g_rc48PresenterWrapped,1);
+        return true;
+    }
+    if(!cur) return false;
+    g_rc48PresenterNext=reinterpret_cast<WNDPROC>(cur);
+    if(!set_wndproc(g_presenter,RC48PresenterProc)){
+        g_rc48PresenterNext=nullptr;
+        return false;
+    }
+    InterlockedExchange(&g_rc48PresenterWrapped,1);
+    logfmt("RC48_PRESENTER_COORDINATE_WRAPPER_INSTALLED",cur,(LONG_PTR)RC48PresenterProc,0,0);
+    return true;
+}
+
 static DWORD WINAPI RC48InvariantWorker(LPVOID){
     LONG last=-1;
     while(!InterlockedCompareExchange(&g_rc48Stop,0,0)){
         if(!InterlockedCompareExchange(&g_rc45Installed,0,0) || !IsWindow(g_game) || !IsWindow(g_presenter)){Sleep(10);continue;}
+        rc48_ensure_presenter_wrapper();
         const LONG mode=InterlockedCompareExchange(&g_rc45Borderless,0,0);
         const LONG_PTR s=GetWindowLongPtrW(g_presenter,GWL_STYLE);
         if(mode==0){
@@ -246,7 +288,11 @@ BOOL WINAPI DllMain(HINSTANCE h,DWORD reason,LPVOID reserved){
     }
     if(reason==DLL_PROCESS_DETACH){
         InterlockedExchange(&g_rc48Stop,1);
-        if(IsWindow(g_presenter)) rc48_restore_top_level(false,true);
+        if(IsWindow(g_presenter)){
+            if(InterlockedCompareExchange(&g_rc48PresenterWrapped,0,0) && g_rc48PresenterNext && get_wndproc(g_presenter)==(LONG_PTR)RC48PresenterProc)
+                set_wndproc(g_presenter,g_rc48PresenterNext);
+            rc48_restore_top_level(false,true);
+        }
         return DllMain_RC46_INTERNAL(h,reason,reserved);
     }
     return DllMain_RC46_INTERNAL(h,reason,reserved);
