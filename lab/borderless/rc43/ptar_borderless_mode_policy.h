@@ -13,12 +13,15 @@ enum class RequestedWindowMode : unsigned {
 
 inline RequestedWindowMode classify_style(LONG_PTR style) noexcept {
     const bool child=(style&WS_CHILD)!=0;
-    const bool popup=(style&WS_POPUP)!=0;
     const bool caption=(style&WS_CAPTION)!=0;
     const bool thick=(style&WS_THICKFRAME)!=0;
-    if(!child && (caption||thick)) return RequestedWindowMode::Windowed;
-    if(!child && popup && !caption && !thick) return RequestedWindowMode::Borderless;
-    return RequestedWindowMode::Ambiguous;
+    if(child) return RequestedWindowMode::Ambiguous;
+    if(caption||thick) return RequestedWindowMode::Windowed;
+    // Field finding on Warhammer 40,000: Inquisitor - Martyr:
+    // borderless transition is 0x14CF0000 -> 0x14000000, i.e. a top-level
+    // frameless window without WS_POPUP. Treat any non-child frameless style
+    // as borderless so the validated RC40/RC43 authority is re-enabled.
+    return RequestedWindowMode::Borderless;
 }
 
 inline bool is_windowed_request(LONG_PTR style) noexcept {
