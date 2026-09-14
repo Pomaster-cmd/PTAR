@@ -35,6 +35,7 @@ static volatile LONG64 g_rc48ChildAttach=0;
 static volatile LONG64 g_rc48TopRestore=0;
 static volatile LONG64 g_rc48Repairs=0;
 static volatile LONG64 g_rc48WindowedSetPos=0;
+static volatile LONG64 g_rc48BorderlessGeometryRepair=0;
 
 static void rc48_capture_original() noexcept {
     if(InterlockedCompareExchange(&g_rc48HaveOriginal,0,0) || !IsWindow(g_presenter)) return;
@@ -96,8 +97,7 @@ static bool rc48_restore_top_level(bool countRepair,bool force=false) noexcept {
     bool changed=false;
     // GetParent() returns the owner for a top-level WS_POPUP. Therefore owner==game
     // is NOT evidence that the presenter is still a child. WS_CHILD is the only
-    // discriminator used here; otherwise the borderless worker would repeatedly
-    // detach a perfectly valid owned popup and collapse its geometry.
+    // discriminator used here.
     if(cur&WS_CHILD){
         SetLastError(ERROR_SUCCESS);
         SetParent(g_presenter,nullptr);
@@ -115,6 +115,31 @@ static bool rc48_restore_top_level(bool countRepair,bool force=false) noexcept {
         SetWindowLongPtrW(g_presenter,GWLP_HWNDPARENT,reinterpret_cast<LONG_PTR>(g_rc48OriginalOwner));
     }
     InterlockedExchange(&g_rc48IsChild,0);
+
+    // Re-establish the already field-validated borderless presenter contract right
+    // here, after child->top-level conversion. SetParent preserves the old child
+    // rectangle; relying on a later SetWindowPos created a transient/sticky small
+    // presenter in stress. The top-level transition therefore owns its full native
+    // geometry atomically before returning to inherited RC46 enforcement.
+    if(!force && !rc48_windowed_mode()){
+        LONG_PTR ex=GetWindowLongPtrW(g_presenter,GWL_EXSTYLE);
+        const LONG_PTR desiredEx=(ex | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW) &
+                                 ~(LONG_PTR)(WS_EX_TRANSPARENT|WS_EX_TOPMOST|WS_EX_APPWINDOW);
+        if(ex!=desiredEx){SetWindowLongPtrW(g_presenter,GWL_EXSTYLE,desiredEx);changed=true;}
+        SetLastError(ERROR_SUCCESS);
+        const BOOL ok=SetWindowPos(g_presenter,HWND_NOTOPMOST,g_rc45Monitor.left,g_rc45Monitor.top,
+                                   (int)g_outputW,(int)g_outputH,
+                                   SWP_NOACTIVATE|SWP_FRAMECHANGED|SWP_SHOWWINDOW);
+        RECT actual{};GetWindowRect(g_presenter,&actual);
+        if(!ok || actual.left!=g_rc45Monitor.left || actual.top!=g_rc45Monitor.top ||
+           actual.right-actual.left!=(LONG)g_outputW || actual.bottom-actual.top!=(LONG)g_outputH){
+            logfmt("FAIL RC48 borderless geometry restore",actual.left,actual.top,actual.right,actual.bottom);
+            return false;
+        }
+        InterlockedIncrement64(&g_rc48BorderlessGeometryRepair);
+        logfmt("RC48_BORDERLESS_GEOMETRY_RESTORED",actual.left,actual.top,actual.right,actual.bottom);
+    }
+
     if(changed){
         InterlockedIncrement64(&g_rc48TopRestore);
         if(countRepair) InterlockedIncrement64(&g_rc48Repairs);
@@ -174,7 +199,10 @@ static DWORD WINAPI RC48InvariantWorker(LPVOID){
         if(mode==0){
             if(last!=0 || !(s&WS_CHILD) || (s&WS_POPUP) || GetParent(g_presenter)!=g_game) rc48_make_child(last==0);
         } else {
-            if(last!=1 || (s&WS_CHILD)) rc48_restore_top_level(last==1);
+            RECT r{};GetWindowRect(g_presenter,&r);
+            const bool geometryBad=r.left!=g_rc45Monitor.left||r.top!=g_rc45Monitor.top||
+                                   r.right-r.left!=(LONG)g_outputW||r.bottom-r.top!=(LONG)g_outputH;
+            if(last!=1 || (s&WS_CHILD) || geometryBad) rc48_restore_top_level(last==1);
         }
         last=InterlockedCompareExchange(&g_rc45Borderless,0,0);
         Sleep(25);
