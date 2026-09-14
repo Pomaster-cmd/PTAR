@@ -8,6 +8,7 @@ on:
       - lab/raster/rc41/ptar_rc41_contract.h
       - lab/raster/rc41/ptar_rc41_target_classifier.*
       - lab/raster/rc41/ptar_rc41_context_hooks.*
+      - lab/raster/rc41/ptar_rc41_resource_*
       - lab/raster/rc41/ptar_rc41_swapchain_policy.*
       - lab/raster/rc41/ptar_rc41_swapchain_hooks.*
       - lab/raster/rc41/ptar_rc41_prod.cpp
@@ -31,7 +32,7 @@ jobs:
           if errorlevel 1 exit /b 1
           if not exist lab\raster\rc41\prod_out mkdir lab\raster\rc41\prod_out
           set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\raster\rc41
-          cl %CFLAGS% /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc41\ptar_rc41_context_hooks.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fe:lab\raster\rc41\prod_out\ptar_rc41.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03
+          cl %CFLAGS% /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc41\ptar_rc41_context_hooks.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fe:lab\raster\rc41\prod_out\ptar_rc41.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03
           if errorlevel 1 exit /b 11
           copy /y lab\raster\rc41\prod_out\ptar_rc41.dll lab\raster\rc41\prod_out\ptar_rc41_first.dll >nul
           cl %CFLAGS% lab\raster\rc41\ptar_rc41_prod_host.cpp /Fe:lab\raster\rc41\prod_out\prod_host.exe user32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:CONSOLE,6.03
@@ -51,7 +52,7 @@ jobs:
           call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
           if errorlevel 1 exit /b 1
           set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\raster\rc41
-          cl %CFLAGS% /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc41\ptar_rc41_context_hooks.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fe:lab\raster\rc41\prod_out\ptar_rc41.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03
+          cl %CFLAGS% /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc41\ptar_rc41_context_hooks.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fe:lab\raster\rc41\prod_out\ptar_rc41.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03
           if errorlevel 1 exit /b 31
           fc /b lab\raster\rc41\prod_out\ptar_rc41_first.dll lab\raster\rc41\prod_out\ptar_rc41.dll >nul
           if errorlevel 1 exit /b 32
