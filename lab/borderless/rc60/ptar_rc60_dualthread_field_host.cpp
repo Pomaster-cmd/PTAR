@@ -1,0 +1,67 @@
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#include <d3d11.h>
+#include <dxgi.h>
+#include <cstdio>
+#include <cwchar>
+
+static const wchar_t* kOptions=L"Software\\NeoCore Games\\Warhammer Martyr\\Options";
+static HBRUSH g_brush=nullptr;static HWND g_game=nullptr;static HANDLE g_start=nullptr;static volatile LONG g_stop=0;static volatile LONG64 g_frames=0;static volatile LONG g_renderRc=-999;
+struct RegBackup{bool existed=false;DWORD value=0;};
+struct Geometry{UINT cw=0,ch=0;LONG_PTR style=0,exstyle=0;RECT outer{};};
+struct BridgeState{UINT size,installed,desiredPref,usrActive,uiReady,pending,renderW,renderH,presenterNative;unsigned long long prefChanges,togglePosts,toggleRetries,postFailures,routeMatches,uiTimeouts;};
+using QueryFn=int (WINAPI*)(BridgeState*);
+template<class T>static void rel(T*&p){if(p){p->Release();p=nullptr;}}
+
+static LRESULT CALLBACK Proc(HWND h,UINT m,WPARAM w,LPARAM l){
+    if(m==WM_GETMINMAXINFO&&l){MINMAXINFO* mm=(MINMAXINFO*)l;mm->ptMaxTrackSize.x=4096;mm->ptMaxTrackSize.y=2160;}
+    if(m==WM_ERASEBKGND){RECT r{};GetClientRect(h,&r);FillRect((HDC)w,&r,g_brush);return 1;}
+    if(m==WM_CLOSE){InterlockedExchange(&g_stop,1);DestroyWindow(h);return 0;}return DefWindowProcW(h,m,w,l);
+}
+static void pump_once(){MSG m{};while(PeekMessageW(&m,nullptr,0,0,PM_REMOVE)){TranslateMessage(&m);DispatchMessageW(&m);}}
+static void pump_ms(DWORD ms){DWORD st=GetTickCount();do{pump_once();Sleep(1);}while(GetTickCount()-st<ms&&!InterlockedCompareExchange(&g_stop,0,0));}
+static void backup(RegBackup&b){HKEY k=nullptr;if(RegOpenKeyExW(HKEY_CURRENT_USER,kOptions,0,KEY_QUERY_VALUE,&k)!=ERROR_SUCCESS)return;DWORD t=0,s=sizeof(b.value);if(RegQueryValueExW(k,L"WindowStyle",nullptr,&t,(BYTE*)&b.value,&s)==ERROR_SUCCESS&&t==REG_DWORD&&s==sizeof(b.value))b.existed=true;RegCloseKey(k);}
+static bool set_pref(DWORD v){HKEY k=nullptr;DWORD d=0;if(RegCreateKeyExW(HKEY_CURRENT_USER,kOptions,0,nullptr,0,KEY_SET_VALUE,nullptr,&k,&d)!=ERROR_SUCCESS)return false;LONG r=RegSetValueExW(k,L"WindowStyle",0,REG_DWORD,(BYTE*)&v,sizeof(v));RegCloseKey(k);return r==ERROR_SUCCESS;}
+static void restore_pref(const RegBackup&b){HKEY k=nullptr;DWORD d=0;if(RegCreateKeyExW(HKEY_CURRENT_USER,kOptions,0,nullptr,0,KEY_SET_VALUE,nullptr,&k,&d)!=ERROR_SUCCESS)return;if(b.existed)RegSetValueExW(k,L"WindowStyle",0,REG_DWORD,(const BYTE*)&b.value,sizeof(b.value));else RegDeleteValueW(k,L"WindowStyle");RegCloseKey(k);}
+static bool geom(HWND h,Geometry&g){RECT c{};if(!IsWindow(h)||!GetClientRect(h,&c)||!GetWindowRect(h,&g.outer))return false;g.cw=(UINT)(c.right-c.left);g.ch=(UINT)(c.bottom-c.top);g.style=GetWindowLongPtrW(h,GWL_STYLE);g.exstyle=GetWindowLongPtrW(h,GWL_EXSTYLE);return g.cw&&g.ch;}
+static bool apply_mode_ui(bool borderless){
+    if(!IsWindow(g_game))return false;const LONG_PTR ex=GetWindowLongPtrW(g_game,GWL_EXSTYLE);
+    if(borderless){const LONG_PTR s=(LONG_PTR)(WS_POPUP|WS_VISIBLE|WS_CLIPSIBLINGS);SetLastError(ERROR_SUCCESS);SetWindowLongPtrW(g_game,GWL_STYLE,s);if(GetLastError()!=ERROR_SUCCESS)return false;return SetWindowPos(g_game,nullptr,0,0,1280,720,SWP_NOZORDER|SWP_NOACTIVATE|SWP_FRAMECHANGED|SWP_SHOWWINDOW)!=FALSE;}
+    const LONG_PTR s=(LONG_PTR)(WS_OVERLAPPEDWINDOW|WS_VISIBLE|WS_CLIPSIBLINGS);RECT wr{0,0,1280,720};if(!AdjustWindowRectEx(&wr,(DWORD)(ULONG_PTR)s,FALSE,(DWORD)(ULONG_PTR)ex))return false;const int ow=wr.right-wr.left,oh=wr.bottom-wr.top;SetLastError(ERROR_SUCCESS);SetWindowLongPtrW(g_game,GWL_STYLE,s);if(GetLastError()!=ERROR_SUCCESS)return false;return SetWindowPos(g_game,nullptr,312,160,ow,oh,SWP_NOZORDER|SWP_NOACTIVATE|SWP_FRAMECHANGED|SWP_SHOWWINDOW)!=FALSE;
+}
+static HWND presenter(){return FindWindowW(L"Win81USRPresenterV041",nullptr);}
+static bool presenter_native(){HWND p=presenter();if(!p)return false;RECT c{};return GetClientRect(p,&c)&&c.right-c.left==1920&&c.bottom-c.top==1080;}
+static QueryFn wait_query(DWORD timeout=20000){DWORD st=GetTickCount();do{HMODULE m=GetModuleHandleW(L"ptar_borderless.dll");if(m){auto q=(QueryFn)GetProcAddress(m,"PTAR_RC60_QueryBridge");if(q)return q;}pump_once();Sleep(5);}while(GetTickCount()-st<timeout);return nullptr;}
+static bool query(QueryFn q,BridgeState&s){s={};s.size=sizeof(s);return q&&q(&s)==0;}
+static bool wait_route(QueryFn q,bool usr,DWORD timeout=7000){DWORD st=GetTickCount();BridgeState s{};do{pump_once();if(query(q,s)&&s.installed&&s.usrActive==(usr?1u:0u)&&s.pending==0)return true;Sleep(2);}while(GetTickCount()-st<timeout);return false;}
+
+static DWORD WINAPI RenderThread(LPVOID){
+    WaitForSingleObject(g_start,INFINITE);DXGI_SWAP_CHAIN_DESC sd{};sd.BufferDesc.Width=1280;sd.BufferDesc.Height=720;sd.BufferDesc.Format=DXGI_FORMAT_R8G8B8A8_UNORM;sd.BufferDesc.RefreshRate.Numerator=60;sd.BufferDesc.RefreshRate.Denominator=1;sd.SampleDesc.Count=1;sd.BufferUsage=DXGI_USAGE_RENDER_TARGET_OUTPUT;sd.BufferCount=2;sd.OutputWindow=g_game;sd.Windowed=TRUE;sd.SwapEffect=DXGI_SWAP_EFFECT_DISCARD;
+    ID3D11Device*dev=nullptr;ID3D11DeviceContext*ctx=nullptr;IDXGISwapChain*swap=nullptr;D3D_FEATURE_LEVEL fl{};HRESULT hr=D3D11CreateDeviceAndSwapChain(nullptr,D3D_DRIVER_TYPE_WARP,nullptr,0,nullptr,0,D3D11_SDK_VERSION,&sd,&swap,&dev,&fl,&ctx);if(FAILED(hr)){InterlockedExchange(&g_renderRc,10);return 10;}
+    ID3D11Texture2D*bb=nullptr;ID3D11RenderTargetView*rtv=nullptr;if(FAILED(swap->GetBuffer(0,__uuidof(ID3D11Texture2D),(void**)&bb))||FAILED(dev->CreateRenderTargetView(bb,nullptr,&rtv))){rel(bb);rel(swap);rel(ctx);rel(dev);InterlockedExchange(&g_renderRc,11);return 11;}rel(bb);const float c[4]={0.18f,0.37f,0.71f,1.0f};
+    while(!InterlockedCompareExchange(&g_stop,0,0)){ctx->OMSetRenderTargets(1,&rtv,nullptr);ctx->ClearRenderTargetView(rtv,c);hr=swap->Present(1,0);if(FAILED(hr)){InterlockedExchange(&g_renderRc,12);break;}InterlockedIncrement64(&g_frames);Sleep(1);}rel(rtv);rel(swap);rel(ctx);rel(dev);if(InterlockedCompareExchange(&g_renderRc,0,0)==-999)InterlockedExchange(&g_renderRc,0);return 0;
+}
+
+int WINAPI wWinMain(HINSTANCE inst,HINSTANCE,LPWSTR cmd,int){
+    const bool initialBorderless=wcsstr(cmd,L"--borderless")!=nullptr;const bool hostileMode2=wcsstr(cmd,L"--policy2")!=nullptr;const unsigned cycles=wcsstr(cmd,L"--short")?20u:500u;
+    FILE*ev=nullptr;_wfopen_s(&ev,L"RC60_DUALTHREAD_FIELD_REPLAY.txt",L"wb");if(!ev)return 90;RegBackup rb{};backup(rb);if(!set_pref(initialBorderless?1u:0u)){fclose(ev);return 91;}g_brush=CreateSolidBrush(RGB(24,24,24));WNDCLASSW wc{};wc.lpfnWndProc=Proc;wc.hInstance=inst;wc.hbrBackground=g_brush;wc.lpszClassName=L"PTAR_RC60_FIELD_GAME";RegisterClassW(&wc);
+    DWORD style=initialBorderless?(WS_POPUP|WS_VISIBLE|WS_CLIPSIBLINGS):(WS_OVERLAPPEDWINDOW|WS_VISIBLE|WS_CLIPSIBLINGS);RECT wr{0,0,1280,720};if(!initialBorderless)AdjustWindowRectEx(&wr,style,FALSE,0);g_game=CreateWindowExW(0,wc.lpszClassName,L"Warhammer: Inquisitor - Martyr",style,initialBorderless?0:312,initialBorderless?0:160,wr.right-wr.left,wr.bottom-wr.top,nullptr,nullptr,inst,nullptr);if(!g_game){restore_pref(rb);fclose(ev);return 92;}ShowWindow(g_game,SW_SHOW);UpdateWindow(g_game);g_start=CreateEventW(nullptr,TRUE,FALSE,nullptr);HANDLE rt=CreateThread(nullptr,0,RenderThread,nullptr,0,nullptr);if(!rt){restore_pref(rb);fclose(ev);return 93;}SetEvent(g_start);
+    // Faithful field condition missing from prior RC58/59 hosts: the game UI thread is unavailable
+    // while the render thread keeps presenting. Do not pump this thread for 15 seconds.
+    Sleep(15000);
+    const LONG64 stalledFrames=InterlockedCompareExchange64(&g_frames,0,0);HMODULE runtime=GetModuleHandleW(L"d3d11.dll");unsigned policyBefore=0xff,policyAfter=0xff;if(runtime){BYTE* b=(BYTE*)runtime;policyBefore=*(volatile BYTE*)(b+0x034FFA68u);if(hostileMode2){*(volatile BYTE*)(b+0x034FFA68u)=2;MemoryBarrier();}policyAfter=*(volatile BYTE*)(b+0x034FFA68u);}
+    fwprintf(ev,L"UI_STALL_15S_DONE frames=%lld policyBefore=%u policyAfter=%u initial=%s\n",stalledFrames,policyBefore,policyAfter,initialBorderless?L"BORDERLESS":L"WINDOWED");fflush(ev);
+    if(stalledFrames<10){InterlockedExchange(&g_stop,1);WaitForSingleObject(rt,5000);restore_pref(rb);fclose(ev);return 94;}
+    QueryFn q=wait_query();if(!q){InterlockedExchange(&g_stop,1);WaitForSingleObject(rt,5000);restore_pref(rb);fclose(ev);return 95;}pump_ms(2500);BridgeState bs{};if(!query(q,bs)||!bs.installed){InterlockedExchange(&g_stop,1);WaitForSingleObject(rt,5000);restore_pref(rb);fclose(ev);return 96;}
+    if(initialBorderless){if(bs.togglePosts!=0||bs.usrActive!=1||!presenter_native()){fwprintf(ev,L"INITIAL_BORDERLESS_ZERO_TOUCH=FAIL posts=%llu usr=%u native=%u\n",bs.togglePosts,bs.usrActive,presenter_native()?1:0);InterlockedExchange(&g_stop,1);WaitForSingleObject(rt,5000);restore_pref(rb);fclose(ev);return 97;}const LONG64 f0=InterlockedCompareExchange64(&g_frames,0,0);while(InterlockedCompareExchange64(&g_frames,0,0)-f0<240){pump_once();Sleep(1);}fwprintf(ev,L"INITIAL_BORDERLESS_REACHABILITY=PASS framesAfterResume=240 presenter=1920x1080\n");}
+    else {if(!wait_route(q,false,8000)){fwprintf(ev,L"INITIAL_WINDOWED_ROUTE=FAIL\n");InterlockedExchange(&g_stop,1);WaitForSingleObject(rt,5000);restore_pref(rb);fclose(ev);return 98;}Geometry g{};if(!geom(g_game,g)||g.cw!=1280||g.ch!=720||(g.style&WS_POPUP)){fwprintf(ev,L"INITIAL_WINDOWED_GEOMETRY=FAIL %ux%u style=%llx\n",g.cw,g.ch,(unsigned long long)g.style);InterlockedExchange(&g_stop,1);WaitForSingleObject(rt,5000);restore_pref(rb);fclose(ev);return 99;}const LONG64 f0=InterlockedCompareExchange64(&g_frames,0,0);while(InterlockedCompareExchange64(&g_frames,0,0)-f0<240){pump_once();Sleep(1);}fwprintf(ev,L"INITIAL_WINDOWED_REACHABILITY=PASS framesAfterResume=240 game=1280x720\n");}
+    fflush(ev);
+    for(unsigned i=0;i<cycles;++i){
+        if(!set_pref(0)||!apply_mode_ui(false)||!wait_route(q,false,7000)){fwprintf(ev,L"FAIL cycle=%u to-windowed\n",i);InterlockedExchange(&g_stop,1);WaitForSingleObject(rt,5000);restore_pref(rb);fclose(ev);return 100;}Geometry gw{};if(!geom(g_game,gw)||gw.cw!=1280||gw.ch!=720||(gw.style&WS_POPUP)){fwprintf(ev,L"FAIL cycle=%u windowed geometry=%ux%u style=%llx\n",i,gw.cw,gw.ch,(unsigned long long)gw.style);InterlockedExchange(&g_stop,1);WaitForSingleObject(rt,5000);restore_pref(rb);fclose(ev);return 101;}
+        if(!set_pref(1)||!apply_mode_ui(true)||!wait_route(q,true,7000)||!presenter_native()){fwprintf(ev,L"FAIL cycle=%u to-borderless\n",i);InterlockedExchange(&g_stop,1);WaitForSingleObject(rt,5000);restore_pref(rb);fclose(ev);return 102;}Geometry gb{};if(!geom(g_game,gb)||gb.cw!=1280||gb.ch!=720||(gb.style&WS_POPUP)==0){fwprintf(ev,L"FAIL cycle=%u borderless game geometry=%ux%u style=%llx\n",i,gb.cw,gb.ch,(unsigned long long)gb.style);InterlockedExchange(&g_stop,1);WaitForSingleObject(rt,5000);restore_pref(rb);fclose(ev);return 103;}
+        if((i+1)%25==0){query(q,bs);fwprintf(ev,L"PROGRESS=%u/%u frames=%lld posts=%llu retries=%llu postFailures=%llu uiTimeouts=%llu\n",i+1,cycles,InterlockedCompareExchange64(&g_frames,0,0),bs.togglePosts,bs.toggleRetries,bs.postFailures,bs.uiTimeouts);fflush(ev);}
+    }
+    query(q,bs);fwprintf(ev,L"RC60_DUALTHREAD_FIELD_REPLAY=PASS initial=%s cycles=%u frames=%lld posts=%llu retries=%llu postFailures=%llu uiTimeouts=%llu finalUsr=%u presenterNative=%u\n",initialBorderless?L"BORDERLESS":L"WINDOWED",cycles,InterlockedCompareExchange64(&g_frames,0,0),bs.togglePosts,bs.toggleRetries,bs.postFailures,bs.uiTimeouts,bs.usrActive,bs.presenterNative);fflush(ev);
+    InterlockedExchange(&g_stop,1);WaitForSingleObject(rt,10000);CloseHandle(rt);CloseHandle(g_start);if(g_brush)DeleteObject(g_brush);restore_pref(rb);fclose(ev);return InterlockedCompareExchange(&g_renderRc,0,0)==0?0:110;
+}
