@@ -6,6 +6,8 @@ OUT=Path('lab/borderless/rc59/generated/ptar_borderless_rc59_mode_bridge.cpp')
 s=SRC.read_text(encoding='utf-8')
 # Version/log/export namespace first.
 s=s.replace('RC58','RC59').replace('rc58','rc59')
+# Generated source is one directory deeper than the RC58 source.
+s=s.replace('#include "../../raster/rc41b/ptar_rc41b_bootstrap.h"','#include "../../../raster/rc41b/ptar_rc41b_bootstrap.h"',1)
 
 old_protect="const bool protect=(InterlockedCompareExchange(&g_windowed,0,0)!=0||InterlockedCompareExchange(&g_forceGeometry,0,0)!=0)&&InterlockedCompareExchange(&g_haveSaved,0,0)!=0;"
 new_protect="const bool protect=InterlockedCompareExchange(&g_haveSaved,0,0)!=0;"
@@ -57,11 +59,9 @@ worker=r'''static DWORD WINAPI Worker(LPVOID) noexcept {
 }'''
 s=s[:start]+worker+s[end:]
 
-# Keep a compatibility query export for any RC58 diagnostic host while exposing RC59 canonically.
 needle='extern "C" __declspec(dllexport) int WINAPI PTAR_RC59_QueryBridge(PTARRC59BridgeState* s)'
-idx=s.find(needle)
-if idx<0: raise RuntimeError('query export missing after versioning')
-# no compatibility alias needed in field package; exact RC59 symbol is the contract.
+if needle not in s:
+    raise RuntimeError('query export missing after versioning')
 
 OUT.parent.mkdir(parents=True,exist_ok=True)
 OUT.write_text(s,encoding='utf-8',newline='\n')
