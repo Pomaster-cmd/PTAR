@@ -27,7 +27,7 @@ jobs:
           $ini=Get-Content payload/win81_nis.ini -Raw;$ini=[regex]::Replace($ini,'(?m)^OutputWidth=.*$','OutputWidth=1920');$ini=[regex]::Replace($ini,'(?m)^OutputHeight=.*$','OutputHeight=1080');$ini=[regex]::Replace($ini,'(?m)^RenderWidth=.*$','RenderWidth=1280');$ini=[regex]::Replace($ini,'(?m)^RenderHeight=.*$','RenderHeight=720');Set-Content "$o/win81_nis.ini" $ini -Encoding ASCII
           python lab/raster/rc52/build_rc52_context_hooks.py lab/raster/rc58_smoke_rc52.cpp;if($LASTEXITCODE-ne0){throw 'rc52'}
           python lab/raster/rc55/build_rc55_context_hooks.py lab/raster/rc58_smoke_rc52.cpp lab/raster/rc58_smoke_rc55.cpp;if($LASTEXITCODE-ne0){throw 'rc55'}
-          $host=Get-Content lab/borderless/rc58/ptar_rc58_mode_bridge_host.cpp -Raw;$host=$host.Replace('constexpr unsigned cycles=500;','constexpr unsigned cycles=20;');Set-Content lab/borderless/rc58/ptar_rc58_mode_bridge_host_smoke.cpp $host -Encoding UTF8
+          $hostSrc=Get-Content lab/borderless/rc58/ptar_rc58_mode_bridge_host.cpp -Raw;$hostSrc=$hostSrc.Replace('constexpr unsigned cycles=500;','constexpr unsigned cycles=20;');Set-Content lab/borderless/rc58/ptar_rc58_mode_bridge_host_smoke.cpp $hostSrc -Encoding UTF8
       - name: Build exact smoke
         shell: cmd
         run: |
