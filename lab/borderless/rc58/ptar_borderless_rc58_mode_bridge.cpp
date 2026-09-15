@@ -17,8 +17,9 @@
 // Switching  = P1U46 F10 contract, always invoked on the game UI thread.
 //
 // The sidecar only owns the game HWND while Windowed is requested. Registry mode
-// changes are marshalled to the game UI thread through a private registered message;
-// no foreign-thread WndProc invocation is permitted.
+// changes are posted to the game UI thread through a private registered message.
+// During Windowed geometry messages, RC58 lets P1U46 run first and then applies
+// the saved target last, so P1U46 cannot re-expand the game HWND after the guard.
 
 namespace {
 HMODULE g_self=nullptr,g_runtime=nullptr;
@@ -26,7 +27,7 @@ HWND g_game=nullptr;
 WNDPROC g_next=nullptr;
 UINT g_renderW=0,g_renderH=0;
 UINT g_controlMessage=0;
-volatile LONG g_started=0,g_installed=0,g_stop=0,g_internal=0,g_windowed=0,g_usrActive=1,g_keyLatch=0;
+volatile LONG g_started=0,g_installed=0,g_stop=0,g_windowed=0,g_usrActive=1,g_keyLatch=0,g_forceGeometry=0;
 volatile LONG64 g_toWindowed=0,g_toBorderless=0,g_gameClamps=0,g_prefRequests=0,g_toggleForwards=0,g_restoreFailures=0;
 RECT g_savedOuter{};
 LONG_PTR g_savedStyle=0,g_savedExStyle=0;
@@ -63,11 +64,14 @@ static bool current_window_matches_target() noexcept {
            (UINT)(c.right-c.left)==g_renderW&&(UINT)(c.bottom-c.top)==g_renderH;
 }
 static void restore_window_ui() noexcept {
-    if(!IsWindow(g_game)||!InterlockedCompareExchange(&g_haveSaved,0,0))return;if(current_window_matches_target())return;
+    if(!IsWindow(g_game)||!InterlockedCompareExchange(&g_haveSaved,0,0)||current_window_matches_target())return;
+    InterlockedExchange(&g_forceGeometry,1);
     if(GetWindowLongPtrW(g_game,GWL_STYLE)!=g_savedStyle)SetWindowLongPtrW(g_game,GWL_STYLE,g_savedStyle);
     if(GetWindowLongPtrW(g_game,GWL_EXSTYLE)!=g_savedExStyle)SetWindowLongPtrW(g_game,GWL_EXSTYLE,g_savedExStyle);
     const int ow=g_savedOuter.right-g_savedOuter.left,oh=g_savedOuter.bottom-g_savedOuter.top;
-    if(!SetWindowPos(g_game,nullptr,g_savedOuter.left,g_savedOuter.top,ow,oh,SWP_NOACTIVATE|SWP_NOZORDER|SWP_FRAMECHANGED|SWP_SHOWWINDOW)){InterlockedIncrement64(&g_restoreFailures);logfmt("FAIL RC58 SetWindowPos restore",GetLastError(),ow,oh,0);return;}
+    const BOOL posOk=SetWindowPos(g_game,nullptr,g_savedOuter.left,g_savedOuter.top,ow,oh,SWP_NOACTIVATE|SWP_NOZORDER|SWP_FRAMECHANGED|SWP_SHOWWINDOW);
+    InterlockedExchange(&g_forceGeometry,0);
+    if(!posOk){InterlockedIncrement64(&g_restoreFailures);logfmt("FAIL RC58 SetWindowPos restore",GetLastError(),ow,oh,0);return;}
     RECT c{};if(!GetClientRect(g_game,&c)||(UINT)(c.right-c.left)!=g_renderW||(UINT)(c.bottom-c.top)!=g_renderH){InterlockedIncrement64(&g_restoreFailures);logfmt("FAIL RC58 restored client",c.right-c.left,c.bottom-c.top,g_renderW,g_renderH);return;}
     InterlockedIncrement64(&g_gameClamps);
 }
@@ -75,39 +79,38 @@ static void forward_f10_ui() noexcept {
     if(!IsWindow(g_game)||!g_next)return;const LPARAM down=(LPARAM)(1u|(0x44u<<16));const LPARAM up=(LPARAM)(1u|(0x44u<<16)|(1u<<30)|(1u<<31));
     call_next(g_game,WM_KEYDOWN,VK_F10,down);call_next(g_game,WM_KEYUP,VK_F10,up);InterlockedIncrement64(&g_toggleForwards);
 }
-static bool send_control(WPARAM command) noexcept {
-    if(!IsWindow(g_game)||!g_controlMessage)return false;DWORD_PTR result=0;return SendMessageTimeoutW(g_game,g_controlMessage,command,0,SMTO_ABORTIFHUNG|SMTO_BLOCK,2000,&result)!=0;
-}
+static bool post_control(WPARAM command) noexcept {return IsWindow(g_game)&&g_controlMessage&&PostMessageW(g_game,g_controlMessage,command,0)!=FALSE;}
 static void request_windowed(const char* why) noexcept {
-    if(InterlockedExchange(&g_windowed,1)==1&&!InterlockedCompareExchange(&g_usrActive,0,0)){send_control(RC58_CTL_RESTORE_WINDOW);return;}
-    if(InterlockedExchange(&g_usrActive,0)==1){logline(why);if(send_control(RC58_CTL_TOGGLE_TO_WINDOWED))InterlockedIncrement64(&g_toWindowed);else {InterlockedIncrement64(&g_restoreFailures);logline("FAIL RC58 windowed control dispatch");}}
-    send_control(RC58_CTL_RESTORE_WINDOW);
+    if(InterlockedExchange(&g_windowed,1)==1&&!InterlockedCompareExchange(&g_usrActive,0,0)){post_control(RC58_CTL_RESTORE_WINDOW);return;}
+    if(InterlockedExchange(&g_usrActive,0)==1){logline(why);if(post_control(RC58_CTL_TOGGLE_TO_WINDOWED))InterlockedIncrement64(&g_toWindowed);else {InterlockedIncrement64(&g_restoreFailures);logline("FAIL RC58 windowed control post");}}
+    post_control(RC58_CTL_RESTORE_WINDOW);
 }
 static void request_borderless(const char* why) noexcept {
     if(InterlockedExchange(&g_windowed,0)==0&&InterlockedCompareExchange(&g_usrActive,0,0))return;
-    if(InterlockedExchange(&g_usrActive,1)==0){logline(why);if(send_control(RC58_CTL_TOGGLE_TO_BORDERLESS))InterlockedIncrement64(&g_toBorderless);else {InterlockedIncrement64(&g_restoreFailures);logline("FAIL RC58 borderless control dispatch");}}
+    if(InterlockedExchange(&g_usrActive,1)==0){logline(why);if(post_control(RC58_CTL_TOGGLE_TO_BORDERLESS))InterlockedIncrement64(&g_toBorderless);else {InterlockedIncrement64(&g_restoreFailures);logline("FAIL RC58 borderless control post");}}
 }
 
 static LRESULT CALLBACK GameProc(HWND h,UINT m,WPARAM w,LPARAM l){
     if(g_controlMessage&&m==g_controlMessage){
-        InterlockedExchange(&g_internal,1);
         if(w==RC58_CTL_TOGGLE_TO_WINDOWED||w==RC58_CTL_TOGGLE_TO_BORDERLESS)forward_f10_ui();
         if(w==RC58_CTL_RESTORE_WINDOW)restore_window_ui();
-        InterlockedExchange(&g_internal,0);return 1;
+        return 1;
     }
-    const bool internal=InterlockedCompareExchange(&g_internal,0,0)!=0;
-    if(!internal&&w==VK_F10&&(m==WM_KEYDOWN||m==WM_SYSKEYDOWN)){
+    const bool protect=(InterlockedCompareExchange(&g_windowed,0,0)!=0||InterlockedCompareExchange(&g_forceGeometry,0,0)!=0)&&InterlockedCompareExchange(&g_haveSaved,0,0)!=0;
+    if(protect&&m==WM_WINDOWPOSCHANGING&&l){
+        const LRESULT r=call_next(h,m,w,l);WINDOWPOS* p=(WINDOWPOS*)l;p->x=g_savedOuter.left;p->y=g_savedOuter.top;p->cx=g_savedOuter.right-g_savedOuter.left;p->cy=g_savedOuter.bottom-g_savedOuter.top;p->flags&=~(SWP_NOMOVE|SWP_NOSIZE);InterlockedIncrement64(&g_gameClamps);return r;
+    }
+    if(protect&&m==WM_STYLECHANGING&&l&&(w==GWL_STYLE||w==GWL_EXSTYLE)){
+        const LRESULT r=call_next(h,m,w,l);STYLESTRUCT* ss=(STYLESTRUCT*)l;const LONG_PTR wanted=(w==GWL_STYLE)?g_savedStyle:g_savedExStyle;ss->styleNew=static_cast<DWORD>(static_cast<ULONG_PTR>(wanted));InterlockedIncrement64(&g_gameClamps);return r;
+    }
+    if(w==VK_F10&&(m==WM_KEYDOWN||m==WM_SYSKEYDOWN)){
         if(InterlockedExchange(&g_keyLatch,1)==0){
             if(InterlockedCompareExchange(&g_usrActive,0,0)){InterlockedExchange(&g_windowed,1);InterlockedExchange(&g_usrActive,0);InterlockedIncrement64(&g_toWindowed);logline("RC58_F10_REQUEST=WINDOWED_GAME_DIRECT");}
             else {InterlockedExchange(&g_windowed,0);InterlockedExchange(&g_usrActive,1);InterlockedIncrement64(&g_toBorderless);logline("RC58_F10_REQUEST=BORDERLESS_USR_PRESENTER");}
         }
         return call_next(h,m,w,l);
     }
-    if(!internal&&w==VK_F10&&(m==WM_KEYUP||m==WM_SYSKEYUP)){InterlockedExchange(&g_keyLatch,0);LRESULT r=call_next(h,m,w,l);if(InterlockedCompareExchange(&g_windowed,0,0)&&g_controlMessage)PostMessageW(g_game,g_controlMessage,RC58_CTL_RESTORE_WINDOW,0);return r;}
-    if(!internal&&InterlockedCompareExchange(&g_windowed,0,0)&&InterlockedCompareExchange(&g_haveSaved,0,0)){
-        if(m==WM_WINDOWPOSCHANGING&&l){WINDOWPOS* p=(WINDOWPOS*)l;p->x=g_savedOuter.left;p->y=g_savedOuter.top;p->cx=g_savedOuter.right-g_savedOuter.left;p->cy=g_savedOuter.bottom-g_savedOuter.top;p->flags&=~(SWP_NOMOVE|SWP_NOSIZE);InterlockedIncrement64(&g_gameClamps);}
-        else if(m==WM_STYLECHANGING&&l&&(w==GWL_STYLE||w==GWL_EXSTYLE)){STYLESTRUCT* ss=(STYLESTRUCT*)l;const LONG_PTR wanted=(w==GWL_STYLE)?g_savedStyle:g_savedExStyle;ss->styleNew=static_cast<DWORD>(static_cast<ULONG_PTR>(wanted));InterlockedIncrement64(&g_gameClamps);}
-    }
+    if(w==VK_F10&&(m==WM_KEYUP||m==WM_SYSKEYUP)){InterlockedExchange(&g_keyLatch,0);LRESULT r=call_next(h,m,w,l);if(InterlockedCompareExchange(&g_windowed,0,0)&&g_controlMessage)PostMessageW(g_game,g_controlMessage,RC58_CTL_RESTORE_WINDOW,0);return r;}
     return call_next(h,m,w,l);
 }
 
@@ -119,7 +122,7 @@ static DWORD WINAPI Worker(LPVOID) noexcept {
     int last=-2;unsigned restoreTick=0;
     while(!InterlockedCompareExchange(&g_stop,0,0)&&IsWindow(g_game)){
         int p=read_pref();if(p>=0&&p!=last){last=p;InterlockedIncrement64(&g_prefRequests);if(p==0)request_windowed("RC58_PREF_REQUEST=WINDOWED_GAME_DIRECT");else if(p==1)request_borderless("RC58_PREF_REQUEST=BORDERLESS_USR_PRESENTER");}
-        if(InterlockedCompareExchange(&g_windowed,0,0)&&(++restoreTick%2u)==0u&&!current_window_matches_target())send_control(RC58_CTL_RESTORE_WINDOW);
+        if(InterlockedCompareExchange(&g_windowed,0,0)&&(++restoreTick%2u)==0u&&!current_window_matches_target())post_control(RC58_CTL_RESTORE_WINDOW);
         Sleep(50);
     }
     return 0;
