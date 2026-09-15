@@ -1,0 +1,90 @@
+name: RC57 Borderless Startup Handshake
+
+on:
+  push:
+    branches: [lab/rc57-borderless-startup-handshake-20260915]
+    paths:
+      - 'lab/borderless/rc57/**'
+      - '.github/workflows/rc57-startup-handshake.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  handshake:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate RC57 and CI geometry
+        shell: cmd
+        run: |
+          python lab\borderless\rc57\build_rc57_startup_handshake.py lab\borderless\rc57\generated || exit /b 10
+          python lab\borderless\rc56\build_rc56_synthetic_geometry_lab.py lab\borderless\rc57\generated lab\borderless\rc57\synthetic || exit /b 11
+          python lab\borderless\rc57\build_rc57_handshake_host.py lab\borderless\rc57\generated\ptar_rc57_handshake_host.cpp || exit /b 12
+          findstr /C:"RC57_INITIAL_BORDERLESS_DEFERRED_WINDOWED_BOOT" lab\borderless\rc57\generated\ptar_borderless_rc46_presenter_only.cpp >nul || exit /b 13
+          findstr /C:"RC57_STARTUP_HANDSHAKE_UNLOCKED" lab\borderless\rc57\generated\ptar_borderless_rc45_presenter_only.cpp >nul || exit /b 14
+          findstr /C:"RC56_BORDERLESS_POLICY=PRESENTER_ONLY_GAME_UNTOUCHED" lab\borderless\rc57\generated\ptar_borderless_rc45_presenter_only.cpp >nul || exit /b 15
+          git diff --quiet afa278b62a5c7745d19a3de68d727124826d180c HEAD -- lab/raster || exit /b 16
+          echo RC57_SCOPE=PASS
+
+      - name: Prepare exact field runtime and RC55 raster
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o='lab/borderless/rc57/run';New-Item -ItemType Directory -Force $o|Out-Null
+          python lab/borderless/rc48/rebuild_exact_field_runtime.py payload/d3d11.dll "$o/d3d11.dll";if($LASTEXITCODE -ne 0){throw 'runtime reconstruction'}
+          $runtime=(Get-FileHash "$o/d3d11.dll" -Algorithm SHA256).Hash.ToLowerInvariant();if($runtime -ne '6f1686992bef971c9995df9f0cb91b93c6946988e12a837e5de956df37c9082b'){throw "runtime drift $runtime"}
+          Copy-Item "$o/d3d11.dll" "$o/win81_nis_dx11_x64.dll" -Force
+          $ini=Get-Content payload/win81_nis.ini -Raw;$ini=[regex]::Replace($ini,'(?m)^OutputWidth=.*$','OutputWidth=1920');$ini=[regex]::Replace($ini,'(?m)^OutputHeight=.*$','OutputHeight=1080');$ini=[regex]::Replace($ini,'(?m)^RenderWidth=.*$','RenderWidth=1280');$ini=[regex]::Replace($ini,'(?m)^RenderHeight=.*$','RenderHeight=720');Set-Content "$o/win81_nis.ini" $ini -Encoding ASCII
+          python lab/raster/rc52/build_rc52_context_hooks.py lab/raster/rc57_rc52.cpp;if($LASTEXITCODE -ne 0){throw 'rc52 gen'};python lab/raster/rc55/build_rc55_context_hooks.py lab/raster/rc57_rc52.cpp lab/raster/rc57_rc55.cpp;if($LASTEXITCODE -ne 0){throw 'rc55 gen'}
+
+      - name: Build RC57 production synthetic raster and host
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 20
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603
+          mkdir lab\borderless\rc57\run\prod 2>nul
+          mkdir lab\borderless\rc57\run\synth 2>nul
+          cl %CFLAGS% /LD lab\borderless\rc57\generated\ptar_borderless_rc57_prod.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fo:lab\borderless\rc57\run\prod\ /Fe:lab\borderless\rc57\run\prod\ptar_borderless.dll user32.lib advapi32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 21
+          cl %CFLAGS% /LD lab\borderless\rc57\synthetic\ptar_borderless_rc56_prod.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fo:lab\borderless\rc57\run\synth\ /Fe:lab\borderless\rc57\run\synth\ptar_borderless.dll user32.lib advapi32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 22
+          set RCFLAGS=%CFLAGS% /I lab\raster\rc41
+          cl %RCFLAGS% /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc57_rc55.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fo:lab\borderless\rc57\run\ /Fe:lab\borderless\rc57\run\ptar_rc41.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 23
+          cl %CFLAGS% lab\borderless\rc57\generated\ptar_rc57_handshake_host.cpp /Fo:lab\borderless\rc57\run\ /Fe:lab\borderless\rc57\run\Warhammer.exe user32.lib advapi32.lib gdi32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:WINDOWS,6.03 || exit /b 24
+          copy /y lab\borderless\rc57\run\synth\ptar_borderless.dll lab\borderless\rc57\run\ptar_borderless.dll >nul
+
+      - name: Identity gates
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$prod=(Get-FileHash 'lab/borderless/rc57/run/prod/ptar_borderless.dll' -Algorithm SHA256).Hash.ToLowerInvariant();$raster=(Get-FileHash 'lab/borderless/rc57/run/ptar_rc41.dll' -Algorithm SHA256).Hash.ToLowerInvariant();if($raster -ne '271187ab9fd82b6829c52a667223f241ec79e98fa340b13c9a72270142156949'){throw "RC55 drift $raster"};@("RC57_PRODUCTION=$prod","RC55_RASTER=$raster",'IDENTITY_GATES=PASS')|Set-Content 'lab/borderless/rc57/RC57_COMPONENTS.txt' -Encoding ASCII;Get-Content 'lab/borderless/rc57/RC57_COMPONENTS.txt'
+
+      - name: Reproduce field initial Borderless and prove startup progress
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o=(Resolve-Path 'lab/borderless/rc57/run').Path;$p=Start-Process "$o/Warhammer.exe" -ArgumentList direct -WorkingDirectory $o -PassThru;if(-not $p.WaitForExit(300000)){Stop-Process $p.Id -Force;throw 'direct timeout'};$ev=Join-Path $o 'RC57_HANDSHAKE_DIRECT.txt';if(!(Test-Path $ev)){throw 'missing evidence'};$txt=[IO.File]::ReadAllText($ev,[Text.Encoding]::Unicode);Write-Host $txt;if($p.ExitCode -ne 0){foreach($n in @('win81_nis.log','ptar_borderless_rc38.log','ptar_rc41.log','ptar_rc41_bootstrap.log')){$f=Join-Path $o $n;if(Test-Path $f){Write-Host "===== $n =====";Get-Content $f -Tail 300}};throw "direct rc=$($p.ExitCode)"};if(-not $txt.Contains('DEFERRED_BOOT_PROGRESS=PASS')){throw 'startup progress missing'};if(-not $txt.Contains('RC57_HANDSHAKE_DIRECT=PASS deferred_start=1 progress=1 explicit_0_1=1 presenter_only=1 game_style_windowed=1 p1u46_complete=1')){throw 'handshake marker missing'};$ctl=Get-Content (Join-Path $o 'ptar_borderless_rc38.log') -Raw;if(-not $ctl.Contains('RC57_INITIAL_BORDERLESS_DEFERRED_WINDOWED_BOOT')){throw 'initial defer not logged'};if(-not $ctl.Contains('RC57_STARTUP_HANDSHAKE_UNLOCKED')){throw 'unlock not logged'};Write-Host 'RC57_DIRECT_HANDSHAKE=PASS'
+
+      - name: Windowed baseline and 80 transition cycles
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o=(Resolve-Path 'lab/borderless/rc57/run').Path;Remove-Item (Join-Path $o 'RC57_HANDSHAKE_STRESS.txt') -Force -ErrorAction SilentlyContinue;$p=Start-Process "$o/Warhammer.exe" -WorkingDirectory $o -PassThru;if(-not $p.WaitForExit(480000)){Stop-Process $p.Id -Force;throw 'stress timeout'};$ev=Join-Path $o 'RC57_HANDSHAKE_STRESS.txt';if(!(Test-Path $ev)){throw 'missing stress evidence'};$txt=[IO.File]::ReadAllText($ev,[Text.Encoding]::Unicode);Write-Host $txt;if($p.ExitCode -ne 0){throw "stress rc=$($p.ExitCode)"};if(-not $txt.Contains('RC57_HANDSHAKE_STRESS=PASS cycles=80')){throw 'stress marker missing'};Write-Host 'RC57_STRESS=PASS'
+
+      - name: Summary
+        shell: powershell
+        run: |
+          $prod=(Get-FileHash 'lab/borderless/rc57/run/prod/ptar_borderless.dll' -Algorithm SHA256).Hash.ToLowerInvariant();@('RC57_GATE=PASS','INITIAL_BORDERLESS_DEFERRED=PASS','DEFERRED_BOOT_PROGRESS=PASS','EXPLICIT_0_1_HANDSHAKE=PASS','PRESENTER_ONLY_AFTER_UNLOCK=PASS','WINDOWED_BASELINE=PASS','TRANSITIONS_80=PASS','RC55_RASTER_UNCHANGED=PASS',"RC57_PRODUCTION=$prod")|Set-Content 'lab/borderless/rc57/RC57_SUMMARY.txt' -Encoding ASCII;Get-Content 'lab/borderless/rc57/RC57_SUMMARY.txt'
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PTAR_RC57_STARTUP_HANDSHAKE_LAB
+          path: |
+            lab/borderless/rc57/RC57_*.txt
+            lab/borderless/rc57/run/*.txt
+            lab/borderless/rc57/run/*.log
+            lab/borderless/rc57/run/prod/ptar_borderless.dll
+            lab/borderless/rc57/run/ptar_rc41.dll
+          retention-days: 14
