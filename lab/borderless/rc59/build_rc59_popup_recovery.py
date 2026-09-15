@@ -17,16 +17,11 @@ new='enum : WPARAM { RC59_CTL_TOGGLE_TO_WINDOWED=1, RC59_CTL_TOGGLE_TO_BORDERLES
 if old not in s: raise RuntimeError('control enum anchor missing')
 s=s.replace(old,new,1)
 
-# Keep the game HWND canonical in BOTH visible modes; only P1U46 presenter ownership changes.
 old="const bool protect=(InterlockedCompareExchange(&g_windowed,0,0)!=0||InterlockedCompareExchange(&g_forceGeometry,0,0)!=0)&&InterlockedCompareExchange(&g_haveSaved,0,0)!=0;"
 new="const bool protect=InterlockedCompareExchange(&g_haveSaved,0,0)!=0;"
 if old not in s: raise RuntimeError('protect anchor missing')
 s=s.replace(old,new,1)
 
-# UI-thread startup canonicalizer. A real saved Borderless launch creates the game HWND as
-# WS_POPUP (field: 0x94000000). P1U46 owns the visible native presenter, so the underlying
-# input/render HWND must be converted to the same canonical windowed 1280x720 geometry that
-# RC55 proved in the field. This mutation is deliberately executed only from GameProc.
 anchor='static void restore_window_ui() noexcept {'
 if anchor not in s: raise RuntimeError('restore function anchor missing')
 canon=r'''static void canonicalize_startup_ui() noexcept {
@@ -34,7 +29,6 @@ canon=r'''static void canonicalize_startup_ui() noexcept {
     if(!IsWindow(g_game)||!g_renderW||!g_renderH){logline("FAIL RC59 canonicalize invalid state");InterlockedExchange(&g_canonicalizeDone,1);return;}
     const LONG_PTR beforeStyle=GetWindowLongPtrW(g_game,GWL_STYLE),beforeEx=GetWindowLongPtrW(g_game,GWL_EXSTYLE);
     LONG_PTR wantedStyle=(beforeStyle&~((LONG_PTR)WS_POPUP))|((LONG_PTR)WS_OVERLAPPEDWINDOW);
-    // Preserve visibility/clipping bits from the real game while replacing popup semantics.
     wantedStyle|=(beforeStyle&((LONG_PTR)WS_VISIBLE|(LONG_PTR)WS_CLIPSIBLINGS|(LONG_PTR)WS_CLIPCHILDREN));
     RECT wr{0,0,(LONG)g_renderW,(LONG)g_renderH};
     if(!AdjustWindowRectEx(&wr,(DWORD)(ULONG_PTR)wantedStyle,GetMenu(g_game)!=nullptr,(DWORD)(ULONG_PTR)beforeEx)){
@@ -43,7 +37,7 @@ canon=r'''static void canonicalize_startup_ui() noexcept {
     const int ow=wr.right-wr.left,oh=wr.bottom-wr.top;if(ow<=0||oh<=0){logline("FAIL RC59 canonical outer geometry");InterlockedExchange(&g_canonicalizeDone,1);return;}
     HMONITOR mon=MonitorFromWindow(g_game,MONITOR_DEFAULTTONEAREST);MONITORINFO mi{};mi.cbSize=sizeof(mi);RECT mr{};
     if(mon&&GetMonitorInfoW(mon,&mi))mr=mi.rcMonitor;else{mr.left=0;mr.top=0;mr.right=(LONG)GetSystemMetrics(SM_CXSCREEN);mr.bottom=(LONG)GetSystemMetrics(SM_CYSCREEN);}
-    const int x=mr.left+((mr.right-mr.left)-ow)/2,const int y=mr.top+((mr.bottom-mr.top)-oh)/2;
+    const int x=mr.left+((mr.right-mr.left)-ow)/2,y=mr.top+((mr.bottom-mr.top)-oh)/2;
     InterlockedExchange(&g_forceGeometry,1);
     SetLastError(ERROR_SUCCESS);const LONG_PTR prev=SetWindowLongPtrW(g_game,GWL_STYLE,wantedStyle);const DWORD styleErr=GetLastError();
     const BOOL posOk=SetWindowPos(g_game,nullptr,x,y,ow,oh,SWP_NOACTIVATE|SWP_NOZORDER|SWP_FRAMECHANGED|SWP_SHOWWINDOW);
