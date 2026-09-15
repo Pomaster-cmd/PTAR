@@ -63,7 +63,7 @@ jobs:
           call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
           if errorlevel 1 exit /b 40
           set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\raster\rc41
-          cl %CFLAGS% lab\raster\rc52\ptar_rc52_raster_state_host.cpp lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc55\generated\ptar_rc41_context_hooks_rc55.cpp /Fo:lab\raster\rc55\fixed\rc52_ /Fe:lab\raster\rc55\fixed\rc52_regression.exe d3d11.lib user32.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 41
+          cl %CFLAGS% lab\raster\rc52\ptar_rc52_raster_state_host.cpp lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc55\generated\ptar_rc41_context_hooks_rc55.cpp /Fo:lab\raster\rc55\fixed\ /Fe:lab\raster\rc55\fixed\rc52_regression.exe d3d11.lib user32.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 41
           pushd lab\raster\rc55\fixed
           rc52_regression.exe || exit /b 42
           type RC52_RASTER_STATE_HOST.txt
