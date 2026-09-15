@@ -69,38 +69,41 @@ static int run(bool directBorderless){
 
     HMODULE dll=LoadLibraryW(L"ptar_borderless.dll");if(!dll){fwprintf(log,L"FAIL load dll gle=%lu\n",GetLastError());restore(rb);fclose(log);return 14;}
     auto attach=reinterpret_cast<AttachFn>(GetProcAddress(dll,"PTAR_BorderlessAttachStable"));auto query=reinterpret_cast<QueryFn>(GetProcAddress(dll,"PTAR_BorderlessQueryMode"));
-    if(!attach||!query){FreeLibrary(dll);restore(rb);fclose(log);return 15;}
-    const int ar=attach(game,presenter,rw,rh,outW,outH);fwprintf(log,L"ATTACH rc=%d output=%ux%u render=%ux%u direct=%u\n",ar,outW,outH,rw,rh,directBorderless?1u:0u);fflush(log);if(ar<0){FreeLibrary(dll);restore(rb);fclose(log);return 16;}
-    if(!wait_mode(query,directBorderless,5000)){fwprintf(log,L"FAIL initial mode\n");FreeLibrary(dll);restore(rb);fclose(log);return 17;}
+    // The carrier owns live WndProc hooks and worker threads after Attach. The host
+    // intentionally keeps it loaded until process teardown; unloading it first
+    // would leave subclass pointers into unmapped code and manufacture an AV.
+    if(!attach||!query){restore(rb);fclose(log);return 15;}
+    const int ar=attach(game,presenter,rw,rh,outW,outH);fwprintf(log,L"ATTACH rc=%d output=%ux%u render=%ux%u direct=%u\n",ar,outW,outH,rw,rh,directBorderless?1u:0u);fflush(log);if(ar<0){restore(rb);fclose(log);return 16;}
+    if(!wait_mode(query,directBorderless,5000)){fwprintf(log,L"FAIL initial mode\n");restore(rb);fclose(log);return 17;}
 
-    RECT game1{};GetWindowRect(game,&game1);if(!rect_eq(game0,game1)||GetWindowLongPtrW(game,GWL_STYLE)!=style0){fwprintf(log,L"FAIL initial game mutation\n");FreeLibrary(dll);restore(rb);fclose(log);return 18;}
+    RECT game1{};GetWindowRect(game,&game1);if(!rect_eq(game0,game1)||GetWindowLongPtrW(game,GWL_STYLE)!=style0){fwprintf(log,L"FAIL initial game mutation\n");restore(rb);fclose(log);return 18;}
     if(directBorderless){
-        if(!wait_rect(presenter,mi.rcMonitor,5000)){RECT x{};GetWindowRect(presenter,&x);fwprintf(log,L"FAIL direct presenter %ld,%ld,%ld,%ld want %ld,%ld,%ld,%ld\n",x.left,x.top,x.right,x.bottom,mi.rcMonitor.left,mi.rcMonitor.top,mi.rcMonitor.right,mi.rcMonitor.bottom);FreeLibrary(dll);restore(rb);fclose(log);return 19;}
+        if(!wait_rect(presenter,mi.rcMonitor,5000)){RECT x{};GetWindowRect(presenter,&x);fwprintf(log,L"FAIL direct presenter %ld,%ld,%ld,%ld want %ld,%ld,%ld,%ld\n",x.left,x.top,x.right,x.bottom,mi.rcMonitor.left,mi.rcMonitor.top,mi.rcMonitor.right,mi.rcMonitor.bottom);restore(rb);fclose(log);return 19;}
         for(unsigned i=0;i<1000;++i){
             SendMessageW(game,WM_MOVE,0,MAKELPARAM((WORD)(100+i%3),(WORD)(90+i%3)));
             SendMessageW(game,WM_SIZE,SIZE_RESTORED,MAKELPARAM((WORD)rw,(WORD)rh));
             if((i&31u)==0)pump(1);
         }
-        GetWindowRect(game,&game1);if(!rect_eq(game0,game1)||GetWindowLongPtrW(game,GWL_STYLE)!=style0){fwprintf(log,L"FAIL direct stress mutated game window\n");FreeLibrary(dll);restore(rb);fclose(log);return 20;}
+        GetWindowRect(game,&game1);if(!rect_eq(game0,game1)||GetWindowLongPtrW(game,GWL_STYLE)!=style0){fwprintf(log,L"FAIL direct stress mutated game window\n");restore(rb);fclose(log);return 20;}
         ModeState s{};s.size=sizeof(s);query(&s);fwprintf(log,L"RC56_DIRECT_BORDERLESS=PASS game_untouched=1 presenter_native=1 messages=2000 to_borderless=%llu\n",s.transitionsToBorderless);fflush(log);
     } else {
-        if(!wait_presenter_client(presenter,gameClient0,5000)){fwprintf(log,L"FAIL initial windowed presenter follow\n");FreeLibrary(dll);restore(rb);fclose(log);return 21;}
-        const UINT sync=RegisterWindowMessageW(kSync);if(!sync){FreeLibrary(dll);restore(rb);fclose(log);return 22;}
+        if(!wait_presenter_client(presenter,gameClient0,5000)){fwprintf(log,L"FAIL initial windowed presenter follow\n");restore(rb);fclose(log);return 21;}
+        const UINT sync=RegisterWindowMessageW(kSync);if(!sync){restore(rb);fclose(log);return 22;}
         constexpr unsigned cycles=500;
         for(unsigned i=0;i<cycles;++i){
-            if(!set_pref(1)){FreeLibrary(dll);restore(rb);fclose(log);return 23;}
+            if(!set_pref(1)){restore(rb);fclose(log);return 23;}
             SendMessageW(game,sync,1,0);
-            if(!wait_mode(query,true,1000)||!wait_rect(presenter,mi.rcMonitor,1000)){fwprintf(log,L"FAIL borderless cycle=%u\n",i);FreeLibrary(dll);restore(rb);fclose(log);return 24;}
-            GetWindowRect(game,&game1);if(!rect_eq(game0,game1)||GetWindowLongPtrW(game,GWL_STYLE)!=style0){fwprintf(log,L"FAIL game mutation entering borderless cycle=%u\n",i);FreeLibrary(dll);restore(rb);fclose(log);return 25;}
-            if(!set_pref(0)){FreeLibrary(dll);restore(rb);fclose(log);return 26;}
+            if(!wait_mode(query,true,1000)||!wait_rect(presenter,mi.rcMonitor,1000)){fwprintf(log,L"FAIL borderless cycle=%u\n",i);restore(rb);fclose(log);return 24;}
+            GetWindowRect(game,&game1);if(!rect_eq(game0,game1)||GetWindowLongPtrW(game,GWL_STYLE)!=style0){fwprintf(log,L"FAIL game mutation entering borderless cycle=%u\n",i);restore(rb);fclose(log);return 25;}
+            if(!set_pref(0)){restore(rb);fclose(log);return 26;}
             SendMessageW(game,sync,0,0);
-            if(!wait_mode(query,false,1000)||!wait_presenter_client(presenter,gameClient0,1000)){fwprintf(log,L"FAIL windowed cycle=%u\n",i);FreeLibrary(dll);restore(rb);fclose(log);return 27;}
-            GetWindowRect(game,&game1);if(!rect_eq(game0,game1)||GetWindowLongPtrW(game,GWL_STYLE)!=style0){fwprintf(log,L"FAIL game mutation returning windowed cycle=%u\n",i);FreeLibrary(dll);restore(rb);fclose(log);return 28;}
+            if(!wait_mode(query,false,1000)||!wait_presenter_client(presenter,gameClient0,1000)){fwprintf(log,L"FAIL windowed cycle=%u\n",i);restore(rb);fclose(log);return 27;}
+            GetWindowRect(game,&game1);if(!rect_eq(game0,game1)||GetWindowLongPtrW(game,GWL_STYLE)!=style0){fwprintf(log,L"FAIL game mutation returning windowed cycle=%u\n",i);restore(rb);fclose(log);return 28;}
         }
         ModeState s{};s.size=sizeof(s);query(&s);fwprintf(log,L"RC56_TRANSITION_STRESS=PASS cycles=%u game_untouched=1 presenter_only=1 to_borderless=%llu to_windowed=%llu follows=%llu\n",cycles,s.transitionsToBorderless,s.transitionsToWindowed,s.presenterFollows);fflush(log);
     }
 
-    FreeLibrary(dll);DestroyWindow(presenter);DestroyWindow(game);restore(rb);fclose(log);return 0;
+    DestroyWindow(presenter);DestroyWindow(game);restore(rb);fclose(log);return 0;
 }
 
 int WINAPI wWinMain(HINSTANCE,HINSTANCE,LPWSTR cmd,int){
