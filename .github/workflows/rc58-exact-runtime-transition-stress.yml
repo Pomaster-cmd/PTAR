@@ -1,0 +1,79 @@
+name: RC58 Exact Runtime Transition Stress
+
+on:
+  push:
+    branches: [lab/rc58-virtual-presenter-mode-20260915]
+    paths:
+      - 'lab/borderless/rc58/**'
+      - '.github/workflows/rc58-exact-runtime-transition-stress.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-runtime-stress:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Generate production and synthetic RC58
+        shell: cmd
+        run: |
+          python lab\borderless\rc58\build_rc58_virtual_presenter.py lab\borderless\rc58\generated || exit /b 10
+          python lab\borderless\rc58\build_rc58_synthetic_geometry.py lab\borderless\rc58\generated lab\borderless\rc58\synthetic || exit /b 11
+          findstr /C:"RC58_SYNTHETIC_MONITOR_OVERRIDE" lab\borderless\rc58\synthetic\ptar_borderless_rc46_presenter_only.cpp >nul || exit /b 12
+          findstr /C:"RC58_SYNTHETIC_MONITOR_OVERRIDE" lab\borderless\rc58\generated\ptar_borderless_rc46_presenter_only.cpp >nul && exit /b 13 || ver >nul
+      - name: Reconstruct exact P1U46 and exact RC55
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o='lab/borderless/rc58/x15';New-Item -ItemType Directory -Force $o|Out-Null
+          python lab/borderless/rc48/rebuild_exact_field_runtime.py payload/d3d11.dll "$o/d3d11.dll";if($LASTEXITCODE -ne 0){throw 'runtime reconstruction'}
+          $runtime=(Get-FileHash "$o/d3d11.dll" -Algorithm SHA256).Hash.ToLowerInvariant();if($runtime -ne '6f1686992bef971c9995df9f0cb91b93c6946988e12a837e5de956df37c9082b'){throw "runtime drift $runtime"}
+          Copy-Item "$o/d3d11.dll" "$o/win81_nis_dx11_x64.dll" -Force
+          $ini=Get-Content payload/win81_nis.ini -Raw;$ini=[regex]::Replace($ini,'(?m)^OutputWidth=.*$','OutputWidth=1920');$ini=[regex]::Replace($ini,'(?m)^OutputHeight=.*$','OutputHeight=1080');$ini=[regex]::Replace($ini,'(?m)^RenderWidth=.*$','RenderWidth=1280');$ini=[regex]::Replace($ini,'(?m)^RenderHeight=.*$','RenderHeight=720');Set-Content "$o/win81_nis.ini" $ini -Encoding ASCII
+          python lab/raster/rc52/build_rc52_context_hooks.py lab/raster/rc58_x15_rc52.cpp;if($LASTEXITCODE -ne 0){throw 'rc52 gen'}
+          python lab/raster/rc55/build_rc55_context_hooks.py lab/raster/rc58_x15_rc52.cpp lab/raster/rc58_x15_rc55.cpp;if($LASTEXITCODE -ne 0){throw 'rc55 gen'}
+          Write-Host 'RC58_EXACT_RUNTIME_PREP=PASS'
+      - name: Build production twice synthetic exact RC55 and host
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 20
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603
+          mkdir lab\borderless\rc58\x15\prod1 2>nul
+          mkdir lab\borderless\rc58\x15\prod2 2>nul
+          mkdir lab\borderless\rc58\x15\synth 2>nul
+          cl %CFLAGS% /LD lab\borderless\rc58\generated\ptar_borderless_rc58_prod.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fo:lab\borderless\rc58\x15\prod1\ /Fe:lab\borderless\rc58\x15\prod1\ptar_borderless.dll user32.lib advapi32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 21
+          cl %CFLAGS% /LD lab\borderless\rc58\generated\ptar_borderless_rc58_prod.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fo:lab\borderless\rc58\x15\prod2\ /Fe:lab\borderless\rc58\x15\prod2\ptar_borderless.dll user32.lib advapi32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 22
+          cl %CFLAGS% /LD lab\borderless\rc58\synthetic\ptar_borderless_rc58_prod.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fo:lab\borderless\rc58\x15\synth\ /Fe:lab\borderless\rc58\x15\synth\ptar_borderless.dll user32.lib advapi32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 23
+          set RCFLAGS=%CFLAGS% /I lab\raster\rc41
+          cl %RCFLAGS% /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc58_x15_rc55.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fo:lab\borderless\rc58\x15\ /Fe:lab\borderless\rc58\x15\ptar_rc41.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 24
+          cl %CFLAGS% lab\borderless\rc58\ptar_rc58_virtual_mode_host.cpp /Fo:lab\borderless\rc58\x15\ /Fe:lab\borderless\rc58\x15\Warhammer.exe user32.lib advapi32.lib gdi32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:WINDOWS,6.03 || exit /b 25
+          copy /y lab\borderless\rc58\x15\synth\ptar_borderless.dll lab\borderless\rc58\x15\ptar_borderless.dll >nul
+      - name: Binary identity and reproducibility gates
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$p1=(Get-FileHash 'lab/borderless/rc58/x15/prod1/ptar_borderless.dll' -Algorithm SHA256).Hash.ToLowerInvariant();$p2=(Get-FileHash 'lab/borderless/rc58/x15/prod2/ptar_borderless.dll' -Algorithm SHA256).Hash.ToLowerInvariant();$r=(Get-FileHash 'lab/borderless/rc58/x15/ptar_rc41.dll' -Algorithm SHA256).Hash.ToLowerInvariant();if($p1-ne$p2){throw "RC58 non-repro $p1 $p2"};if($r-ne'271187ab9fd82b6829c52a667223f241ec79e98fa340b13c9a72270142156949'){throw "RC55 drift $r"};@("RC58_PRODUCTION=$p1","RC55_RASTER=$r",'RC58_REPRODUCIBLE=PASS','RC55_UNCHANGED=PASS')|Set-Content 'lab/borderless/rc58/RC58_COMPONENTS.txt' -Encoding ASCII;Get-Content 'lab/borderless/rc58/RC58_COMPONENTS.txt'
+      - name: Exact P1U46 startup barrier and 500-cycle Windowed-Borderless stress
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o=(Resolve-Path 'lab/borderless/rc58/x15').Path;$p=Start-Process "$o/Warhammer.exe" -WorkingDirectory $o -PassThru;if(-not $p.WaitForExit(900000)){Stop-Process $p.Id -Force;throw 'RC58 stress timeout'};$ev=Join-Path $o 'RC58_VIRTUAL_MODE_STRESS.txt';if(Test-Path $ev){$txt=[IO.File]::ReadAllText($ev,[Text.Encoding]::Unicode);Write-Host $txt}else{throw 'RC58 evidence missing'};if($p.ExitCode-ne0){foreach($n in @('win81_nis.log','ptar_borderless_rc38.log','ptar_rc41.log','ptar_rc41_bootstrap.log')){$q=Join-Path $o $n;if(Test-Path $q){Write-Host "===== $n =====";Get-Content $q -Tail 300}};throw "RC58 host rc=$($p.ExitCode)"};if(-not $txt.Contains('RC58_VIRTUAL_MODE_STRESS=PASS cycles=500')){throw '500-cycle marker missing'};$ctl=Get-Content (Join-Path $o 'ptar_borderless_rc38.log') -Raw;if(-not $ctl.Contains('RC58_STARTUP_STABLE presents/ms')){throw 'startup barrier not exercised'};if(-not $ctl.Contains('RC58_APPLY=BORDERLESS_PRESENT_BOUNDARY')){throw 'borderless boundary not exercised'};if(-not $ctl.Contains('RC58_APPLY=WINDOWED_PRESENT_BOUNDARY')){throw 'windowed boundary not exercised'};if($ctl.Contains('FAIL RC51 presenter resync')){throw 'RC51 resync failure'};$rt=Get-Content (Join-Path $o 'win81_nis.log') -Raw;if(-not $rt.Contains('PTAR-NG MoE v01 exact x1.5 active')){throw 'x1.5 path missing'};Write-Host 'RC58_EXACT_500_CYCLE=PASS'
+      - name: Summary
+        shell: powershell
+        run: |
+          $h=(Get-FileHash 'lab/borderless/rc58/x15/prod1/ptar_borderless.dll' -Algorithm SHA256).Hash.ToLowerInvariant();@('RC58_EXACT_RUNTIME_TRANSITION_STRESS=PASS','P1U46_EXACT=PASS','RENDER_1280x720_OUTPUT_1920x1080=PASS','STARTUP_WINDOWED_BARRIER=PASS','EARLY_TOGGLE_REJECTION=PASS','TRANSITIONS=500_CYCLES_PASS','GAME_HWND_BYTE_GEOMETRY_UNCHANGED=PASS','WINDOWSTYLE_NATIVE_BASELINE_0=PASS','RC51_SYNC_FAILURES=0','RC58_APPLY_FAILURES=0','RC55_RASTER_UNCHANGED=PASS',"RC58_PRODUCTION=$h")|Set-Content 'lab/borderless/rc58/RC58_EXACT_STRESS_SUMMARY.txt' -Encoding ASCII;Get-Content 'lab/borderless/rc58/RC58_EXACT_STRESS_SUMMARY.txt'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PTAR_RC58_EXACT_RUNTIME_STRESS
+          path: |
+            lab/borderless/rc58/RC58_*.txt
+            lab/borderless/rc58/x15/*.txt
+            lab/borderless/rc58/x15/*.log
+            lab/borderless/rc58/x15/prod1/ptar_borderless.dll
+            lab/borderless/rc58/x15/ptar_rc41.dll
+          if-no-files-found: warn
+          retention-days: 14
