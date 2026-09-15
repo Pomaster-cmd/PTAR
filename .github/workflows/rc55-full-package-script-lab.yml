@@ -1,0 +1,128 @@
+name: RC55 Full Additive Package Script Lab
+
+on:
+  push:
+    branches:
+      - lab/rc55-bound-physical-idempotence-20260915
+    paths:
+      - 'lab/raster/rc55/full_package_scripts/**'
+      - '.github/workflows/rc55-full-package-script-lab.yml'
+  workflow_dispatch:
+
+jobs:
+  windows-full-package-scripts:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse exact full-package PowerShell scripts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $files=@(
+            'lab/raster/rc55/full_package_scripts/install.ps1',
+            'lab/raster/rc55/full_package_scripts/verify.ps1',
+            'lab/raster/rc55/full_package_scripts/rollback.ps1',
+            'lab/raster/rc55/full_package_scripts/uninstall_overlay.ps1',
+            'lab/raster/rc55/full_package_scripts/collect_rc41.ps1',
+            'lab/raster/rc55/full_package_scripts/rc55_gui_migration.ps1'
+          )
+          foreach($f in $files){
+            $tokens=$null;$errors=$null
+            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $f),[ref]$tokens,[ref]$errors)
+            if($errors.Count -ne 0){$errors|ForEach-Object{Write-Host $_.Message};throw "PowerShell parse failed: $f"}
+          }
+          Write-Host 'RC55_FULL_PACKAGE_PS_PARSE=6/6 PASS'
+
+      - name: Verify exact hashes and contracts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $root='lab/raster/rc55/full_package_scripts'
+          $expected=@{
+            'install.ps1'='eb7cb202eddbee0d925855be018af497b8cd7b5b411b7f6874a93f69a1e17867';
+            'verify.ps1'='50b60671ee7d9f29f9efb27e8f2ed28dbf6a45212cc9626332cbd55bf84e03c1';
+            'rollback.ps1'='1b870b76f0361a10c7d2f63c8abcc30b49048facddce61aef5fb510dda1b62b4';
+            'uninstall_overlay.ps1'='b14080c1b751eb6ad8cd05b9b5cb8f4a2eb0ac34aebd066d8161ab2db1efaa44';
+            'collect_rc41.ps1'='edad6123a2340959f30c05507b8c9530d3f88472279fdbe9af3f07c62949b318';
+            'rc55_gui_migration.ps1'='b3dcb424b7159e6502f109987c825d842b7ec953151d4b255b5bbb85828a994b'
+          }
+          foreach($n in $expected.Keys){$h=(Get-FileHash (Join-Path $root $n) -Algorithm SHA256).Hash.ToLowerInvariant();if($h -ne $expected[$n]){throw "$n hash mismatch $h"}}
+          $install=Get-Content (Join-Path $root 'install.ps1') -Raw
+          $rollback=Get-Content (Join-Path $root 'install.ps1') -Raw
+          $rollback=Get-Content (Join-Path $root 'rollback.ps1') -Raw
+          $verify=Get-Content (Join-Path $root 'verify.ps1') -Raw
+          $collect=Get-Content (Join-Path $root 'collect_rc41.ps1') -Raw
+          $module=Get-Content (Join-Path $root 'rc55_gui_migration.ps1') -Raw
+          if($install -notmatch 'PTAR_RC55_BOUND_PHYSICAL_IDEMPOTENCE'){throw 'RC55 package id missing'}
+          if($install -notmatch '271187ab9fd82b6829c52a667223f241ec79e98fa340b13c9a72270142156949'){throw 'RC55 raster hash missing'}
+          if($install -notmatch 'b3dcb424b7159e6502f109987c825d842b7ec953151d4b255b5bbb85828a994b'){throw 'GUI module integrity gate missing'}
+          if($install -notmatch 'Invoke-Rc55GuiMigration'){throw 'install does not invoke GUI module'}
+          if($rollback -notmatch 'Undo-Rc55GuiMigration'){throw 'rollback does not invoke GUI module'}
+          if($module -notmatch 'PTAR_RC53_GUI_RESOLUTION_SYNC' -or $module -notmatch 'PTAR_RC54_GUI_DOMAIN_PROBE'){throw 'prior owner allowlist incomplete'}
+          if($collect -notmatch 'PTAR_RC55_RESULTS_'){throw 'RC55 collector output missing'}
+          if($verify -notmatch 'VERIFY_RC55_BOUND_PHYSICAL_IDEMPOTENCE=PASS'){throw 'RC55 verify gate missing'}
+          foreach($n in @('install.ps1','verify.ps1','rollback.ps1','collect_rc41.ps1','rc55_gui_migration.ps1')){
+            $t=Get-Content (Join-Path $root $n) -Raw
+            if($t -match 'Remove-Item\s+[^\r\n]*-Recurse'){throw "unexpected recursive deletion found in $n"}
+          }
+          $uninstall=Get-Content (Join-Path $root 'uninstall_overlay.ps1') -Raw
+          if($uninstall -notmatch 'OVERLAY_OWNERSHIP\.tsv'){throw 'uninstall ownership ledger gate missing'}
+          if($uninstall -notmatch '\(Sha \$p\)-eq \$a\[2\]'){throw 'uninstall exact-SHA ownership gate missing'}
+          if($uninstall -notmatch '\[KEEP\] Additif RC41 modifie'){throw 'uninstall modified-file preservation gate missing'}
+          if($install -match 'AffectGuiResolution[^\r\n]*-Value\s+1'){throw 'RC55 install must not force AffectGuiResolution=1'}
+          Write-Host 'RC55_FULL_PACKAGE_CONTRACT=PASS'
+
+      - name: Exercise exact GUI ownership module
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $module=(Resolve-Path 'lab/raster/rc55/full_package_scripts/rc55_gui_migration.ps1')
+          . $module
+          function New-OwnerState([string]$root,[string]$key,[bool]$exists,[object]$original,[int]$installed,[string]$package='PTAR_RC54_GUI_DOMAIN_PROBE'){
+            New-Item -ItemType Directory -Path $root -Force|Out-Null
+            $d=Join-Path $root 'INSTALL_OWNER';New-Item -ItemType Directory -Path $d -Force|Out-Null
+            $m=[ordered]@{package=$package;gui=[ordered]@{key=$key;exists=$exists;original=$original;installed=$installed;applied=$true}}
+            $m|ConvertTo-Json -Depth 8|Set-Content -LiteralPath (Join-Path $d 'install_state.json') -Encoding UTF8
+          }
+          function Value([string]$key){try{return [int](Get-ItemProperty -LiteralPath $key -Name AffectGuiResolution -ErrorAction Stop).AffectGuiResolution}catch{return $null}}
+          $tmp=Join-Path $env:TEMP ('ptar_rc55_gui_ci_'+[guid]::NewGuid().ToString('N'))
+          $key='HKCU:\Software\PTAR_RC55_CI_'+[guid]::NewGuid().ToString('N')
+          try{
+            New-Item -Path $key -Force|Out-Null;Set-ItemProperty -LiteralPath $key -Name AffectGuiResolution -Type DWord -Value 1
+            $s1=Join-Path $tmp 's1';New-OwnerState $s1 $key $true 0 1
+            $m=Invoke-Rc55GuiMigration -StateRoot $s1
+            if($m.event -ne 'RESTORED' -or -not $m.changed -or (Value $key) -ne 0){throw 'owned restore test failed'}
+            $u=Undo-Rc55GuiMigration $m
+            if($u.event -ne 'PRE_RC55_RESTORED' -or (Value $key) -ne 1){throw 'owned undo test failed'}
+
+            $m2=Invoke-Rc55GuiMigration -StateRoot $s1
+            if($m2.event -ne 'RESTORED' -or (Value $key) -ne 0){throw 'second restore setup failed'}
+            Set-ItemProperty -LiteralPath $key -Name AffectGuiResolution -Type DWord -Value 7
+            $u2=Undo-Rc55GuiMigration $m2
+            if($u2.event -ne 'KEEP_CURRENT_CHANGED' -or (Value $key) -ne 7){throw 'user override preservation failed'}
+
+            Set-ItemProperty -LiteralPath $key -Name AffectGuiResolution -Type DWord -Value 1
+            $s2=Join-Path $tmp 's2';New-OwnerState $s2 $key $false $null 1 'PTAR_RC53_GUI_RESOLUTION_SYNC'
+            $m3=Invoke-Rc55GuiMigration -StateRoot $s2
+            if($m3.event -ne 'RESTORED' -or (Value $key) -ne $null){throw 'originally absent restore failed'}
+            $u3=Undo-Rc55GuiMigration $m3
+            if($u3.event -ne 'PRE_RC55_RESTORED' -or (Value $key) -ne 1){throw 'originally absent undo failed'}
+
+            $s3=Join-Path $tmp 's3';New-Item -ItemType Directory -Path $s3 -Force|Out-Null
+            Set-ItemProperty -LiteralPath $key -Name AffectGuiResolution -Type DWord -Value 4
+            $m4=Invoke-Rc55GuiMigration -StateRoot $s3
+            if($m4.event -ne 'OWNER_NONE' -or $m4.changed -or (Value $key) -ne 4){throw 'owner-none preservation failed'}
+
+            1..32|ForEach-Object{
+              Set-ItemProperty -LiteralPath $key -Name AffectGuiResolution -Type DWord -Value 1
+              $mx=Invoke-Rc55GuiMigration -StateRoot $s1
+              if($mx.event -ne 'RESTORED' -or (Value $key) -ne 0){throw "stress restore failed $_"}
+              $ux=Undo-Rc55GuiMigration $mx
+              if($ux.event -ne 'PRE_RC55_RESTORED' -or (Value $key) -ne 1){throw "stress undo failed $_"}
+            }
+            Write-Host 'RC55_GUI_MIGRATION_BEHAVIOR=PASS stress=32 ownership=PASS user_override=PASS absent=PASS owner_none=PASS'
+          } finally {
+            if(Test-Path -LiteralPath $key){Remove-Item -LiteralPath $key -Recurse -Force -ErrorAction SilentlyContinue}
+            if(Test-Path -LiteralPath $tmp){Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue}
+          }
