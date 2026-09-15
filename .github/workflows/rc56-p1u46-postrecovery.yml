@@ -1,10 +1,10 @@
-name: RC56 P1U46 Post-Recovery Controller Gate
+name: RC56 P1U46 Definitive Presenter-Only Gate
 
 on:
   push:
     branches: [lab/rc56-presenter-only-borderless-20260915]
     paths:
-      - 'lab/borderless/rc56/ptar_rc56_controller_postrecovery_host.cpp'
+      - 'lab/borderless/rc56/ptar_rc56_p1u46_definitive_host.cpp'
       - 'lab/borderless/rc56/build_rc56_presenter_only.py'
       - 'lab/borderless/rc56/build_rc56_synthetic_geometry_lab.py'
       - 'lab/borderless/rc56/check_rc51_inheritance.py'
@@ -15,9 +15,9 @@ permissions:
   contents: read
 
 jobs:
-  postrecovery:
+  definitive:
     runs-on: windows-2022
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
         with:
@@ -29,62 +29,67 @@ jobs:
           python lab\borderless\rc56\build_rc56_presenter_only.py lab\borderless\rc56\generated || exit /b 10
           python lab\borderless\rc56\build_rc56_synthetic_geometry_lab.py lab\borderless\rc56\generated lab\borderless\rc56\synthetic || exit /b 11
           python lab\borderless\rc56\check_rc51_inheritance.py lab\borderless\rc56\generated\ptar_borderless_rc56_prod.cpp || exit /b 12
-          git diff --quiet 4855c75bd9ae8e613ca0f94c2c3a7ea4eb5950ae HEAD -- lab/raster || exit /b 13
+          findstr /C:"enforce_geometry();" lab\borderless\rc56\generated\ptar_borderless_rc45_presenter_only.cpp >nul && exit /b 13 || ver >nul
+          findstr /C:"return GameProc(h,m,w,l);" lab\borderless\rc56\generated\ptar_borderless_rc45_presenter_only.cpp >nul && exit /b 14 || ver >nul
+          findstr /C:"RC56_BORDERLESS_POLICY=PRESENTER_ONLY_GAME_UNTOUCHED" lab\borderless\rc56\generated\ptar_borderless_rc45_presenter_only.cpp >nul || exit /b 15
+          git diff --quiet 4855c75bd9ae8e613ca0f94c2c3a7ea4eb5950ae HEAD -- lab/raster || exit /b 16
           echo RC56_SCOPE=PASS
 
       - name: Prepare exact P1U46 field geometry
         shell: powershell
         run: |
-          $ErrorActionPreference='Stop';$o='lab/borderless/rc56/postrecovery';New-Item -ItemType Directory -Force $o|Out-Null
+          $ErrorActionPreference='Stop';$o='lab/borderless/rc56/definitive';New-Item -ItemType Directory -Force $o|Out-Null
           python lab/borderless/rc48/rebuild_exact_field_runtime.py payload/d3d11.dll "$o/d3d11.dll";if($LASTEXITCODE -ne 0){throw 'runtime reconstruction'}
           $runtime=(Get-FileHash "$o/d3d11.dll" -Algorithm SHA256).Hash.ToLowerInvariant();if($runtime -ne '6f1686992bef971c9995df9f0cb91b93c6946988e12a837e5de956df37c9082b'){throw "runtime drift $runtime"}
           Copy-Item "$o/d3d11.dll" "$o/win81_nis_dx11_x64.dll" -Force
           $ini=Get-Content payload/win81_nis.ini -Raw;$ini=[regex]::Replace($ini,'(?m)^OutputWidth=.*$','OutputWidth=1920');$ini=[regex]::Replace($ini,'(?m)^OutputHeight=.*$','OutputHeight=1080');$ini=[regex]::Replace($ini,'(?m)^RenderWidth=.*$','RenderWidth=1280');$ini=[regex]::Replace($ini,'(?m)^RenderHeight=.*$','RenderHeight=720');Set-Content "$o/win81_nis.ini" $ini -Encoding ASCII
-          python lab/raster/rc52/build_rc52_context_hooks.py lab/raster/rc56_post_rc52.cpp;if($LASTEXITCODE -ne 0){throw 'rc52 gen'};python lab/raster/rc55/build_rc55_context_hooks.py lab/raster/rc56_post_rc52.cpp lab/raster/rc56_post_rc55.cpp;if($LASTEXITCODE -ne 0){throw 'rc55 gen'}
+          python lab/raster/rc52/build_rc52_context_hooks.py lab/raster/rc56_def_rc52.cpp;if($LASTEXITCODE -ne 0){throw 'rc52 gen'};python lab/raster/rc55/build_rc55_context_hooks.py lab/raster/rc56_def_rc52.cpp lab/raster/rc56_def_rc55.cpp;if($LASTEXITCODE -ne 0){throw 'rc55 gen'}
+          @("P1U46=$runtime",'OUTPUT=1920x1080','RENDER=1280x720','SCALE=1.5')|Set-Content 'lab/borderless/rc56/RC56_DEFINITIVE_GEOMETRY.txt' -Encoding ASCII
 
-      - name: Build exact components and host
+      - name: Build production synthetic exact RC55 and definitive host
         shell: cmd
         run: |
           call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
           if errorlevel 1 exit /b 20
           set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603
-          mkdir lab\borderless\rc56\postrecovery\prod 2>nul
-          mkdir lab\borderless\rc56\postrecovery\synth 2>nul
-          cl %CFLAGS% /LD lab\borderless\rc56\generated\ptar_borderless_rc56_prod.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fo:lab\borderless\rc56\postrecovery\prod\ /Fe:lab\borderless\rc56\postrecovery\prod\ptar_borderless.dll user32.lib advapi32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 21
-          cl %CFLAGS% /LD lab\borderless\rc56\synthetic\ptar_borderless_rc56_prod.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fo:lab\borderless\rc56\postrecovery\synth\ /Fe:lab\borderless\rc56\postrecovery\synth\ptar_borderless.dll user32.lib advapi32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 22
+          mkdir lab\borderless\rc56\definitive\prod 2>nul
+          mkdir lab\borderless\rc56\definitive\synth 2>nul
+          cl %CFLAGS% /LD lab\borderless\rc56\generated\ptar_borderless_rc56_prod.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fo:lab\borderless\rc56\definitive\prod\ /Fe:lab\borderless\rc56\definitive\prod\ptar_borderless.dll user32.lib advapi32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 21
+          cl %CFLAGS% /LD lab\borderless\rc56\synthetic\ptar_borderless_rc56_prod.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fo:lab\borderless\rc56\definitive\synth\ /Fe:lab\borderless\rc56\definitive\synth\ptar_borderless.dll user32.lib advapi32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 22
           set RCFLAGS=%CFLAGS% /I lab\raster\rc41
-          cl %RCFLAGS% /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc56_post_rc55.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fo:lab\borderless\rc56\postrecovery\ /Fe:lab\borderless\rc56\postrecovery\ptar_rc41.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 23
-          cl %CFLAGS% lab\borderless\rc56\ptar_rc56_controller_postrecovery_host.cpp /Fo:lab\borderless\rc56\postrecovery\ /Fe:lab\borderless\rc56\postrecovery\Warhammer.exe user32.lib advapi32.lib gdi32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:WINDOWS,6.03 || exit /b 24
-          copy /y lab\borderless\rc56\postrecovery\synth\ptar_borderless.dll lab\borderless\rc56\postrecovery\ptar_borderless.dll >nul
+          cl %RCFLAGS% /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc56_def_rc55.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fo:lab\borderless\rc56\definitive\ /Fe:lab\borderless\rc56\definitive\ptar_rc41.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 23
+          cl %CFLAGS% lab\borderless\rc56\ptar_rc56_p1u46_definitive_host.cpp /Fo:lab\borderless\rc56\definitive\ /Fe:lab\borderless\rc56\definitive\Warhammer.exe user32.lib advapi32.lib gdi32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:WINDOWS,6.03 || exit /b 24
+          copy /y lab\borderless\rc56\definitive\synth\ptar_borderless.dll lab\borderless\rc56\definitive\ptar_borderless.dll >nul
 
-      - name: Exact hash gates
+      - name: Exact production identity gates
         shell: powershell
         run: |
-          $ErrorActionPreference='Stop';$prod=(Get-FileHash 'lab/borderless/rc56/postrecovery/prod/ptar_borderless.dll' -Algorithm SHA256).Hash.ToLowerInvariant();$raster=(Get-FileHash 'lab/borderless/rc56/postrecovery/ptar_rc41.dll' -Algorithm SHA256).Hash.ToLowerInvariant();if($prod -ne 'aeee0a4ee9eafb2a7fc46373024db63b9ac4a63932b2455bd47b2db09d56c616'){throw "RC56 drift $prod"};if($raster -ne '271187ab9fd82b6829c52a667223f241ec79e98fa340b13c9a72270142156949'){throw "RC55 drift $raster"};Write-Host "RC56_PRODUCTION=$prod";Write-Host "RC55_RASTER=$raster"
+          $ErrorActionPreference='Stop';$prod=(Get-FileHash 'lab/borderless/rc56/definitive/prod/ptar_borderless.dll' -Algorithm SHA256).Hash.ToLowerInvariant();$synth=(Get-FileHash 'lab/borderless/rc56/definitive/synth/ptar_borderless.dll' -Algorithm SHA256).Hash.ToLowerInvariant();$raster=(Get-FileHash 'lab/borderless/rc56/definitive/ptar_rc41.dll' -Algorithm SHA256).Hash.ToLowerInvariant();if($prod -ne 'aeee0a4ee9eafb2a7fc46373024db63b9ac4a63932b2455bd47b2db09d56c616'){throw "RC56 drift $prod"};if($synth -eq $prod){throw 'synthetic carrier unexpectedly identical'};if($raster -ne '271187ab9fd82b6829c52a667223f241ec79e98fa340b13c9a72270142156949'){throw "RC55 drift $raster"};@("RC56_PRODUCTION=$prod","RC56_SYNTHETIC=$synth","RC55_RASTER=$raster",'HASH_GATES=PASS')|Set-Content 'lab/borderless/rc56/RC56_DEFINITIVE_COMPONENTS.txt' -Encoding ASCII;Get-Content 'lab/borderless/rc56/RC56_DEFINITIVE_COMPONENTS.txt'
 
-      - name: Post-recovery 80-cycle mode stress
+      - name: Definitive 80-cycle exact-runtime transition stress
         shell: powershell
         run: |
-          $ErrorActionPreference='Stop';$o=(Resolve-Path 'lab/borderless/rc56/postrecovery').Path;$p=Start-Process "$o/Warhammer.exe" -WorkingDirectory $o -PassThru;if(-not $p.WaitForExit(360000)){Stop-Process $p.Id -Force;throw 'stress timeout'};$ev=Join-Path $o 'RC56_CONTROLLER_STRESS.txt';if(!(Test-Path $ev)){throw 'missing stress evidence'};$txt=[IO.File]::ReadAllText($ev,[Text.Encoding]::Unicode);Write-Host $txt;if($p.ExitCode -ne 0){foreach($n in @('win81_nis.log','ptar_borderless_rc38.log','ptar_rc41.log','ptar_rc41_bootstrap.log')){$f=Join-Path $o $n;if(Test-Path $f){Write-Host "===== $n =====";Get-Content $f -Tail 250}};throw "stress rc=$($p.ExitCode)"};if(-not $txt.Contains('RC56_CONTROLLER_STRESS=PASS cycles=80 game_untouched=1 presenter_only=1 exact_runtime=1 postrecovery=1')){throw 'marker missing'};$rt=Get-Content (Join-Path $o 'win81_nis.log') -Raw;if(-not $rt.Contains('P1U46 STARTUP/INPUT CONTRACT COMPLETE')){throw 'P1U46 input recovery not completed'};$ctl=Get-Content (Join-Path $o 'ptar_borderless_rc38.log') -Raw;if(-not $ctl.Contains('RC56_BORDERLESS_POLICY=PRESENTER_ONLY_GAME_UNTOUCHED')){throw 'RC56 borderless path missing'};if($ctl.Contains('FAIL RC51 presenter resync')){throw 'RC51 failure logged'};Write-Host 'RC56_POSTRECOVERY_STRESS=PASS'
+          $ErrorActionPreference='Stop';$o=(Resolve-Path 'lab/borderless/rc56/definitive').Path;$p=Start-Process "$o/Warhammer.exe" -WorkingDirectory $o -PassThru;if(-not $p.WaitForExit(480000)){Stop-Process $p.Id -Force;throw 'stress timeout'};$ev=Join-Path $o 'RC56_DEFINITIVE_STRESS.txt';if(!(Test-Path $ev)){throw 'missing stress evidence'};$txt=[IO.File]::ReadAllText($ev,[Text.Encoding]::Unicode);Write-Host $txt;if($p.ExitCode -ne 0){foreach($n in @('win81_nis.log','ptar_borderless_rc38.log','ptar_rc41.log','ptar_rc41_bootstrap.log')){$f=Join-Path $o $n;if(Test-Path $f){Write-Host "===== $n =====";Get-Content $f -Tail 400}};throw "stress rc=$($p.ExitCode)"};if(-not $txt.Contains('RC56_DEFINITIVE_STRESS=PASS cycles=80 presenter_only=1 game_style_windowed=1 p1u46_complete=1 rc51_live=1')){throw 'definitive stress marker missing'};$rt=Get-Content (Join-Path $o 'win81_nis.log') -Raw;if(-not $rt.Contains('P1U46 STARTUP/INPUT CONTRACT COMPLETE')){throw 'P1U46 completion missing'};if(-not $rt.Contains('PTAR-NG MoE v01 exact x1.5 active')){throw 'exact x1.5 path missing'};if($rt.Contains('natural game ResizeBuffers failed')){throw 'natural game resize failure'};$ctl=Get-Content (Join-Path $o 'ptar_borderless_rc38.log') -Raw;if(-not $ctl.Contains('RC56_BORDERLESS_POLICY=PRESENTER_ONLY_GAME_UNTOUCHED')){throw 'RC56 path missing'};if($ctl.Contains('FAIL RC51 presenter resync')){throw 'RC51 failure logged'};Write-Host 'RC56_DEFINITIVE_STRESS=PASS'
 
-      - name: Post-recovery direct-borderless startup
+      - name: Definitive direct-borderless startup
         shell: powershell
         run: |
-          $ErrorActionPreference='Stop';$o=(Resolve-Path 'lab/borderless/rc56/postrecovery').Path;Remove-Item (Join-Path $o 'RC56_CONTROLLER_DIRECT.txt') -Force -ErrorAction SilentlyContinue;$p=Start-Process "$o/Warhammer.exe" -ArgumentList direct -WorkingDirectory $o -PassThru;if(-not $p.WaitForExit(240000)){Stop-Process $p.Id -Force;throw 'direct timeout'};$ev=Join-Path $o 'RC56_CONTROLLER_DIRECT.txt';if(!(Test-Path $ev)){throw 'missing direct evidence'};$txt=[IO.File]::ReadAllText($ev,[Text.Encoding]::Unicode);Write-Host $txt;if($p.ExitCode -ne 0){throw "direct rc=$($p.ExitCode)"};if(-not $txt.Contains('RC56_CONTROLLER_DIRECT=PASS game_untouched=1 presenter_only=1 exact_runtime=1 postrecovery=1')){throw 'direct marker missing'};Write-Host 'RC56_POSTRECOVERY_DIRECT=PASS'
+          $ErrorActionPreference='Stop';$o=(Resolve-Path 'lab/borderless/rc56/definitive').Path;Remove-Item (Join-Path $o 'RC56_DEFINITIVE_DIRECT.txt') -Force -ErrorAction SilentlyContinue;$p=Start-Process "$o/Warhammer.exe" -ArgumentList direct -WorkingDirectory $o -PassThru;if(-not $p.WaitForExit(300000)){Stop-Process $p.Id -Force;throw 'direct timeout'};$ev=Join-Path $o 'RC56_DEFINITIVE_DIRECT.txt';if(!(Test-Path $ev)){throw 'missing direct evidence'};$txt=[IO.File]::ReadAllText($ev,[Text.Encoding]::Unicode);Write-Host $txt;if($p.ExitCode -ne 0){throw "direct rc=$($p.ExitCode)"};if(-not $txt.Contains('RC56_DEFINITIVE_DIRECT=PASS presenter_only=1 game_style_windowed=1 p1u46_complete=1 rc51_live=1')){throw 'direct marker missing'};Write-Host 'RC56_DEFINITIVE_DIRECT=PASS'
 
       - name: Summary
         shell: powershell
         run: |
-          $prod=(Get-FileHash 'lab/borderless/rc56/postrecovery/prod/ptar_borderless.dll' -Algorithm SHA256).Hash.ToLowerInvariant();@('RC56_POSTRECOVERY_GATE=PASS','P1U46_EXACT_RUNTIME=PASS','P1U46_INPUT_RECOVERY_COMPLETE=PASS','RC56_TRANSITIONS=80_PASS','RC56_DIRECT_BORDERLESS=PASS','GAME_HWND_UNTOUCHED_BY_RC56=PASS','RC51_SOURCE_INHERITANCE=EXACT','RC55_RASTER_UNCHANGED=PASS',"RC56_PRODUCTION=$prod")|Set-Content 'lab/borderless/rc56/RC56_POSTRECOVERY_SUMMARY.txt' -Encoding ASCII;Get-Content 'lab/borderless/rc56/RC56_POSTRECOVERY_SUMMARY.txt'
+          $prod=(Get-FileHash 'lab/borderless/rc56/definitive/prod/ptar_borderless.dll' -Algorithm SHA256).Hash.ToLowerInvariant();@('RC56_DEFINITIVE_GATE=PASS','P1U46_EXACT_RUNTIME=PASS','P1U46_INPUT_CONTRACT_COMPLETE=PASS','RC51_LIVE=PASS','RC55_RASTER_UNCHANGED=PASS','TRANSITIONS=80_PASS','DIRECT_BORDERLESS=PASS','LEGACY_GAME_BORDERLESS_AUTHORITY=ABSENT','GAME_STYLE_REMAINS_WINDOWED=PASS','PRESENTER_ONLY_BORDERLESS=PASS',"RC56_PRODUCTION=$prod")|Set-Content 'lab/borderless/rc56/RC56_DEFINITIVE_SUMMARY.txt' -Encoding ASCII;Get-Content 'lab/borderless/rc56/RC56_DEFINITIVE_SUMMARY.txt'
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: PTAR_RC56_POSTRECOVERY_GATE
+          name: PTAR_RC56_DEFINITIVE_GATE
           path: |
-            lab/borderless/rc56/RC56_POSTRECOVERY_SUMMARY.txt
-            lab/borderless/rc56/postrecovery/*.txt
-            lab/borderless/rc56/postrecovery/*.log
-            lab/borderless/rc56/postrecovery/prod/ptar_borderless.dll
-            lab/borderless/rc56/postrecovery/ptar_rc41.dll
+            lab/borderless/rc56/RC56_DEFINITIVE_*.txt
+            lab/borderless/rc56/definitive/*.txt
+            lab/borderless/rc56/definitive/*.log
+            lab/borderless/rc56/definitive/prod/ptar_borderless.dll
+            lab/borderless/rc56/definitive/synth/ptar_borderless.dll
+            lab/borderless/rc56/definitive/ptar_rc41.dll
           retention-days: 14
