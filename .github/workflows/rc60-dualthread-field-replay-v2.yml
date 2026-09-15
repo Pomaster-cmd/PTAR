@@ -1,0 +1,207 @@
+name: RC60 Dual-Thread Field Replay V2
+
+on:
+  push:
+    branches: [lab/rc60-passive-p1u46-coexist-20260915]
+    paths:
+      - 'lab/borderless/rc60/**'
+      - '.github/workflows/rc60-dualthread-field-replay-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  field-replay-v2:
+    runs-on: windows-2022
+    timeout-minutes: 24
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reconstruct exact P1U46 and exact RC55 raster
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $root='lab/borderless/rc60/runv2'
+          New-Item -ItemType Directory -Force $root|Out-Null
+          python lab/borderless/rc48/rebuild_exact_field_runtime.py payload/d3d11.dll "$root/d3d11.dll"
+          if($LASTEXITCODE-ne0){throw 'P1U46 rebuild'}
+          $h=(Get-FileHash "$root/d3d11.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($h-ne'6f1686992bef971c9995df9f0cb91b93c6946988e12a837e5de956df37c9082b'){throw "runtime drift $h"}
+          Copy-Item "$root/d3d11.dll" "$root/win81_nis_dx11_x64.dll"
+          $ini=Get-Content payload/win81_nis.ini -Raw
+          $ini=[regex]::Replace($ini,'(?m)^OutputWidth=.*$','OutputWidth=1920')
+          $ini=[regex]::Replace($ini,'(?m)^OutputHeight=.*$','OutputHeight=1080')
+          $ini=[regex]::Replace($ini,'(?m)^RenderWidth=.*$','RenderWidth=1280')
+          $ini=[regex]::Replace($ini,'(?m)^RenderHeight=.*$','RenderHeight=720')
+          Set-Content "$root/win81_nis.ini" $ini -Encoding ASCII
+          python lab/raster/rc52/build_rc52_context_hooks.py lab/raster/rc60_v2_rc52.cpp
+          if($LASTEXITCODE-ne0){throw 'rc52'}
+          python lab/raster/rc55/build_rc55_context_hooks.py lab/raster/rc60_v2_rc52.cpp lab/raster/rc60_v2_rc55.cpp
+          if($LASTEXITCODE-ne0){throw 'rc55'}
+          python lab/borderless/rc59/build_rc59_popup_recovery.py
+          if($LASTEXITCODE-ne0){throw 'RC59 source generation'}
+
+      - name: Prove exact P1U46 active-route polarity from machine code
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          @'
+          from pathlib import Path
+          p=Path('lab/borderless/rc60/runv2/d3d11.dll').read_bytes()
+          # Exact PE mapping for .text: RVA 0x1000 -> file 0x400.
+          def at(rva,n=7):
+              off=0x400+(rva-0x1000)
+              return p[off:off+n]
+          usr=at(0x12646)
+          game=at(0x126A1)
+          # Both instructions are: C6 05 <rel32> <imm8>. USR writes 0; GAME writes 1.
+          if usr[:2] != b'\xC6\x05' or usr[6] != 0:
+              raise SystemExit(f'USR route write signature drift: {usr.hex()}')
+          if game[:2] != b'\xC6\x05' or game[6] != 1:
+              raise SystemExit(f'GAME route write signature drift: {game.hex()}')
+          def target(rva,ins):
+              disp=int.from_bytes(ins[2:6],'little',signed=True)
+              return rva+7+disp
+          tu=target(0x12646,usr);tg=target(0x126A1,game)
+          if tu != 0x02C7E074 or tg != 0x02C7E074:
+              raise SystemExit(f'active route target drift usr={tu:x} game={tg:x}')
+          print('P1U46_ACTIVE_ROUTE_POLARITY=PASS RVA=02C7E074 USR=0 GAME_DIRECT=1')
+          '@ | python -
+          if($LASTEXITCODE-ne0){throw 'route polarity proof failed'}
+
+      - name: Build RC59 negative oracle RC60 twice RC55 and hosts
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 20
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603
+          mkdir lab\borderless\rc60\runv2\rc60a 2>nul
+          mkdir lab\borderless\rc60\runv2\rc60b 2>nul
+          mkdir lab\borderless\rc60\runv2\rc59 2>nul
+          cl %CFLAGS% /LD lab\borderless\rc60\ptar_borderless_rc60_passive_route.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fo:lab\borderless\rc60\runv2\rc60a\ /Fe:lab\borderless\rc60\runv2\rc60a\ptar_borderless.dll user32.lib advapi32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 21
+          cl %CFLAGS% /LD lab\borderless\rc60\ptar_borderless_rc60_passive_route.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fo:lab\borderless\rc60\runv2\rc60b\ /Fe:lab\borderless\rc60\runv2\rc60b\ptar_borderless.dll user32.lib advapi32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 22
+          cl %CFLAGS% /LD lab\borderless\rc59\generated\ptar_borderless_rc59_mode_bridge.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fo:lab\borderless\rc60\runv2\rc59\ /Fe:lab\borderless\rc60\runv2\rc59\ptar_borderless.dll user32.lib advapi32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 23
+          set RCFLAGS=%CFLAGS% /I lab\raster\rc41
+          cl %RCFLAGS% /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc60_v2_rc55.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fo:lab\borderless\rc60\runv2\ /Fe:lab\borderless\rc60\runv2\ptar_rc41.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 24
+          cl %CFLAGS% lab\borderless\rc60\ptar_rc60_dualthread_field_host.cpp /Fo:lab\borderless\rc60\runv2\ /Fe:lab\borderless\rc60\runv2\Warhammer_rc60.exe user32.lib advapi32.lib gdi32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:WINDOWS,6.03 || exit /b 25
+          cl %CFLAGS% lab\borderless\rc60\ptar_rc60_rc59_negative_host.cpp /Fo:lab\borderless\rc60\runv2\ /Fe:lab\borderless\rc60\runv2\Warhammer_rc59_negative.exe user32.lib advapi32.lib gdi32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:WINDOWS,6.03 || exit /b 26
+
+      - name: Reproducibility architecture and exact-component gates
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $r='lab/borderless/rc60/runv2'
+          $a=(Get-FileHash "$r/rc60a/ptar_borderless.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $b=(Get-FileHash "$r/rc60b/ptar_borderless.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($a-ne$b){throw "RC60 not reproducible $a $b"}
+          $old=(Get-FileHash "$r/rc59/ptar_borderless.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($old-ne'541c958c95f00d5e37dd1e5c852c8a0855e2ce806cf7686bbcdaa63c6ae6f97d'){throw "RC59 oracle drift $old"}
+          $ras=(Get-FileHash "$r/ptar_rc41.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($ras-ne'271187ab9fd82b6829c52a667223f241ec79e98fa340b13c9a72270142156949'){throw "RC55 drift $ras"}
+          $src=Get-Content 'lab/borderless/rc60/ptar_borderless_rc60_passive_route.cpp' -Raw
+          foreach($bad in @('SetWindowLongPtrW(','SetWindowLongPtrA(','SetWindowPos(','SetParent(','ResizeBuffers(','CallWindowProcW(','CallWindowProcA(','SendMessageW(','SendMessageA(','GWLP_WNDPROC','034FFA68'))){if($src.Contains($bad)){throw "forbidden RC60 authority: $bad"}}
+          foreach($need in @('RC60_INITIAL_BORDERLESS_ZERO_TOUCH','RC60_GAME_WNDPROC_OWNER=P1U46_ONLY','RC60_GAME_GEOMETRY_OWNER=GAME_ONLY','RC60_P1U46_PRIVATE_POLICY_WRITES=NONE','RC60_ACTIVE_ROUTE_POLARITY=DISASSEMBLY_PROVEN','kGameDirectActiveRva=0x02C7E074u','return (*(volatile BYTE*)(g_base+kGameDirectActiveRva))?0:1')){if(-not$src.Contains($need)){throw "missing RC60 contract $need"}}
+          $bytes=[IO.File]::ReadAllBytes("$r/rc60a/ptar_borderless.dll");$pe=[BitConverter]::ToInt32($bytes,0x3C)
+          if([BitConverter]::ToUInt16($bytes,$pe+4)-ne0x8664-or[BitConverter]::ToUInt16($bytes,$pe+24)-ne0x20B-or[BitConverter]::ToUInt16($bytes,$pe+72)-ne6-or[BitConverter]::ToUInt16($bytes,$pe+74)-ne3){throw 'RC60 PE x64/Win8.1 gate'}
+          @("RC60_CARRIER_SHA256=$a","RC59_NEGATIVE_ORACLE_SHA256=$old","RC55_RASTER_SHA256=$ras",'P1U46_SHA256=6f1686992bef971c9995df9f0cb91b93c6946988e12a837e5de956df37c9082b','P1U46_ACTIVE_ROUTE_POLARITY=USR0_GAME1','RC60_REPRODUCIBLE=PASS','RC60_NO_HWND_SUBCLASS=PASS','RC60_NO_SYNC_CROSS_THREAD_WNDPROC=PASS','RC60_NO_GAME_GEOMETRY_MUTATION=PASS','RC60_NO_PRIVATE_POLICY_WRITE=PASS','PE_X64_WIN81=PASS')|Set-Content "$r/RC60_BUILD_GATES.txt" -Encoding ASCII
+          Get-Content "$r/RC60_BUILD_GATES.txt"
+
+      - name: Stage four isolated replays
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$r=(Resolve-Path 'lab/borderless/rc60/runv2').Path
+          foreach($n in @('negative','borderless','windowed','policy2')){
+            New-Item -ItemType Directory -Force (Join-Path $r $n)|Out-Null
+            Copy-Item "$r/d3d11.dll" (Join-Path $r "$n/d3d11.dll")
+            Copy-Item "$r/win81_nis_dx11_x64.dll" (Join-Path $r "$n/win81_nis_dx11_x64.dll")
+            Copy-Item "$r/win81_nis.ini" (Join-Path $r "$n/win81_nis.ini")
+            Copy-Item "$r/ptar_rc41.dll" (Join-Path $r "$n/ptar_rc41.dll")
+          }
+          Copy-Item "$r/rc59/ptar_borderless.dll" "$r/negative/ptar_borderless.dll"
+          Copy-Item "$r/Warhammer_rc59_negative.exe" "$r/negative/Warhammer.exe"
+          foreach($n in @('borderless','windowed','policy2')){
+            Copy-Item "$r/rc60a/ptar_borderless.dll" "$r/$n/ptar_borderless.dll"
+            Copy-Item "$r/Warhammer_rc60.exe" "$r/$n/Warhammer.exe"
+          }
+
+      - name: Negative oracle must catch RC59 field startup defect
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o=(Resolve-Path 'lab/borderless/rc60/runv2/negative').Path
+          $p=Start-Process "$o/Warhammer.exe" -WorkingDirectory $o -PassThru
+          if(-not$p.WaitForExit(70000)){Stop-Process -Id $p.Id -Force;throw 'RC59 negative watchdog'}
+          if($p.ExitCode-ne0){throw "negative host rc=$($p.ExitCode)"}
+          $log=Get-Content "$o/ptar_borderless_rc59.log" -Raw
+          [IO.File]::ReadAllText("$o/RC59_NEGATIVE_FIELD_REPLAY.txt",[Text.Encoding]::Unicode)|Write-Host
+          Get-Content "$o/ptar_borderless_rc59.log" -Tail 100
+          if(-not$log.Contains('FAIL RC59 startup popup canonicalization')){throw 'field replay did not catch RC59 startup timeout'}
+          if(-not$log.Contains('FAIL RC59 P1U46 policy mode2 unsafe')){throw 'field replay did not reproduce field mode2 rejection'}
+          Write-Host 'RC59_NEGATIVE_ORACLE=PASS'
+
+      - name: RC60 initial Borderless UI stall reachability plus 500 transitions
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o=(Resolve-Path 'lab/borderless/rc60/runv2/borderless').Path
+          $p=Start-Process "$o/Warhammer.exe" -ArgumentList '--borderless' -WorkingDirectory $o -PassThru
+          if(-not$p.WaitForExit(420000)){Stop-Process -Id $p.Id -Force;throw 'RC60 borderless watchdog'}
+          if($p.ExitCode-ne0){
+            foreach($n in @('RC60_DUALTHREAD_FIELD_REPLAY.txt','ptar_borderless_rc60.log','win81_nis.log')){$q=Join-Path $o $n;if(Test-Path $q){Write-Host "===== $n =====";if($n-like'*.log'){Get-Content $q -Tail 300}else{[IO.File]::ReadAllText($q,[Text.Encoding]::Unicode)|Write-Host}}}
+            throw "RC60 borderless rc=$($p.ExitCode)"
+          }
+          $e=[IO.File]::ReadAllText("$o/RC60_DUALTHREAD_FIELD_REPLAY.txt",[Text.Encoding]::Unicode);Write-Host $e
+          if(-not$e.Contains('INITIAL_BORDERLESS_REACHABILITY=PASS')-or-not$e.Contains('RC60_DUALTHREAD_FIELD_REPLAY=PASS initial=BORDERLESS cycles=500')){throw 'borderless reachability/stress marker missing'}
+          $l=Get-Content "$o/ptar_borderless_rc60.log" -Raw
+          if(-not$l.Contains('RC60_INITIAL_BORDERLESS_ZERO_TOUCH')-or$l.Contains('FAIL RC60')){throw 'RC60 borderless contract/log failure'}
+          if($l.Contains('RC60_F10_POSTED_TO_P1U46_WNDPROC_ASYNC') -and $l.IndexOf('RC60_F10_POSTED_TO_P1U46_WNDPROC_ASYNC') -lt $l.IndexOf('RC60_WINDOWSTYLE_OBSERVED 0')){throw 'RC60 toggled initial Borderless before user/game requested Windowed'}
+          Write-Host 'RC60_BORDERLESS_FIELD_REPLAY=PASS'
+
+      - name: RC60 initial Windowed UI stall reachability plus 500 transitions
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o=(Resolve-Path 'lab/borderless/rc60/runv2/windowed').Path
+          $p=Start-Process "$o/Warhammer.exe" -ArgumentList '--windowed' -WorkingDirectory $o -PassThru
+          if(-not$p.WaitForExit(420000)){Stop-Process -Id $p.Id -Force;throw 'RC60 windowed watchdog'}
+          if($p.ExitCode-ne0){
+            foreach($n in @('RC60_DUALTHREAD_FIELD_REPLAY.txt','ptar_borderless_rc60.log','win81_nis.log')){$q=Join-Path $o $n;if(Test-Path $q){Write-Host "===== $n =====";if($n-like'*.log'){Get-Content $q -Tail 300}else{[IO.File]::ReadAllText($q,[Text.Encoding]::Unicode)|Write-Host}}}
+            throw "RC60 windowed rc=$($p.ExitCode)"
+          }
+          $e=[IO.File]::ReadAllText("$o/RC60_DUALTHREAD_FIELD_REPLAY.txt",[Text.Encoding]::Unicode);Write-Host $e
+          if(-not$e.Contains('INITIAL_WINDOWED_REACHABILITY=PASS')-or-not$e.Contains('RC60_DUALTHREAD_FIELD_REPLAY=PASS initial=WINDOWED cycles=500')){throw 'windowed reachability/stress marker missing'}
+          $l=Get-Content "$o/ptar_borderless_rc60.log" -Raw
+          if($l.Contains('FAIL RC60')){throw 'RC60 windowed log failure'}
+          Write-Host 'RC60_WINDOWED_FIELD_REPLAY=PASS'
+
+      - name: RC60 hostile field policy-mode2 startup immunity
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o=(Resolve-Path 'lab/borderless/rc60/runv2/policy2').Path
+          $p=Start-Process "$o/Warhammer.exe" -ArgumentList '--borderless --policy2 --short' -WorkingDirectory $o -PassThru
+          if(-not$p.WaitForExit(180000)){Stop-Process -Id $p.Id -Force;throw 'RC60 policy2 watchdog'}
+          if($p.ExitCode-ne0){throw "RC60 policy2 host rc=$($p.ExitCode)"}
+          $e=[IO.File]::ReadAllText("$o/RC60_DUALTHREAD_FIELD_REPLAY.txt",[Text.Encoding]::Unicode);Write-Host $e
+          if(-not$e.Contains('policyAfter=2')-or-not$e.Contains('INITIAL_BORDERLESS_REACHABILITY=PASS')){throw 'policy2 condition/reachability missing'}
+          $src=Get-Content 'lab/borderless/rc60/ptar_borderless_rc60_passive_route.cpp' -Raw
+          if($src.Contains('034FFA68')){throw 'carrier illegally knows field policy byte'}
+          Write-Host 'RC60_POLICY2_IMMUNITY=PASS'
+
+      - name: Final summary
+        shell: powershell
+        run: |
+          $r='lab/borderless/rc60/runv2';$h=(Get-FileHash "$r/rc60a/ptar_borderless.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          @('RC60_FIELD_REPLAY_MATRIX_V2=PASS','NEGATIVE_ORACLE_RC59_FAILURE_REPRODUCED=PASS','P1U46_ROUTE_POLARITY_DISASSEMBLY_PROVEN=PASS','INITIAL_BORDERLESS_UI_STALL_15S_REACHABILITY=PASS','INITIAL_WINDOWED_UI_STALL_15S_REACHABILITY=PASS','BORDERLESS_500_TRANSITIONS=PASS','WINDOWED_500_TRANSITIONS=PASS','POLICY_MODE2_STARTUP_IMMUNITY=PASS','GAME_HWND_SUBCLASS=NONE','SYNC_CROSS_THREAD_WNDPROC=NONE','GAME_HWND_GEOMETRY_MUTATION_BY_RC60=NONE','P1U46_PRIVATE_POLICY_WRITE_BY_RC60=NONE','PRESENTER_MUTATION_BY_RC60=NONE','DXGI_RESIZE_BY_RC60=NONE','RC55_RASTER_EXACT=PASS','P1U46_EXACT=PASS',"RC60_CARRIER_SHA256=$h")|Set-Content "$r/RC60_FIELD_REPLAY_FINAL.txt" -Encoding ASCII
+          Get-Content "$r/RC60_FIELD_REPLAY_FINAL.txt"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PTAR_RC60_DUALTHREAD_FIELD_REPLAY_V2
+          path: |
+            lab/borderless/rc60/runv2/**/*.txt
+            lab/borderless/rc60/runv2/**/*.log
+            lab/borderless/rc60/runv2/rc60a/ptar_borderless.dll
+            lab/borderless/rc60/runv2/ptar_rc41.dll
+          if-no-files-found: warn
+          retention-days: 14
