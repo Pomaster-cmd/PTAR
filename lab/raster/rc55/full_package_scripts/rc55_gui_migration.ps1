@@ -1,4 +1,4 @@
-﻿$script:Rc55DefaultGuiKey='HKCU:\Software\NeoCore Games\Warhammer Martyr\Options'
+$script:Rc55DefaultGuiKey='HKCU:\Software\NeoCore Games\Warhammer Martyr\Options'
 
 function Get-Rc55GuiValueState{
  param([string]$RegistryKey=$script:Rc55DefaultGuiKey)
@@ -25,6 +25,18 @@ function Find-Rc55PriorGuiOwnerState{
   if(($pm.gui.PSObject.Properties.Name -contains 'key') -and ([string]$pm.gui.key)){$key=[string]$pm.gui.key}
   return [ordered]@{manifest=$sp;package=$pkg;gui=$pm.gui;registry_key=$key}
  }
+ return $null
+}
+
+function Get-Rc55MemberValue{
+ param($Object,[string]$Name)
+ if($null -eq $Object){return $null}
+ if($Object -is [System.Collections.IDictionary]){
+  if($Object.Contains($Name)){return $Object[$Name]}
+  return $null
+ }
+ $p=$Object.PSObject.Properties[$Name]
+ if($null -ne $p){return $p.Value}
  return $null
 }
 
@@ -69,7 +81,8 @@ function Undo-Rc55GuiMigration{
  if(-not $Migration){return $r}
  if(-not [bool]$Migration.changed){return $r}
  $key=$script:Rc55DefaultGuiKey
- if(($Migration.PSObject.Properties.Name -contains 'registry_key') -and ([string]$Migration.registry_key)){$key=[string]$Migration.registry_key}
+ $candidateKey=Get-Rc55MemberValue -Object $Migration -Name 'registry_key'
+ if([string]$candidateKey){$key=[string]$candidateKey}
  $cur=Get-Rc55GuiValueState -RegistryKey $key
  $matchesAfter=(([bool]$Migration.after_exists -eq [bool]$cur.exists) -and ((-not [bool]$cur.exists) -or ([int]$cur.value -eq [int]$Migration.after_value)))
  if(-not $matchesAfter){$r.event='KEEP_CURRENT_CHANGED';return $r}
