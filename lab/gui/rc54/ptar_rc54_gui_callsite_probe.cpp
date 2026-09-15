@@ -5,6 +5,8 @@
 namespace ptar_rc54 {
 
 namespace {
+GuiCallsiteProbe g_probe;
+
 static HMODULE allocation_base(const void* p) noexcept {
     if(!p) return nullptr;
     MEMORY_BASIC_INFORMATION mbi{};
@@ -12,6 +14,8 @@ static HMODULE allocation_base(const void* p) noexcept {
     return static_cast<HMODULE>(mbi.AllocationBase);
 }
 }
+
+GuiCallsiteProbe& global_gui_callsite_probe() noexcept { return g_probe; }
 
 bool GuiCallsiteProbe::configure(HMODULE gameModule, HMODULE sidecarModule, const ptar_rc41::Contract& contract) noexcept {
     if(configured_ || !gameModule || !sidecarModule || !contract.valid()) return false;
@@ -71,24 +75,24 @@ void GuiCallsiteProbe::write_line_unlocked(const char* line) noexcept {
 void GuiCallsiteProbe::write_header_unlocked() noexcept {
     char line[512]{};
     std::snprintf(line,sizeof(line),
-        "RC54_GUI_CALLSITE_PROBE=ACTIVE logical=%ux%u physical=%ux%u policy=observe_only_no_behavior_change\r\n",
-        contract_.logical.w,contract_.logical.h,contract_.physical.w,contract_.physical.h);
+        "RC54_GUI_CALLSITE_PROBE=ACTIVE game=%p logical=%ux%u physical=%ux%u policy=observe_only_no_behavior_change\r\n",
+        static_cast<void*>(gameModule_),contract_.logical.w,contract_.logical.h,contract_.physical.w,contract_.physical.h);
     write_line_unlocked(line);
 }
 
 void GuiCallsiteProbe::write_observation_unlocked(const Entry& entry,DWORD threadId,uint64_t elapsedUs) noexcept {
     char line[768]{};
     std::snprintf(line,sizeof(line),
-        "t_us=%llu tid=%lu kind=%s domain=%s module=%p rva=0x%llX primary=%u physical=%ux%u reported=%ux%u virtualized=%u hits=%llu\r\n",
+        "t_us=%llu tid=%lu kind=%s domain=%s module=%p rva=0x%llX physical=%ux%u reported=%ux%u virtualized=%u hits=%llu\r\n",
         static_cast<unsigned long long>(elapsedUs),
         static_cast<unsigned long>(threadId),kind_name(entry.kind),domain_name(entry.domain),
-        static_cast<void*>(entry.module),static_cast<unsigned long long>(entry.rva),entry.primaryBound?1u:0u,
+        static_cast<void*>(entry.module),static_cast<unsigned long long>(entry.rva),
         entry.physicalW,entry.physicalH,entry.reportedW,entry.reportedH,entry.virtualized?1u:0u,
         static_cast<unsigned long long>(entry.hits));
     write_line_unlocked(line);
 }
 
-void GuiCallsiteProbe::observe(const QueryObservation& observation,bool primaryBound) noexcept {
+void GuiCallsiteProbe::observe(const QueryObservation& observation) noexcept {
     if(!configured_ || !observation.returnAddress) return;
     const HMODULE module=allocation_base(observation.returnAddress);
     if(!module) return;
@@ -122,7 +126,6 @@ void GuiCallsiteProbe::observe(const QueryObservation& observation,bool primaryB
         found->kind=observation.kind;
     }
     found->domain=observation.domain;
-    found->primaryBound=primaryBound;
     found->physicalW=observation.physicalW;
     found->physicalH=observation.physicalH;
     found->reportedW=observation.reportedW;
