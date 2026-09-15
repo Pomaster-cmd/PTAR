@@ -1,6 +1,6 @@
 ﻿$ErrorActionPreference='Stop'
 $PackRoot=Split-Path -Parent $PSScriptRoot;$S=Join-Path $PackRoot '_PTAR_UNINSTALL\state'
-$ExpectedGuiMigrationModule='b3dcb424b7159e6502f109987c825d842b7ec953151d4b255b5bbb85828a994b'
+$ExpectedGuiMigrationModule='10a87355e56a84af2ad2905d31313b0c17e64aa6169b2fd1084201f3e52c2a1b'
 function Sha([string]$p){if(Test-Path -LiteralPath $p -PathType Leaf){return (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant()}return $null}
 $GuiMigrationModule=Join-Path $PSScriptRoot 'rc55_gui_migration.ps1';if((Sha $GuiMigrationModule)-ne $ExpectedGuiMigrationModule){Write-Host '[FAIL] Module migration GUI RC55 absent/modifie.';exit 15};. $GuiMigrationModule
 $l=Join-Path $S 'LATEST_STATE.txt';if(-not(Test-Path -LiteralPath $l -PathType Leaf)){Write-Host '[FAIL] Etat installation absent';exit 2}
