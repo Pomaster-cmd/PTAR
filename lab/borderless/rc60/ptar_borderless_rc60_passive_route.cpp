@@ -18,8 +18,9 @@
 //   * WindowStyle is only mirrored to P1U46's validated F10 safe-boundary route switch.
 //   * Initial Borderless (WindowStyle=1) is zero-touch whenever P1U46 already starts
 //     on USR PRESENTER: no startup message is queued.
-//   * Any needed route change is an asynchronous PostMessage pair. Completion is
-//     confirmed only by P1U46's disassembly-proven read-only active-route byte.
+//   * Any needed route change is one asynchronous PostMessage pair. RC60 never queues
+//     a second toggle while the first is pending, even across a long UI-thread stall.
+//     Completion is confirmed only by P1U46's disassembly-proven active-route byte.
 
 namespace {
 HMODULE g_self=nullptr,g_runtime=nullptr;
@@ -28,7 +29,7 @@ HWND g_game=nullptr;
 UINT g_renderW=0,g_renderH=0;
 volatile LONG g_started=0,g_installed=0,g_stop=0,g_uiReady=0,g_pending=0;
 volatile LONG64 g_prefChanges=0,g_togglePosts=0,g_toggleRetries=0,g_postFailures=0,g_routeMatches=0,g_uiTimeouts=0;
-DWORD g_startTick=0,g_pendingTick=0,g_prefStableTick=0;
+DWORD g_startTick=0,g_prefStableTick=0;
 int g_lastPref=-2;
 
 static const wchar_t* kOptions=L"Software\\NeoCore Games\\Warhammer Martyr\\Options";
@@ -60,7 +61,7 @@ static bool game_valid() noexcept {return IsWindow(g_game)!=FALSE&&g_renderW!=0&
 static bool post_f10() noexcept {
     if(!IsWindow(g_game))return false;const LPARAM down=(LPARAM)(1u|(0x44u<<16));const LPARAM up=(LPARAM)(1u|(0x44u<<16)|(1u<<30)|(1u<<31));
     const BOOL a=PostMessageW(g_game,WM_KEYDOWN,VK_F10,down),b=PostMessageW(g_game,WM_KEYUP,VK_F10,up);if(!a||!b){InterlockedIncrement64(&g_postFailures);logfmt("FAIL RC60 F10 post",GetLastError(),a,b,0);return false;}
-    InterlockedIncrement64(&g_togglePosts);g_pendingTick=GetTickCount();InterlockedExchange(&g_pending,1);logline("RC60_F10_POSTED_TO_P1U46_WNDPROC_ASYNC");return true;
+    InterlockedIncrement64(&g_togglePosts);InterlockedExchange(&g_pending,1);logline("RC60_F10_POSTED_TO_P1U46_WNDPROC_ASYNC");return true;
 }
 static bool presenter_native() noexcept {
     HWND p=FindWindowW(L"Win81USRPresenterV041",nullptr);if(!p||!IsWindow(p))return false;RECT c{};if(!GetClientRect(p,&c))return false;return (UINT)(c.right-c.left)==1920u&&(UINT)(c.bottom-c.top)==1080u;
@@ -74,6 +75,7 @@ static DWORD WINAPI Worker(LPVOID) noexcept {
     logline("RC60_SYNC_CROSS_THREAD_WINDOW_MESSAGES=NONE");
     logline("RC60_P1U46_PRIVATE_POLICY_WRITES=NONE");
     logline("RC60_ACTIVE_ROUTE_POLARITY=DISASSEMBLY_PROVEN");
+    logline("RC60_PENDING_TOGGLE_POLICY=NO_DUPLICATES");
     logline("RC60_PRESENTER_MUTATION=NONE");
     logline("RC60_DXGI_RESIZE=NONE");
     for(unsigned i=0;i<4000&&!InterlockedCompareExchange(&g_stop,0,0);++i){
@@ -95,13 +97,9 @@ static DWORD WINAPI Worker(LPVOID) noexcept {
         }
         InterlockedExchange(&g_uiReady,0);
         const DWORD stableFor=now-g_prefStableTick,age=now-g_startTick;
-        if(stableFor>=300u&&age>=5000u){
-            if(!InterlockedCompareExchange(&g_pending,0,0)){
-                post_f10();
-            } else if(now-g_pendingTick>5000u){
-                InterlockedIncrement64(&g_toggleRetries);InterlockedExchange(&g_pending,0);logline("RC60_F10_ROUTE_CONFIRM_TIMEOUT_RETRY");
-            }
-        }
+        if(stableFor>=300u&&age>=5000u&&!InterlockedCompareExchange(&g_pending,0,0))post_f10();
+        // A successfully queued F10 is never duplicated. If the preference changes while it is
+        // pending, the queued toggle is allowed to complete; the next loop then reconciles once.
         Sleep(100);
     }
     return 0;
