@@ -30,10 +30,12 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference='Stop'
-          $p='lab/borderless/rc58/generated/ptar_borderless_rc58_prod.cpp';$t=Get-Content $p -Raw
-          foreach($needle in @('CTRL+F10','RC58_MODE_REQUEST_REJECTED_STARTUP_NOT_STABLE','RC58_NATIVE_BORDERLESS_VIRTUALIZED','RC58_REGISTRY_BORDERLESS_VIRTUALIZED','RC58_STARTUP_STABLE presents/ms','PTAR_RC58_QueryVirtualMode')){if(-not $t.Contains($needle)){throw "missing $needle"}}
-          if($t.Contains('RC57_INITIAL_BORDERLESS_DEFERRED_WINDOWED_BOOT')){throw 'RC57 handshake leaked'}
+          $p=Get-Content 'lab/borderless/rc58/generated/ptar_borderless_rc58_prod.cpp' -Raw
           $c=Get-Content 'lab/borderless/rc58/generated/ptar_borderless_rc46_presenter_only.cpp' -Raw
+          $b=Get-Content 'lab/borderless/rc58/generated/ptar_borderless_rc45_presenter_only.cpp' -Raw
+          $t=$p+"`n"+$c+"`n"+$b
+          foreach($needle in @('Ctrl+F10','RC58_MODE_REQUEST_REJECTED_STARTUP_NOT_STABLE','RC58_NATIVE_BORDERLESS_VIRTUALIZED','RC58_REGISTRY_BORDERLESS_VIRTUALIZED','RC58_STARTUP_STABLE presents/ms','PTAR_RC58_QueryVirtualMode')){if(-not $t.Contains($needle)){throw "missing $needle"}}
+          if($t.Contains('RC57_INITIAL_BORDERLESS_DEFERRED_WINDOWED_BOOT')){throw 'RC57 handshake leaked'}
           if($c -notmatch 'g_rc45LastWindowStylePreference=0'){throw 'native baseline not pinned'}
           if($c -match 'preference==1\).*enter_borderless'){throw 'native initial borderless remains'}
           Write-Host 'RC58_STATIC_ARCHITECTURE=PASS'
