@@ -6,6 +6,7 @@ on:
     paths:
       - 'lab/borderless/rc57/build_rc57_full_package_scripts.py'
       - 'lab/borderless/rc57/build_rc57_startup_handshake.py'
+      - 'lab/borderless/rc57/fixtures/win81_nis_version.canonical.txt'
       - 'lab/borderless/rc56/build_rc56_presenter_only.py'
       - '.github/workflows/rc57-full-package-script-lab.yml'
   workflow_dispatch:
@@ -96,7 +97,7 @@ jobs:
           try{
             python lab/borderless/rc48/rebuild_exact_field_runtime.py payload/d3d11.dll (Join-Path $pl 'd3d11.dll');if($LASTEXITCODE -ne 0){throw 'runtime'};Copy-Item (Join-Path $pl 'd3d11.dll') (Join-Path $pl 'win81_nis_dx11_x64.dll')
             $iniText=[IO.File]::ReadAllText((Resolve-Path 'payload/win81_nis.ini'),[Text.Encoding]::UTF8).TrimStart([char]0xFEFF).Replace("`r`n","`n").Replace("`r","`n");[IO.File]::WriteAllText((Join-Path $pl 'win81_nis.ini'),$iniText,(New-Object Text.UTF8Encoding($false)))
-            $verText=[IO.File]::ReadAllText((Resolve-Path 'payload/win81_nis_version.txt'),[Text.Encoding]::UTF8).TrimStart([char]0xFEFF).Replace("`r`n","`n").Replace("`r","`n").Replace("`n","`r`n");[IO.File]::WriteAllText((Join-Path $pl 'win81_nis_version.txt'),$verText,(New-Object Text.UTF8Encoding($true)))
+            Copy-Item 'lab/borderless/rc57/fixtures/win81_nis_version.canonical.txt' (Join-Path $pl 'win81_nis_version.txt') -Force
             $hi=(Get-FileHash (Join-Path $pl 'win81_nis.ini') -Algorithm SHA256).Hash.ToLowerInvariant();$hv=(Get-FileHash (Join-Path $pl 'win81_nis_version.txt') -Algorithm SHA256).Hash.ToLowerInvariant();if($hi -ne 'bd39b7c703ddf7a8658bed4df620232d00c06972351ca404c2d8386187fd3f50'){throw "canonical ini fixture mismatch $hi"};if($hv -ne '51367c26ebe9b6a35147c49aea8b227ae23219fc43166c86638b1e1b09f0a1d9'){throw "canonical version fixture mismatch $hv"};Write-Host 'RC57_FIXTURE_CANONICAL_PAYLOAD=PASS'
             Copy-Item 'lab/borderless/rc57/pkg_bin/rc57/ptar_borderless.dll' (Join-Path $pl 'ptar_borderless.dll');Copy-Item 'lab/borderless/rc57/pkg_bin/ptar_rc41.dll' (Join-Path $pl 'ptar_rc41.dll')
             Copy-Item 'lab/borderless/rc57/full_package_scripts/*.ps1' $ov
