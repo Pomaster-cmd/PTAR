@@ -1,0 +1,44 @@
+name: RC56 Display Mode Probe
+
+on:
+  push:
+    branches: [lab/rc56-presenter-only-borderless-20260915]
+    paths: ['.github/workflows/rc56-display-mode-probe.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: windows-2022
+    steps:
+      - name: Enumerate display modes
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          Add-Type @'
+          using System;
+          using System.Runtime.InteropServices;
+          public static class D {
+            [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] public struct DEVMODE {
+              [MarshalAs(UnmanagedType.ByValTStr, SizeConst=32)] public string dmDeviceName;
+              public ushort dmSpecVersion,dmDriverVersion,dmSize,dmDriverExtra; public uint dmFields;
+              public int dmPositionX,dmPositionY; public uint dmDisplayOrientation,dmDisplayFixedOutput;
+              public short dmColor,dmDuplex,dmYResolution,dmTTOption,dmCollate;
+              [MarshalAs(UnmanagedType.ByValTStr, SizeConst=32)] public string dmFormName;
+              public ushort dmLogPixels; public uint dmBitsPerPel,dmPelsWidth,dmPelsHeight,dmDisplayFlags,dmDisplayFrequency;
+              public uint dmICMMethod,dmICMIntent,dmMediaType,dmDitherType,dmReserved1,dmReserved2,dmPanningWidth,dmPanningHeight;
+            }
+            [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern bool EnumDisplaySettings(string deviceName,int modeNum,ref DEVMODE devMode);
+          }
+          '@
+          $set=@{}
+          for($i=0;;$i++){
+            $d=New-Object D+DEVMODE;$d.dmDeviceName='';$d.dmFormName='';$d.dmSize=[Runtime.InteropServices.Marshal]::SizeOf([type]'D+DEVMODE')
+            if(-not [D]::EnumDisplaySettings($null,$i,[ref]$d)){break}
+            $k="$($d.dmPelsWidth)x$($d.dmPelsHeight)@$($d.dmDisplayFrequency)";$set[$k]=1
+          }
+          $set.Keys|Sort-Object|ForEach-Object{Write-Host $_}
+          $exact=$set.Keys|Where-Object{$_ -match '^(960x720|1280x720|1440x1080|1920x1080)@'}
+          if($exact){Write-Host ('EXACT_X15_CANDIDATES='+($exact -join ','))}else{Write-Host 'EXACT_X15_CANDIDATES=NONE'}
