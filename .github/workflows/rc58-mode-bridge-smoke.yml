@@ -1,0 +1,59 @@
+name: RC58 Mode Bridge Smoke
+
+on:
+  push:
+    branches: [lab/rc58-virtual-presenter-mode-20260915]
+    paths:
+      - 'lab/borderless/rc58/ptar_borderless_rc58_mode_bridge.cpp'
+      - 'lab/borderless/rc58/ptar_rc58_mode_bridge_host.cpp'
+      - '.github/workflows/rc58-mode-bridge-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: windows-2022
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reconstruct exact runtime and RC55
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o='lab/borderless/rc58/smoke';New-Item -ItemType Directory -Force $o|Out-Null
+          python lab/borderless/rc48/rebuild_exact_field_runtime.py payload/d3d11.dll "$o/d3d11.dll";if($LASTEXITCODE-ne0){throw 'runtime'}
+          $h=(Get-FileHash "$o/d3d11.dll" -Algorithm SHA256).Hash.ToLowerInvariant();if($h-ne'6f1686992bef971c9995df9f0cb91b93c6946988e12a837e5de956df37c9082b'){throw "runtime drift $h"};Copy-Item "$o/d3d11.dll" "$o/win81_nis_dx11_x64.dll"
+          $ini=Get-Content payload/win81_nis.ini -Raw;$ini=[regex]::Replace($ini,'(?m)^OutputWidth=.*$','OutputWidth=1920');$ini=[regex]::Replace($ini,'(?m)^OutputHeight=.*$','OutputHeight=1080');$ini=[regex]::Replace($ini,'(?m)^RenderWidth=.*$','RenderWidth=1280');$ini=[regex]::Replace($ini,'(?m)^RenderHeight=.*$','RenderHeight=720');Set-Content "$o/win81_nis.ini" $ini -Encoding ASCII
+          python lab/raster/rc52/build_rc52_context_hooks.py lab/raster/rc58_smoke_rc52.cpp;if($LASTEXITCODE-ne0){throw 'rc52'}
+          python lab/raster/rc55/build_rc55_context_hooks.py lab/raster/rc58_smoke_rc52.cpp lab/raster/rc58_smoke_rc55.cpp;if($LASTEXITCODE-ne0){throw 'rc55'}
+          $host=Get-Content lab/borderless/rc58/ptar_rc58_mode_bridge_host.cpp -Raw;$host=$host.Replace('constexpr unsigned cycles=500;','constexpr unsigned cycles=20;');Set-Content lab/borderless/rc58/ptar_rc58_mode_bridge_host_smoke.cpp $host -Encoding UTF8
+      - name: Build exact smoke
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 20
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603
+          cl %CFLAGS% /LD lab\borderless\rc58\ptar_borderless_rc58_mode_bridge.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fo:lab\borderless\rc58\smoke\ /Fe:lab\borderless\rc58\smoke\ptar_borderless.dll user32.lib advapi32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 21
+          set RCFLAGS=%CFLAGS% /I lab\raster\rc41
+          cl %RCFLAGS% /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc58_smoke_rc55.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fo:lab\borderless\rc58\smoke\ /Fe:lab\borderless\rc58\smoke\ptar_rc41.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 22
+          cl %CFLAGS% lab\borderless\rc58\ptar_rc58_mode_bridge_host_smoke.cpp /Fo:lab\borderless\rc58\smoke\ /Fe:lab\borderless\rc58\smoke\Warhammer.exe user32.lib advapi32.lib gdi32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:WINDOWS,6.03 || exit /b 23
+      - name: Run 20-cycle smoke with watchdog
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o=(Resolve-Path 'lab/borderless/rc58/smoke').Path;$p=Start-Process "$o/Warhammer.exe" -WorkingDirectory $o -PassThru
+          if(-not$p.WaitForExit(120000)){Stop-Process -Id $p.Id -Force;throw 'RC58 smoke HANG >120s'}
+          foreach($n in @('RC58_MODE_BRIDGE_STRESS.txt','win81_nis.log','ptar_borderless_rc58.log','ptar_rc41_bootstrap.log','ptar_rc41.log')){$q=Join-Path $o $n;if(Test-Path $q){Write-Host "===== $n =====";if($n -like '*.log'){Get-Content $q -Tail 250}else{$e=[IO.File]::ReadAllText($q,[Text.Encoding]::Unicode);Write-Host $e}}}
+          if($p.ExitCode-ne0){throw "smoke host rc=$($p.ExitCode)"}
+          $e=[IO.File]::ReadAllText((Join-Path $o 'RC58_MODE_BRIDGE_STRESS.txt'),[Text.Encoding]::Unicode);if(-not$e.Contains('RC58_MODE_BRIDGE_STRESS=PASS cycles=20')){throw 'smoke PASS marker absent'}
+          Write-Host 'RC58_MODE_BRIDGE_SMOKE_20=PASS'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PTAR_RC58_MODE_BRIDGE_SMOKE
+          path: |
+            lab/borderless/rc58/smoke/*.txt
+            lab/borderless/rc58/smoke/*.log
+            lab/borderless/rc58/smoke/ptar_borderless.dll
+            lab/borderless/rc58/smoke/ptar_rc41.dll
+          retention-days: 14
