@@ -19,7 +19,7 @@
 //   * Initial Borderless (WindowStyle=1) is zero-touch whenever P1U46 already starts
 //     on USR PRESENTER: no startup message is queued.
 //   * Any needed route change is an asynchronous PostMessage pair. Completion is
-//     confirmed only by P1U46's read-only active-route byte before another request.
+//     confirmed only by P1U46's disassembly-proven read-only active-route byte.
 
 namespace {
 HMODULE g_self=nullptr,g_runtime=nullptr;
@@ -35,7 +35,13 @@ static const wchar_t* kOptions=L"Software\\NeoCore Games\\Warhammer Martyr\\Opti
 static constexpr SIZE_T kGameHwndRva=0x02C3FAC0u;
 static constexpr SIZE_T kRenderWRva=0x02C3FB78u;
 static constexpr SIZE_T kRenderHRva=0x02C3FB7Cu;
-static constexpr SIZE_T kUsrActiveRva=0x02C7E074u; // exact P1U46 read-only route state: 1=USR, 0=GAME DIRECT
+// Exact P1U46 disassembly, output-switch commit function @ RVA 0x125B0:
+//   GAME DIRECT branch @ 0x126A1 writes [base+0x02C7E074] = 1 then logs
+//     "P1U46 ACTIVE OUTPUT PATH = GAME DIRECT".
+//   USR PRESENTER branch @ 0x12646 writes [base+0x02C7E074] = 0 then logs
+//     "P1U46 ACTIVE OUTPUT PATH = USR PRESENTER".
+// Therefore this is gameDirectActive, NOT usrActive. RC58/early-RC60 had the polarity wrong.
+static constexpr SIZE_T kGameDirectActiveRva=0x02C7E074u;
 
 static void logline(const char* s) noexcept {
     if(!g_self||!s)return;wchar_t path[MAX_PATH]{};if(!GetModuleFileNameW(g_self,path,MAX_PATH))return;wchar_t* slash=wcsrchr(path,L'\\');if(!slash)return;
@@ -46,10 +52,10 @@ static void logfmt(const char* tag,LONG_PTR a,LONG_PTR b=0,LONG_PTR c=0,LONG_PTR
 static int read_pref() noexcept {HKEY k=nullptr;if(RegOpenKeyExW(HKEY_CURRENT_USER,kOptions,0,KEY_QUERY_VALUE,&k)!=ERROR_SUCCESS)return -1;DWORD t=0,v=0,s=sizeof(v);LONG r=RegQueryValueExW(k,L"WindowStyle",nullptr,&t,(BYTE*)&v,&s);RegCloseKey(k);return (r==ERROR_SUCCESS&&t==REG_DWORD&&s==sizeof(v)&&(v==0||v==1))?(int)v:-1;}
 static bool runtime_ok(HMODULE runtime,BYTE*& base) noexcept {
     base=nullptr;if(!runtime)return false;base=(BYTE*)runtime;auto* dos=(IMAGE_DOS_HEADER*)base;if(dos->e_magic!=IMAGE_DOS_SIGNATURE||dos->e_lfanew<=0)return false;auto* nt=(IMAGE_NT_HEADERS64*)(base+dos->e_lfanew);
-    if(nt->Signature!=IMAGE_NT_SIGNATURE||nt->FileHeader.Machine!=IMAGE_FILE_MACHINE_AMD64||nt->OptionalHeader.Magic!=IMAGE_NT_OPTIONAL_HDR64_MAGIC||nt->OptionalHeader.SizeOfImage<=kUsrActiveRva)return false;
+    if(nt->Signature!=IMAGE_NT_SIGNATURE||nt->FileHeader.Machine!=IMAGE_FILE_MACHINE_AMD64||nt->OptionalHeader.Magic!=IMAGE_NT_OPTIONAL_HDR64_MAGIC||nt->OptionalHeader.SizeOfImage<=kGameDirectActiveRva)return false;
     FARPROC exported=GetProcAddress(runtime,"D3D11CreateDeviceAndSwapChain");return exported==(FARPROC)(base+0x000021C0u);
 }
-static int route_usr() noexcept {if(!g_base)return -1;return (*(volatile BYTE*)(g_base+kUsrActiveRva))?1:0;}
+static int route_usr() noexcept {if(!g_base)return -1;return (*(volatile BYTE*)(g_base+kGameDirectActiveRva))?0:1;}
 static bool game_valid() noexcept {return IsWindow(g_game)!=FALSE&&g_renderW!=0&&g_renderH!=0;}
 static bool post_f10() noexcept {
     if(!IsWindow(g_game))return false;const LPARAM down=(LPARAM)(1u|(0x44u<<16));const LPARAM up=(LPARAM)(1u|(0x44u<<16)|(1u<<30)|(1u<<31));
@@ -67,6 +73,7 @@ static DWORD WINAPI Worker(LPVOID) noexcept {
     logline("RC60_GAME_GEOMETRY_OWNER=GAME_ONLY");
     logline("RC60_SYNC_CROSS_THREAD_WINDOW_MESSAGES=NONE");
     logline("RC60_P1U46_PRIVATE_POLICY_WRITES=NONE");
+    logline("RC60_ACTIVE_ROUTE_POLARITY=DISASSEMBLY_PROVEN");
     logline("RC60_PRESENTER_MUTATION=NONE");
     logline("RC60_DXGI_RESIZE=NONE");
     for(unsigned i=0;i<4000&&!InterlockedCompareExchange(&g_stop,0,0);++i){
@@ -88,8 +95,6 @@ static DWORD WINAPI Worker(LPVOID) noexcept {
         }
         InterlockedExchange(&g_uiReady,0);
         const DWORD stableFor=now-g_prefStableTick,age=now-g_startTick;
-        // Debounce game option changes and give the initial game/UI startup a quiet period.
-        // PostMessage remains safe even if UI is temporarily busy; never synchronously call its WndProc.
         if(stableFor>=300u&&age>=5000u){
             if(!InterlockedCompareExchange(&g_pending,0,0)){
                 post_f10();
