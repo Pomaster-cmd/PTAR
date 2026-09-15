@@ -1,0 +1,3 @@
+RC56_HOST_TEARDOWN_FIX=KEEP_CARRIER_LOADED_UNTIL_PROCESS_EXIT
+REASON=carrier owns live WndProc hooks and worker threads after attach
+EXPECTED=standalone stress exits cleanly after PASS
