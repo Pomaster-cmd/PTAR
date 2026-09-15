@@ -1,0 +1,72 @@
+name: RC59 Full Additive Package Script Lab
+
+on:
+  push:
+    branches: [lab/rc59-field-popup-startup-recovery-20260915]
+    paths:
+      - 'lab/borderless/rc59/build_rc59_full_package_scripts.py'
+      - '.github/workflows/rc59-full-package-script-lab.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scripts:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate exact RC59 lifecycle scripts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          python lab/borderless/rc59/build_rc59_full_package_scripts.py
+          if($LASTEXITCODE-ne0){throw 'RC59 exact script generation failed'}
+
+      - name: Parse all exact scripts on Windows PowerShell
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$root='lab/borderless/rc59/full_package_scripts'
+          $files=@('install.ps1','verify.ps1','rollback.ps1','uninstall_overlay.ps1','collect_rc41.ps1','rc55_gui_migration.ps1')
+          foreach($n in $files){$tokens=$null;$errors=$null;$f=(Resolve-Path (Join-Path $root $n));[void][System.Management.Automation.Language.Parser]::ParseFile($f,[ref]$tokens,[ref]$errors);if($errors.Count){$errors|ForEach-Object{Write-Host $_.Message};throw "parse failed $n"}}
+          Write-Host 'RC59_POWERSHELL_PARSE=6/6 PASS'
+
+      - name: Exact hashes and lifecycle contracts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$root='lab/borderless/rc59/full_package_scripts'
+          $rc59='541c958c95f00d5e37dd1e5c852c8a0855e2ce806cf7686bbcdaa63c6ae6f97d';$rc58='c04cbb21f87dd9a851f74b8334cbc6ba4c67274b4dc49f521b2f8523822cd633';$rc57='c14f92add5cdfc7f05030dd3c3fd9a86b83ce8dac81042c1ab8b6e0237f05684';$rc56='aeee0a4ee9eafb2a7fc46373024db63b9ac4a63932b2455bd47b2db09d56c616';$rc51='59e699536998054ae38cc5a30e03375c9cd206220667debe87070962609dd26c'
+          $expected=@{'install.ps1'='f68c92194f287f9e05adf6d5bec67da742023f8a85ce932b4ff83d3b59fbbd5d';'verify.ps1'='077198bf402ad88f0a4c4d05621e4640a3ab9f41d65e0971a953281d21094c9e';'rollback.ps1'='378c9819e338a010ba372f20413c0cfc499f9f4aa54676c644e72aee0e39ec52';'uninstall_overlay.ps1'='9586eeb83d7c06c27f834ebd4c83dfe385418c79ba13e7700f65caebd9ec8c3a';'collect_rc41.ps1'='332776836a6f1c4b271652574f02187ae18b96f3f379c91ac60e140cb23ca290';'rc55_gui_migration.ps1'='10a87355e56a84af2ad2905d31313b0c17e64aa6169b2fd1084201f3e52c2a1b'}
+          foreach($n in $expected.Keys){$h=(Get-FileHash (Join-Path $root $n) -Algorithm SHA256).Hash.ToLowerInvariant();if($h-ne$expected[$n]){throw "$n hash mismatch $h"}}
+          $install=Get-Content (Join-Path $root 'install.ps1') -Raw;$verify=Get-Content (Join-Path $root 'verify.ps1') -Raw;$rollback=Get-Content (Join-Path $root 'rollback.ps1') -Raw;$uninstall=Get-Content (Join-Path $root 'uninstall_overlay.ps1') -Raw;$collect=Get-Content (Join-Path $root 'collect_rc41.ps1') -Raw;$module=Get-Content (Join-Path $root 'rc55_gui_migration.ps1') -Raw
+          if($install-notmatch'schema=10'-or$install-notmatch'PTAR_RC59_FIELD_POPUP_RECOVERY'){throw 'state contract missing'}
+          foreach($h in @($rc51,$rc56,$rc57,$rc58,$rc59)){if($install-notmatch$h){throw "install missing carrier $h"};if($rollback-notmatch$h){throw "rollback missing carrier $h"};if($uninstall-notmatch$h){throw "uninstall missing carrier $h"}}
+          if($install-notmatch'6f1686992bef971c9995df9f0cb91b93c6946988e12a837e5de956df37c9082b'){throw 'P1U46 binding missing'}
+          if($install-notmatch'271187ab9fd82b6829c52a667223f241ec79e98fa340b13c9a72270142156949'){throw 'RC55 raster binding missing'}
+          if($install-notmatch'INSTALL_RC59=PASS'-or$verify-notmatch'VERIFY_RC59_FIELD_POPUP_RECOVERY=PASS'){throw 'success gates missing'}
+          if($install-notmatch'WINDOWED=EXACT_1280x720_GAME_CLIENT'-or$install-notmatch'BORDERLESS=NATIVE_1920x1080_USR_PRESENTER'){throw 'mode contract missing'}
+          if($collect-notmatch'PTAR_RC59_RESULTS_'-or$collect-notmatch'ptar_borderless_rc59.log'-or$collect-notmatch'RC59_ACTIVE_PAYLOAD_SHA256.txt'){throw 'collector contract missing'}
+          if($install-match'AffectGuiResolution[^\r\n]*-Value\s+1'){throw 'must not force AffectGuiResolution=1'}
+          if($install-notmatch'Invoke-Rc55GuiMigration'-or$rollback-notmatch'Undo-Rc55GuiMigration'){throw 'GUI migration lifecycle missing'}
+          if($module-notmatch'PTAR_RC53_GUI_RESOLUTION_SYNC'-or$module-notmatch'PTAR_RC54_GUI_DOMAIN_PROBE'){throw 'GUI owner allowlist drift'}
+          if($uninstall-notmatch'OVERLAY_OWNERSHIP\.tsv'-or$uninstall-notmatch'\(Sha \$p\)-eq \$a\[2\]'-or$uninstall-notmatch'\[KEEP\] Additif RC41 modifie'){throw 'ownership-aware uninstall contract missing'}
+          if($uninstall-notmatch'ptar_borderless_rc59\.log'-or$uninstall-notmatch'ptar_borderless_rc58\.log'){throw 'dynamic log cleanup missing'}
+          foreach($n in @('install.ps1','verify.ps1','rollback.ps1','collect_rc41.ps1','rc55_gui_migration.ps1')){$t=Get-Content (Join-Path $root $n) -Raw;if($t-match'Remove-Item\s+[^\r\n]*-Recurse'){throw "unexpected recursive deletion $n"}}
+          Write-Host 'RC59_LIFECYCLE_CONTRACT=PASS LEGACY_UPGRADE=RC51_RC56_RC57_RC58 PASS'
+
+      - name: Exercise inherited GUI ownership module
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';. (Resolve-Path 'lab/borderless/rc59/full_package_scripts/rc55_gui_migration.ps1')
+          function New-State([string]$root,[string]$key){New-Item -ItemType Directory -Path $root -Force|Out-Null;$d=Join-Path $root 'INSTALL_OWNER';New-Item -ItemType Directory -Path $d -Force|Out-Null;[ordered]@{package='PTAR_RC54_GUI_DOMAIN_PROBE';gui=[ordered]@{key=$key;exists=$true;original=0;installed=1;applied=$true}}|ConvertTo-Json -Depth 8|Set-Content -LiteralPath (Join-Path $d 'install_state.json') -Encoding UTF8}
+          function Val([string]$key){try{return [int](Get-ItemProperty -LiteralPath $key -Name AffectGuiResolution -ErrorAction Stop).AffectGuiResolution}catch{return $null}}
+          $tmp=Join-Path $env:TEMP ('ptar_rc59_gui_'+[guid]::NewGuid().ToString('N'));$key='HKCU:\Software\PTAR_RC59_CI_'+[guid]::NewGuid().ToString('N')
+          try{New-Item -Path $key -Force|Out-Null;Set-ItemProperty -LiteralPath $key -Name AffectGuiResolution -Type DWord -Value 1;$s=Join-Path $tmp 's';New-State $s $key;1..32|ForEach-Object{$m=Invoke-Rc55GuiMigration -StateRoot $s;if($m.event-ne'RESTORED'-or(Val $key)-ne0){throw "restore $_"};$u=Undo-Rc55GuiMigration $m;if($u.event-ne'PRE_RC55_RESTORED'-or(Val $key)-ne1){throw "undo $_"}};$m=Invoke-Rc55GuiMigration -StateRoot $s;Set-ItemProperty -LiteralPath $key -Name AffectGuiResolution -Type DWord -Value 7;$u=Undo-Rc55GuiMigration $m;if($u.event-ne'KEEP_CURRENT_CHANGED'-or(Val $key)-ne7){throw 'user override preservation'};Write-Host 'RC59_GUI_OWNERSHIP_STRESS=PASS 32 cycles + user_override'}finally{if(Test-Path $key){Remove-Item $key -Recurse -Force -ErrorAction SilentlyContinue};if(Test-Path $tmp){Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue}}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_RC59_FULL_PACKAGE_SCRIPTS
+          path: lab/borderless/rc59/full_package_scripts/*
+          retention-days: 14
