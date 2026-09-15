@@ -1,4 +1,5 @@
 from pathlib import Path
+import shutil
 import sys
 
 ROOT=Path(__file__).resolve().parents[3]
@@ -68,6 +69,8 @@ x=x.replace('journaux RC55 raster/bootstrap','journaux RC57/RC55 raster/bootstra
 x=one(x,"'EXPECTED_PHYSICAL=1280x720','NOTE_BORDERLESS_LOG=ptar_borderless_rc38.log name retained by validated RC40 controller')","'EXPECTED_PHYSICAL=1280x720','RC57_INITIAL_BORDERLESS=DEFERRED_TO_WINDOWED_BOOT','RC57_UNLOCK=EXPLICIT_WINDOWSTYLE_0_THEN_1','NOTE_BORDERLESS_LOG=ptar_borderless_rc38.log name retained by validated RC40 controller')",'collector policy')
 wr('collect_rc41.ps1',x)
 
-# unchanged GUI migration module, re-emitted with exact package line-ending policy
-wr('rc55_gui_migration.ps1',rd('rc55_gui_migration.ps1'))
+# The RC55 GUI migration module is already independently certified and must be
+# carried into RC57 byte-for-byte, not normalized or regenerated.
+OUT.mkdir(parents=True,exist_ok=True)
+shutil.copyfile(SRC/'rc55_gui_migration.ps1',OUT/'rc55_gui_migration.ps1')
 print('RC57_FULL_PACKAGE_SCRIPTS_GENERATED=PASS')
