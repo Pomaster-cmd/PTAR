@@ -1,0 +1,122 @@
+name: RC59 Windowed + Popup Regression Matrix
+
+on:
+  push:
+    branches: [lab/rc59-field-popup-startup-recovery-20260915]
+    paths:
+      - 'lab/borderless/rc59/**'
+      - '.github/workflows/rc59-windowed-popup-regression.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate RC59 carrier and both hosts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          python lab/borderless/rc59/build_rc59_popup_recovery.py
+          if($LASTEXITCODE-ne0){throw 'carrier source generation'}
+          python lab/borderless/rc59/build_rc59_windowed_host.py
+          if($LASTEXITCODE-ne0){throw 'windowed host generation'}
+          python lab/borderless/rc59/build_rc59_popup_host.py
+          if($LASTEXITCODE-ne0){throw 'popup host generation'}
+          Write-Host 'RC59_DUAL_HOST_GENERATION=PASS'
+
+      - name: Reconstruct exact runtime and RC55 raster source
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$b='lab/borderless/rc59/regression/base';New-Item -ItemType Directory -Force $b|Out-Null
+          python lab/borderless/rc48/rebuild_exact_field_runtime.py payload/d3d11.dll "$b/d3d11.dll"
+          if($LASTEXITCODE-ne0){throw 'runtime reconstruction'}
+          $h=(Get-FileHash "$b/d3d11.dll" -Algorithm SHA256).Hash.ToLowerInvariant();if($h-ne'6f1686992bef971c9995df9f0cb91b93c6946988e12a837e5de956df37c9082b'){throw "runtime drift $h"}
+          Copy-Item "$b/d3d11.dll" "$b/win81_nis_dx11_x64.dll" -Force
+          $ini=Get-Content payload/win81_nis.ini -Raw
+          $ini=[regex]::Replace($ini,'(?m)^OutputWidth=.*$','OutputWidth=1920');$ini=[regex]::Replace($ini,'(?m)^OutputHeight=.*$','OutputHeight=1080');$ini=[regex]::Replace($ini,'(?m)^RenderWidth=.*$','RenderWidth=1280');$ini=[regex]::Replace($ini,'(?m)^RenderHeight=.*$','RenderHeight=720')
+          Set-Content "$b/win81_nis.ini" $ini -Encoding ASCII
+          python lab/raster/rc52/build_rc52_context_hooks.py lab/raster/rc59_matrix_rc52.cpp
+          python lab/raster/rc55/build_rc55_context_hooks.py lab/raster/rc59_matrix_rc52.cpp lab/raster/rc59_matrix_rc55.cpp
+          if($LASTEXITCODE-ne0){throw 'RC55 source generation'}
+
+      - name: Build reproducible carrier, exact raster, and hosts
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 20
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603
+          mkdir lab\borderless\rc59\regression\p1 2>nul
+          mkdir lab\borderless\rc59\regression\p2 2>nul
+          mkdir lab\borderless\rc59\regression\windowed 2>nul
+          mkdir lab\borderless\rc59\regression\popup 2>nul
+          cl %CFLAGS% /LD lab\borderless\rc59\generated\ptar_borderless_rc59_mode_bridge.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fo:lab\borderless\rc59\regression\p1\ /Fe:lab\borderless\rc59\regression\p1\ptar_borderless.dll user32.lib advapi32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 21
+          cl %CFLAGS% /LD lab\borderless\rc59\generated\ptar_borderless_rc59_mode_bridge.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fo:lab\borderless\rc59\regression\p2\ /Fe:lab\borderless\rc59\regression\p2\ptar_borderless.dll user32.lib advapi32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 22
+          set RCFLAGS=%CFLAGS% /I lab\raster\rc41
+          cl %RCFLAGS% /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc59_matrix_rc55.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fo:lab\borderless\rc59\regression\base\ /Fe:lab\borderless\rc59\regression\base\ptar_rc41.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 23
+          cl %CFLAGS% lab\borderless\rc59\generated\ptar_rc59_windowed_host.cpp /Fo:lab\borderless\rc59\regression\windowed\ /Fe:lab\borderless\rc59\regression\windowed\Warhammer.exe user32.lib advapi32.lib gdi32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:WINDOWS,6.03 || exit /b 24
+          cl %CFLAGS% lab\borderless\rc59\generated\ptar_rc59_popup_host.cpp /Fo:lab\borderless\rc59\regression\popup\ /Fe:lab\borderless\rc59\regression\popup\Warhammer.exe user32.lib advapi32.lib gdi32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:WINDOWS,6.03 || exit /b 25
+
+      - name: Reproducibility and component hash gates
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$r='lab/borderless/rc59/regression'
+          $h1=(Get-FileHash "$r/p1/ptar_borderless.dll" -Algorithm SHA256).Hash.ToLowerInvariant();$h2=(Get-FileHash "$r/p2/ptar_borderless.dll" -Algorithm SHA256).Hash.ToLowerInvariant();if($h1-ne$h2){throw 'carrier non reproducible'};if($h1-ne'541c958c95f00d5e37dd1e5c852c8a0855e2ce806cf7686bbcdaa63c6ae6f97d'){throw "carrier drift $h1"}
+          $rh=(Get-FileHash "$r/base/ptar_rc41.dll" -Algorithm SHA256).Hash.ToLowerInvariant();if($rh-ne'271187ab9fd82b6829c52a667223f241ec79e98fa340b13c9a72270142156949'){throw "RC55 drift $rh"}
+          Write-Host 'RC59_COMPONENT_GATES=PASS'
+
+      - name: Stage isolated test directories
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$r='lab/borderless/rc59/regression'
+          foreach($d in @('windowed','popup')){
+            Copy-Item "$r/base/d3d11.dll" "$r/$d/d3d11.dll" -Force;Copy-Item "$r/base/win81_nis_dx11_x64.dll" "$r/$d/win81_nis_dx11_x64.dll" -Force;Copy-Item "$r/base/win81_nis.ini" "$r/$d/win81_nis.ini" -Force;Copy-Item "$r/base/ptar_rc41.dll" "$r/$d/ptar_rc41.dll" -Force;Copy-Item "$r/p1/ptar_borderless.dll" "$r/$d/ptar_borderless.dll" -Force
+          }
+
+      - name: Canonical Windowed startup plus 500 transitions
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o=(Resolve-Path 'lab/borderless/rc59/regression/windowed').Path
+          $p=Start-Process "$o/Warhammer.exe" -WorkingDirectory $o -PassThru;if(-not$p.WaitForExit(300000)){Stop-Process -Id $p.Id -Force;throw 'windowed watchdog'}
+          $ev=Join-Path $o 'RC59_MODE_BRIDGE_STRESS.txt';if(-not(Test-Path $ev)){throw 'windowed evidence absent'};$e=[IO.File]::ReadAllText($ev,[Text.Encoding]::Unicode);Write-Host $e
+          if($p.ExitCode-ne0){throw "windowed host rc=$($p.ExitCode)"};if(-not$e.Contains('START_WINDOWED=PASS game=1280x720')){throw 'windowed startup fail'};if(-not$e.Contains('RC59_MODE_BRIDGE_STRESS=PASS cycles=500')){throw 'windowed stress fail'}
+          $ctl=Get-Content (Join-Path $o 'ptar_borderless_rc59.log') -Raw;if($ctl.Contains('FAIL RC59')){throw 'carrier failure in windowed test'}
+          Write-Host 'RC59_WINDOWED_REGRESSION_500=PASS'
+
+      - name: Saved Borderless popup startup plus 500 transitions
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o=(Resolve-Path 'lab/borderless/rc59/regression/popup').Path
+          $p=Start-Process "$o/Warhammer.exe" -WorkingDirectory $o -PassThru;if(-not$p.WaitForExit(300000)){Stop-Process -Id $p.Id -Force;throw 'popup watchdog'}
+          $ev=Join-Path $o 'RC59_MODE_BRIDGE_STRESS.txt';if(-not(Test-Path $ev)){throw 'popup evidence absent'};$e=[IO.File]::ReadAllText($ev,[Text.Encoding]::Unicode);Write-Host $e
+          if($p.ExitCode-ne0){throw "popup host rc=$($p.ExitCode)"};foreach($m in @('START_BORDERLESS_POPUP_RECOVERY=PASS game=1280x720 presenter=1920x1080','POPUP_RECOVERY_TO_WINDOWED=PASS game=1280x720','WINDOWED_TO_BORDERLESS_GAME_HWND_STABLE=PASS','RC59_MODE_BRIDGE_STRESS=PASS cycles=500')){if(-not$e.Contains($m)){throw "missing $m"}}
+          $ctl=Get-Content (Join-Path $o 'ptar_borderless_rc59.log') -Raw;foreach($m in @('RC59_FIELD_POPUP_START_DETECTED','RC59_STARTUP_CANONICALIZED_UI_THREAD','RC59_MODE_BRIDGE_INSTALLED')){if(-not$ctl.Contains($m)){throw "carrier marker missing $m"}};if($ctl.Contains('FAIL RC59')){throw 'carrier failure in popup test'}
+          Write-Host 'RC59_POPUP_REGRESSION_500=PASS'
+
+      - name: Final matrix summary
+        shell: powershell
+        run: |
+          @('RC59_REGRESSION_MATRIX=PASS','WINDOWED_STARTUP=PASS','WINDOWED_TRANSITIONS_500=PASS','SAVED_BORDERLESS_POPUP_STARTUP=PASS','POPUP_RECOVERY_TRANSITIONS_500=PASS','TOTAL_TRANSITIONS=1000','RESTORE_FAILURES=0','P1U46_EXACT=PASS','RC55_RASTER_EXACT=PASS','RC59_CARRIER_REPRODUCIBLE=PASS')|Set-Content 'lab/borderless/rc59/RC59_REGRESSION_MATRIX.txt' -Encoding ASCII
+          Get-Content 'lab/borderless/rc59/RC59_REGRESSION_MATRIX.txt'
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PTAR_RC59_REGRESSION_MATRIX
+          path: |
+            lab/borderless/rc59/RC59_REGRESSION_MATRIX.txt
+            lab/borderless/rc59/regression/windowed/*.txt
+            lab/borderless/rc59/regression/windowed/*.log
+            lab/borderless/rc59/regression/popup/*.txt
+            lab/borderless/rc59/regression/popup/*.log
+            lab/borderless/rc59/regression/p1/ptar_borderless.dll
+            lab/borderless/rc59/regression/base/ptar_rc41.dll
+          if-no-files-found: warn
+          retention-days: 14
