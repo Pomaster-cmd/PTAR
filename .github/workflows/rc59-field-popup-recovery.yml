@@ -29,7 +29,7 @@ jobs:
           python lab/borderless/rc59/build_rc59_popup_host.py
           if($LASTEXITCODE-ne0){throw 'RC59 host generation failed'}
           $src=Get-Content 'lab/borderless/rc59/generated/ptar_borderless_rc59_mode_bridge.cpp' -Raw
-          foreach($must in @('RC59_FIELD_POPUP_START_DETECTED','RC59_WAIT_P1U46_CANONICAL_WINDOW','RC59_CANONICAL_WINDOW_CAPTURED_AFTER_WAIT','RC59_GAME_HWND_POLICY=ALWAYS_CANONICAL_WINDOWED_RENDER_SIZE')){if(-not$src.Contains($must)){throw "missing $must"}}
+          foreach($must in @('RC59_FIELD_POPUP_START_DETECTED','RC59_WAIT_P1U46_WNDPROC','RC59_STARTUP_POPUP_CANONICALIZE_REQUEST','RC59_STARTUP_CANONICALIZED_UI_THREAD','RC59_GAME_HWND_POLICY=ALWAYS_CANONICAL_WINDOWED_RENDER_SIZE')){if(-not$src.Contains($must)){throw "missing $must"}}
           foreach($bad in @('ResizeBuffers(','SetParent(','SetWindowRgn(')){if($src.Contains($bad)){throw "forbidden $bad"}}
           Write-Host 'RC59_SOURCE_SCOPE=PASS'
 
@@ -86,7 +86,7 @@ jobs:
           if($p.ExitCode-ne0){throw "RC59 host rc=$($p.ExitCode)"}
           foreach($must in @('START_BORDERLESS_POPUP_RECOVERY=PASS game=1280x720 presenter=1920x1080','POPUP_RECOVERY_TO_WINDOWED=PASS game=1280x720','WINDOWED_TO_BORDERLESS_GAME_HWND_STABLE=PASS','POPUP_RECOVERY_PREF_ROUNDTRIP=PASS','RC59_MODE_BRIDGE_STRESS=PASS cycles=500')){if(-not$e.Contains($must)){throw "evidence missing $must"}}
           $ctl=Get-Content (Join-Path $o 'ptar_borderless_rc59.log') -Raw
-          foreach($must in @('RC59_FIELD_POPUP_START_DETECTED','RC59_WAIT_P1U46_CANONICAL_WINDOW','RC59_CANONICAL_WINDOW_CAPTURED_AFTER_WAIT','RC59_GAME_HWND_POLICY=ALWAYS_CANONICAL_WINDOWED_RENDER_SIZE','RC59_MODE_BRIDGE_INSTALLED')){if(-not$ctl.Contains($must)){throw "carrier log missing $must"}}
+          foreach($must in @('RC59_FIELD_POPUP_START_DETECTED','RC59_P1U46_WNDPROC_READY','RC59_STARTUP_POPUP_CANONICALIZE_REQUEST','RC59_STARTUP_CANONICALIZED_UI_THREAD','RC59_GAME_HWND_POLICY=ALWAYS_CANONICAL_WINDOWED_RENDER_SIZE','RC59_MODE_BRIDGE_INSTALLED')){if(-not$ctl.Contains($must)){throw "carrier log missing $must"}}
           if($ctl.Contains('FAIL RC59')){throw 'RC59 carrier reported failure'}
           $rt=Get-Content (Join-Path $o 'win81_nis.log') -Raw;if($rt.Contains('ERROR: P1U46 USR PRESENTER activation failed')){throw 'USR activation failure'};if(-not$rt.Contains('PTAR-NG MoE v01 exact x1.5 active')){throw 'x1.5 absent'}
           $boot=Get-Content (Join-Path $o 'ptar_rc41_bootstrap.log') -Raw;if(-not$boot.Contains('RC41B_ACTIVATION_PROVEN')){throw 'RC55 bootstrap absent'}
@@ -96,7 +96,7 @@ jobs:
         shell: powershell
         run: |
           $o='lab/borderless/rc59/run';$h=(Get-FileHash "$o/p1/ptar_borderless.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
-          @('RC59_FIELD_POPUP_RECOVERY=PASS','FIELD_INITIAL_POPUP_REPRODUCED=PASS','P1U46_CANONICALIZATION_WAIT=PASS','GAME_HWND_ALWAYS_WINDOWED_1280x720=PASS','INITIAL_BORDERLESS_PRESENTER_1920x1080=PASS','WINDOWED_BORDERLESS_WINDOWED=PASS','TRANSITIONS_500_CYCLES=PASS','RESTORE_FAILURES=0','RC55_RASTER_UNCHANGED=PASS',"RC59_CARRIER_SHA256=$h")|Set-Content 'lab/borderless/rc59/RC59_FINAL.txt' -Encoding ASCII
+          @('RC59_FIELD_POPUP_RECOVERY=PASS','FIELD_INITIAL_POPUP_REPRODUCED=PASS','P1U46_WNDPROC_READY=PASS','UI_THREAD_POPUP_CANONICALIZATION=PASS','GAME_HWND_ALWAYS_WINDOWED_1280x720=PASS','INITIAL_BORDERLESS_PRESENTER_1920x1080=PASS','WINDOWED_BORDERLESS_WINDOWED=PASS','TRANSITIONS_500_CYCLES=PASS','RESTORE_FAILURES=0','RC55_RASTER_UNCHANGED=PASS',"RC59_CARRIER_SHA256=$h")|Set-Content 'lab/borderless/rc59/RC59_FINAL.txt' -Encoding ASCII
           Get-Content 'lab/borderless/rc59/RC59_FINAL.txt'
 
       - uses: actions/upload-artifact@v4
