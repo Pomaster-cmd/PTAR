@@ -7,18 +7,19 @@
 
 // RC60 PASSIVE ROUTE COORDINATOR
 // ------------------------------
-// The field RC59 failure proved that startup-time HWND subclassing / canonicalization
-// is unsafe while Warhammer's UI thread is busy and P1U46 is still advancing its own
-// input-window policy. RC60 therefore has deliberately narrower authority:
+// Field RC59 proved that startup-time HWND subclassing/canonicalization is unsafe
+// while Warhammer's UI thread is busy and P1U46 is still advancing its own policy.
+// RC60 therefore has deliberately narrow authority:
 //   * P1U46 exclusively owns the game WndProc and all presenter/DXGI state.
 //   * The game exclusively owns game-HWND style, size and placement.
-//   * RC60 never subclasses, never SetWindowLongPtr/SetWindowPos, never writes P1U46
-//     private policy bytes, and never mutates presenter geometry or buffers.
-//   * WindowStyle is only mirrored to P1U46's already-validated F10 route switch.
-//   * Initial Borderless (WindowStyle=1) is completely passive: P1U46 already starts
-//     on USR PRESENTER and RC60 sends no startup message at all.
-//   * Initial Windowed waits for a responsive UI thread before posting F10; no synchronous
-//     CallWindowProc is performed from a foreign thread.
+//   * RC60 never subclasses, never sends a synchronous cross-thread window message,
+//     never calls SetWindowLongPtr/SetWindowPos, never writes P1U46 private policy,
+//     and never mutates presenter geometry or DXGI buffers.
+//   * WindowStyle is only mirrored to P1U46's validated F10 safe-boundary route switch.
+//   * Initial Borderless (WindowStyle=1) is zero-touch whenever P1U46 already starts
+//     on USR PRESENTER: no startup message is queued.
+//   * Any needed route change is an asynchronous PostMessage pair. Completion is
+//     confirmed only by P1U46's read-only active-route byte before another request.
 
 namespace {
 HMODULE g_self=nullptr,g_runtime=nullptr;
@@ -27,7 +28,7 @@ HWND g_game=nullptr;
 UINT g_renderW=0,g_renderH=0;
 volatile LONG g_started=0,g_installed=0,g_stop=0,g_uiReady=0,g_pending=0;
 volatile LONG64 g_prefChanges=0,g_togglePosts=0,g_toggleRetries=0,g_postFailures=0,g_routeMatches=0,g_uiTimeouts=0;
-DWORD g_startTick=0,g_pendingTick=0;
+DWORD g_startTick=0,g_pendingTick=0,g_prefStableTick=0;
 int g_lastPref=-2;
 
 static const wchar_t* kOptions=L"Software\\NeoCore Games\\Warhammer Martyr\\Options";
@@ -50,13 +51,10 @@ static bool runtime_ok(HMODULE runtime,BYTE*& base) noexcept {
 }
 static int route_usr() noexcept {if(!g_base)return -1;return (*(volatile BYTE*)(g_base+kUsrActiveRva))?1:0;}
 static bool game_valid() noexcept {return IsWindow(g_game)!=FALSE&&g_renderW!=0&&g_renderH!=0;}
-static bool ui_probe(DWORD timeoutMs=60) noexcept {
-    if(!IsWindow(g_game))return false;DWORD_PTR r=0;SetLastError(ERROR_SUCCESS);LRESULT ok=SendMessageTimeoutW(g_game,WM_NULL,0,0,SMTO_ABORTIFHUNG|SMTO_BLOCK,timeoutMs,&r);if(!ok){InterlockedIncrement64(&g_uiTimeouts);return false;}return true;
-}
 static bool post_f10() noexcept {
     if(!IsWindow(g_game))return false;const LPARAM down=(LPARAM)(1u|(0x44u<<16));const LPARAM up=(LPARAM)(1u|(0x44u<<16)|(1u<<30)|(1u<<31));
     const BOOL a=PostMessageW(g_game,WM_KEYDOWN,VK_F10,down),b=PostMessageW(g_game,WM_KEYUP,VK_F10,up);if(!a||!b){InterlockedIncrement64(&g_postFailures);logfmt("FAIL RC60 F10 post",GetLastError(),a,b,0);return false;}
-    InterlockedIncrement64(&g_togglePosts);g_pendingTick=GetTickCount();InterlockedExchange(&g_pending,1);logline("RC60_F10_POSTED_TO_P1U46_WNDPROC");return true;
+    InterlockedIncrement64(&g_togglePosts);g_pendingTick=GetTickCount();InterlockedExchange(&g_pending,1);logline("RC60_F10_POSTED_TO_P1U46_WNDPROC_ASYNC");return true;
 }
 static bool presenter_native() noexcept {
     HWND p=FindWindowW(L"Win81USRPresenterV041",nullptr);if(!p||!IsWindow(p))return false;RECT c{};if(!GetClientRect(p,&c))return false;return (UINT)(c.right-c.left)==1920u&&(UINT)(c.bottom-c.top)==1080u;
@@ -67,6 +65,7 @@ static DWORD WINAPI Worker(LPVOID) noexcept {
     logline("RC60_STARTUP_POLICY=PASSIVE_NO_HWND_MUTATION");
     logline("RC60_GAME_WNDPROC_OWNER=P1U46_ONLY");
     logline("RC60_GAME_GEOMETRY_OWNER=GAME_ONLY");
+    logline("RC60_SYNC_CROSS_THREAD_WINDOW_MESSAGES=NONE");
     logline("RC60_P1U46_PRIVATE_POLICY_WRITES=NONE");
     logline("RC60_PRESENTER_MUTATION=NONE");
     logline("RC60_DXGI_RESIZE=NONE");
@@ -75,31 +74,30 @@ static DWORD WINAPI Worker(LPVOID) noexcept {
         break;
     }
     if(!game_valid()){logline("FAIL RC60 game window/runtime geometry unavailable");return 20;}
-    int p=read_pref();int r=route_usr();
+    int p=read_pref();int r=route_usr();g_lastPref=p;g_prefStableTick=GetTickCount();
     logfmt("RC60_START_STATE pref/usr/renderW/renderH",p,r,g_renderW,g_renderH);
     if(p==1&&r==1){logline("RC60_INITIAL_BORDERLESS_ZERO_TOUCH");if(presenter_native())logline("RC60_INITIAL_NATIVE_PRESENTER_1920x1080");}
     InterlockedExchange(&g_installed,1);
-    unsigned uiGood=0;
     while(!InterlockedCompareExchange(&g_stop,0,0)&&IsWindow(g_game)){
-        p=read_pref();r=route_usr();
-        if(p>=0&&p!=g_lastPref){g_lastPref=p;InterlockedIncrement64(&g_prefChanges);logfmt("RC60_WINDOWSTYLE_OBSERVED",p,r,0,0);}
-        if(p<0||r<0){Sleep(50);continue;}
+        p=read_pref();r=route_usr();const DWORD now=GetTickCount();
+        if(p>=0&&p!=g_lastPref){g_lastPref=p;g_prefStableTick=now;InterlockedIncrement64(&g_prefChanges);InterlockedExchange(&g_uiReady,0);logfmt("RC60_WINDOWSTYLE_OBSERVED",p,r,0,0);}
+        if(p<0||r<0){InterlockedExchange(&g_uiReady,0);Sleep(100);continue;}
         const int desiredUsr=(p==1)?1:0;
         if(r==desiredUsr){
-            InterlockedIncrement64(&g_routeMatches);InterlockedExchange(&g_pending,0);uiGood=0;Sleep(50);continue;
+            InterlockedIncrement64(&g_routeMatches);InterlockedExchange(&g_pending,0);InterlockedExchange(&g_uiReady,1);Sleep(50);continue;
         }
-        // Mismatch means only P1U46's safe route switch is required. Never alter HWND geometry.
-        if(ui_probe(60)){if(uiGood<20)++uiGood;}else uiGood=0;
-        const DWORD age=GetTickCount()-g_startTick;
-        const bool startupWindowed=(age<5000u&&p==0);
-        if(uiGood>=3&&!startupWindowed){
+        InterlockedExchange(&g_uiReady,0);
+        const DWORD stableFor=now-g_prefStableTick,age=now-g_startTick;
+        // Debounce game option changes and give the initial game/UI startup a quiet period.
+        // PostMessage remains safe even if UI is temporarily busy; never synchronously call its WndProc.
+        if(stableFor>=300u&&age>=5000u){
             if(!InterlockedCompareExchange(&g_pending,0,0)){
-                post_f10();uiGood=0;
-            } else if(GetTickCount()-g_pendingTick>3000u){
+                post_f10();
+            } else if(now-g_pendingTick>5000u){
                 InterlockedIncrement64(&g_toggleRetries);InterlockedExchange(&g_pending,0);logline("RC60_F10_ROUTE_CONFIRM_TIMEOUT_RETRY");
             }
         }
-        Sleep(50);
+        Sleep(100);
     }
     return 0;
 }
