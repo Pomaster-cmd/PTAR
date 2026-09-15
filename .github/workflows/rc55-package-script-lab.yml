@@ -1,0 +1,74 @@
+name: RC55 Package Script Lab
+
+on:
+  push:
+    branches:
+      - lab/rc55-bound-physical-idempotence-20260915
+    paths:
+      - 'lab/raster/rc55/package_scripts/**'
+      - '.github/workflows/rc55-package-script-lab.yml'
+  workflow_dispatch:
+
+jobs:
+  powershell4-compatible-static:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse exact PowerShell field scripts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $files=@(
+            'lab/raster/rc55/package_scripts/install.ps1',
+            'lab/raster/rc55/package_scripts/verify.ps1',
+            'lab/raster/rc55/package_scripts/collect.ps1',
+            'lab/raster/rc55/package_scripts/rollback.ps1'
+          )
+          foreach($p in $files){
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $p),[ref]$tokens,[ref]$errors)|Out-Null
+            if($errors.Count -ne 0){ $errors | Format-List *; throw "PowerShell parse failure: $p" }
+            Write-Host "PARSE_PASS=$p"
+          }
+
+      - name: Validate hashes, ownership guard and non-destructive policy
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dir='lab/raster/rc55/package_scripts'
+          $install=Get-Content "$dir/install.ps1" -Raw
+          $rollback=Get-Content "$dir/rollback.ps1" -Raw
+          $collect=Get-Content "$dir/collect.ps1" -Raw
+          $verify=Get-Content "$dir/verify.ps1" -Raw
+          foreach($h in @(
+            '271187ab9fd82b6829c52a667223f241ec79e98fa340b13c9a72270142156949',
+            'dc23f3bbb2780b92809d5ae218d5cf42186682985e1be7608e7e9ee812ddb80e',
+            'fbc5373ac008f6dadf9d9bf4a66772062693d0af744d514cc8f99fb9aa08b52d',
+            '6f1686992bef971c9995df9f0cb91b93c6946988e12a837e5de956df37c9082b',
+            '59e699536998054ae38cc5a30e03375c9cd206220667debe87070962609dd26c'
+          )){if($install -notmatch [regex]::Escape($h)){throw "missing install hash $h"}}
+          if($install -notmatch 'Restore-Rc53GuiIfOwned'){throw 'RC53 ownership restore guard missing'}
+          if($install -notmatch 'pre_rc55_ptar_rc41.dll'){throw 'preinstall backup missing'}
+          if($rollback -notmatch 'preinstall_raster_sha'){throw 'rollback state proof missing'}
+          if($rollback -match 'Remove-Item.+-Recurse'){throw 'rollback must not recursively delete'}
+          if($install -match 'Remove-Item.+-Recurse'){throw 'installer must not recursively delete'}
+          if($collect -notmatch 'PTAR_RC55_RESULTS_'){throw 'collector output missing'}
+          if($collect -match 'Remove-Item\s+-LiteralPath\s+\$g'){throw 'collector game-root delete forbidden'}
+          if($verify -notmatch 'VERIFY_RC55_BOUND_PHYSICAL_IDEMPOTENCE=PASS'){throw 'verify sentinel missing'}
+          Write-Host 'RC55_PACKAGE_STATIC_POLICY=PASS'
+
+      - name: Validate batch launchers and Win8.1 PowerShell path
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dir='lab/raster/rc55/package_scripts'
+          $bats=Get-ChildItem $dir -Filter '*.bat'
+          if($bats.Count -ne 4){throw "expected 4 batch launchers, got $($bats.Count)"}
+          foreach($b in $bats){
+            $s=Get-Content $b.FullName -Raw
+            if($s -notmatch 'WindowsPowerShell\\v1\.0\\powershell\.exe'){throw "non-Win8.1 PowerShell launcher: $($b.Name)"}
+            if($s -notmatch 'ExecutionPolicy Bypass'){throw "ExecutionPolicy missing: $($b.Name)"}
+            Write-Host "BAT_PASS=$($b.Name)"
+          }
+          Write-Host 'RC55_PACKAGE_SCRIPT_LAB=PASS'
