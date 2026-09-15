@@ -5,6 +5,7 @@ on:
     branches:
       - lab/rc55-bound-physical-idempotence-20260915
     paths:
+      - 'lab/raster/rc55/full_package_scripts/**'
       - '.github/workflows/rc55-export-full-package-scripts.yml'
   workflow_dispatch:
 
