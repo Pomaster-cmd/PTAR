@@ -84,7 +84,7 @@ static LRESULT CALLBACK GameProc(HWND h,UINT m,WPARAM w,LPARAM l){
     if(!internal && w==VK_F10 && (m==WM_KEYUP||m==WM_SYSKEYUP)){InterlockedExchange(&g_keyLatch,0);return call_next(h,m,w,l);}
     if(!internal && InterlockedCompareExchange(&g_windowed,0,0) && InterlockedCompareExchange(&g_haveSaved,0,0)){
         if(m==WM_WINDOWPOSCHANGING && l){WINDOWPOS* p=(WINDOWPOS*)l;p->x=g_savedOuter.left;p->y=g_savedOuter.top;p->cx=g_savedOuter.right-g_savedOuter.left;p->cy=g_savedOuter.bottom-g_savedOuter.top;p->flags&=~(SWP_NOMOVE|SWP_NOSIZE);InterlockedIncrement64(&g_gameClamps);}
-        else if(m==WM_STYLECHANGING && l && (w==GWL_STYLE||w==GWL_EXSTYLE)){STYLESTRUCT* ss=(STYLESTRUCT*)l;ss->styleNew=(w==GWL_STYLE)?g_savedStyle:g_savedExStyle;InterlockedIncrement64(&g_gameClamps);}
+        else if(m==WM_STYLECHANGING && l && (w==GWL_STYLE||w==GWL_EXSTYLE)){STYLESTRUCT* ss=(STYLESTRUCT*)l;const LONG_PTR wanted=(w==GWL_STYLE)?g_savedStyle:g_savedExStyle;ss->styleNew=static_cast<DWORD>(static_cast<ULONG_PTR>(wanted));InterlockedIncrement64(&g_gameClamps);}
     }
     return call_next(h,m,w,l);
 }
