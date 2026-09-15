@@ -1,0 +1,139 @@
+name: RC58 Full Additive Package Script Lab V2
+
+on:
+  push:
+    branches: [lab/rc58-virtual-presenter-mode-20260915]
+    paths:
+      - '.github/workflows/rc58-full-package-script-lab-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-full-package-scripts-v2:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate RC58 lifecycle scripts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          python lab/borderless/rc58/build_rc58_full_package_scripts.py
+          if($LASTEXITCODE -ne 0){throw 'RC58 base script generation failed'}
+
+      - name: Add RC56 and RC57 transactional upgrade admission
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          @'
+          from pathlib import Path
+          import hashlib
+          root=Path('lab/borderless/rc58/full_package_scripts')
+          rc51='59e699536998054ae38cc5a30e03375c9cd206220667debe87070962609dd26c'
+          rc56='aeee0a4ee9eafb2a7fc46373024db63b9ac4a63932b2455bd47b2db09d56c616'
+          rc57='c14f92add5cdfc7f05030dd3c3fd9a86b83ce8dac81042c1ab8b6e0237f05684'
+          rc58='c04cbb21f87dd9a851f74b8334cbc6ba4c67274b4dc49f521b2f8523822cd633'
+          expected={
+            'install.ps1':'eb8cc4b145b40ff821fa6010b8aeeebd144034e54ecf90cdc33ae4e65825cef2',
+            'verify.ps1':'f85bdfd3f6f6e6d84e53a99887b0dd3e41d1e8f178fbe9f040f1f0c5aa3df844',
+            'rollback.ps1':'15166b28c9c3986a9c1ee5aa87d02f98ff6f88ff43ad86bb1b7460003d3012e3',
+            'uninstall_overlay.ps1':'1e9180ece393bad2332a72ae5bc65b585a735ea09b51c008d44c20c407999f91',
+            'collect_rc41.ps1':'c44246d1c6a89d4e93115917f03cccbe39964c5b3982b96aa41f57804724b614',
+            'rc55_gui_migration.ps1':'10a87355e56a84af2ad2905d31313b0c17e64aa6169b2fd1084201f3e52c2a1b',
+          }
+          for name in ('install.ps1','rollback.ps1','uninstall_overlay.ps1'):
+              p=root/name
+              s=p.read_text(encoding='utf-8')
+              old=f" '{rc51}',\n '{rc58}'"
+              new=f" '{rc51}',\n '{rc56}',\n '{rc57}',\n '{rc58}'"
+              if old not in s:
+                  raise RuntimeError(f'legacy carrier insertion anchor missing: {name}')
+              s=s.replace(old,new,1)
+              p.write_text(s,encoding='utf-8',newline='\n')
+          for name,want in expected.items():
+              got=hashlib.sha256((root/name).read_bytes()).hexdigest()
+              if got != want:
+                  raise RuntimeError(f'{name} hash drift {got} != {want}')
+              print(name,got)
+          print('RC58_LEGACY_CARRIER_MIGRATION_PATCH=PASS')
+          '@ | python -
+          if($LASTEXITCODE -ne 0){throw 'RC58 legacy carrier patch failed'}
+
+      - name: Parse exact RC58 PowerShell scripts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $root='lab/borderless/rc58/full_package_scripts'
+          $files=@('install.ps1','verify.ps1','rollback.ps1','uninstall_overlay.ps1','collect_rc41.ps1','rc55_gui_migration.ps1')
+          foreach($n in $files){
+            $f=Join-Path $root $n;$tokens=$null;$errors=$null
+            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $f),[ref]$tokens,[ref]$errors)
+            if($errors.Count -ne 0){$errors|ForEach-Object{Write-Host $_.Message};throw "PowerShell parse failed: $n"}
+          }
+          Write-Host 'RC58_FULL_PACKAGE_V2_PS_PARSE=6/6 PASS'
+
+      - name: Verify exact hashes and lifecycle contracts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $root='lab/borderless/rc58/full_package_scripts'
+          $carrier='c04cbb21f87dd9a851f74b8334cbc6ba4c67274b4dc49f521b2f8523822cd633'
+          $rc56='aeee0a4ee9eafb2a7fc46373024db63b9ac4a63932b2455bd47b2db09d56c616'
+          $rc57='c14f92add5cdfc7f05030dd3c3fd9a86b83ce8dac81042c1ab8b6e0237f05684'
+          $expected=@{
+            'install.ps1'='eb8cc4b145b40ff821fa6010b8aeeebd144034e54ecf90cdc33ae4e65825cef2';
+            'verify.ps1'='f85bdfd3f6f6e6d84e53a99887b0dd3e41d1e8f178fbe9f040f1f0c5aa3df844';
+            'rollback.ps1'='15166b28c9c3986a9c1ee5aa87d02f98ff6f88ff43ad86bb1b7460003d3012e3';
+            'uninstall_overlay.ps1'='1e9180ece393bad2332a72ae5bc65b585a735ea09b51c008d44c20c407999f91';
+            'collect_rc41.ps1'='c44246d1c6a89d4e93115917f03cccbe39964c5b3982b96aa41f57804724b614';
+            'rc55_gui_migration.ps1'='10a87355e56a84af2ad2905d31313b0c17e64aa6169b2fd1084201f3e52c2a1b'
+          }
+          foreach($n in $expected.Keys){$h=(Get-FileHash (Join-Path $root $n) -Algorithm SHA256).Hash.ToLowerInvariant();if($h-ne$expected[$n]){throw "$n hash mismatch $h"}}
+          $install=Get-Content (Join-Path $root 'install.ps1') -Raw
+          $verify=Get-Content (Join-Path $root 'verify.ps1') -Raw
+          $rollback=Get-Content (Join-Path $root 'rollback.ps1') -Raw
+          $uninstall=Get-Content (Join-Path $root 'uninstall_overlay.ps1') -Raw
+          $collect=Get-Content (Join-Path $root 'collect_rc41.ps1') -Raw
+          $module=Get-Content (Join-Path $root 'rc55_gui_migration.ps1') -Raw
+          if($install -notmatch 'schema=9' -or $install -notmatch 'PTAR_RC58_WINDOWED_BORDERLESS_STABLE'){throw 'RC58 package state contract missing'}
+          foreach($h in @($rc56,$rc57,$carrier)){if($install -notmatch $h){throw "install missing known carrier $h"};if($rollback -notmatch $h){throw "rollback missing known carrier $h"};if($uninstall -notmatch $h){throw "uninstall missing known carrier $h"}}
+          if($install -notmatch '271187ab9fd82b6829c52a667223f241ec79e98fa340b13c9a72270142156949'){throw 'RC55 raster hash missing'}
+          if($install -notmatch '6f1686992bef971c9995df9f0cb91b93c6946988e12a837e5de956df37c9082b'){throw 'P1U46 exact runtime hash missing'}
+          if($install -notmatch 'INSTALL_RC58=PASS' -or $verify -notmatch 'VERIFY_RC58_WINDOWED_BORDERLESS_STABLE=PASS'){throw 'RC58 lifecycle success gates missing'}
+          if($install -notmatch 'WINDOWED=EXACT_1280x720_GAME_CLIENT' -or $install -notmatch 'BORDERLESS=NATIVE_1920x1080_USR_PRESENTER' -or $install -notmatch 'SWITCH=P1U46_F10_SAFE_PRESENT_BOUNDARY'){throw 'RC58 mode contract missing'}
+          if($collect -notmatch 'PTAR_RC58_RESULTS_' -or $collect -notmatch 'ptar_borderless_rc58.log' -or $collect -notmatch 'RC58_ACTIVE_PAYLOAD_SHA256.txt'){throw 'RC58 collector contract missing'}
+          if($install -match 'AffectGuiResolution[^\r\n]*-Value\s+1'){throw 'install must not force AffectGuiResolution=1'}
+          if($install -notmatch '10a87355e56a84af2ad2905d31313b0c17e64aa6169b2fd1084201f3e52c2a1b' -or $rollback -notmatch '10a87355e56a84af2ad2905d31313b0c17e64aa6169b2fd1084201f3e52c2a1b'){throw 'GUI module integrity binding missing'}
+          if($install -notmatch 'Invoke-Rc55GuiMigration' -or $rollback -notmatch 'Undo-Rc55GuiMigration'){throw 'GUI ownership lifecycle missing'}
+          if($module -notmatch 'PTAR_RC53_GUI_RESOLUTION_SYNC' -or $module -notmatch 'PTAR_RC54_GUI_DOMAIN_PROBE'){throw 'GUI owner allowlist incomplete'}
+          if($uninstall -notmatch 'OVERLAY_OWNERSHIP\.tsv' -or $uninstall -notmatch '\(Sha \$p\)-eq \$a\[2\]' -or $uninstall -notmatch '\[KEEP\] Additif RC41 modifie'){throw 'ownership-aware uninstall contract missing'}
+          if($uninstall -notmatch 'ptar_borderless_rc58\.log'){throw 'RC58 dynamic log cleanup missing'}
+          foreach($n in @('install.ps1','verify.ps1','rollback.ps1','collect_rc41.ps1','rc55_gui_migration.ps1')){$t=Get-Content (Join-Path $root $n) -Raw;if($t -match 'Remove-Item\s+[^\r\n]*-Recurse'){throw "unexpected recursive deletion in $n"}}
+          Write-Host 'RC58_FULL_PACKAGE_V2_CONTRACT=PASS RC56_UPGRADE=PASS RC57_UPGRADE=PASS'
+
+      - name: Exercise inherited GUI ownership module
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$module=(Resolve-Path 'lab/borderless/rc58/full_package_scripts/rc55_gui_migration.ps1');. $module
+          function New-OwnerState([string]$root,[string]$key,[bool]$exists,[object]$original,[int]$installed,[string]$package='PTAR_RC54_GUI_DOMAIN_PROBE'){
+            New-Item -ItemType Directory -Path $root -Force|Out-Null;$d=Join-Path $root 'INSTALL_OWNER';New-Item -ItemType Directory -Path $d -Force|Out-Null
+            $m=[ordered]@{package=$package;gui=[ordered]@{key=$key;exists=$exists;original=$original;installed=$installed;applied=$true}};$m|ConvertTo-Json -Depth 8|Set-Content -LiteralPath (Join-Path $d 'install_state.json') -Encoding UTF8
+          }
+          function Value([string]$key){try{return [int](Get-ItemProperty -LiteralPath $key -Name AffectGuiResolution -ErrorAction Stop).AffectGuiResolution}catch{return $null}}
+          $tmp=Join-Path $env:TEMP ('ptar_rc58_gui_v2_ci_'+[guid]::NewGuid().ToString('N'));$key='HKCU:\Software\PTAR_RC58_V2_CI_'+[guid]::NewGuid().ToString('N')
+          try{
+            New-Item -Path $key -Force|Out-Null;Set-ItemProperty -LiteralPath $key -Name AffectGuiResolution -Type DWord -Value 1
+            $s1=Join-Path $tmp 's1';New-OwnerState $s1 $key $true 0 1
+            1..32|ForEach-Object{$m=Invoke-Rc55GuiMigration -StateRoot $s1;if($m.event-ne'RESTORED' -or (Value $key)-ne0){throw "restore $_"};$u=Undo-Rc55GuiMigration $m;if($u.event-ne'PRE_RC55_RESTORED' -or (Value $key)-ne1){throw "undo $_"}}
+            $m2=Invoke-Rc55GuiMigration -StateRoot $s1;Set-ItemProperty -LiteralPath $key -Name AffectGuiResolution -Type DWord -Value 7;$u2=Undo-Rc55GuiMigration $m2;if($u2.event-ne'KEEP_CURRENT_CHANGED' -or (Value $key)-ne7){throw 'user override preservation failed'}
+            Write-Host 'RC58_GUI_OWNERSHIP_V2=PASS stress=32 user_override=PASS'
+          } finally {if(Test-Path -LiteralPath $key){Remove-Item -LiteralPath $key -Recurse -Force -ErrorAction SilentlyContinue};if(Test-Path -LiteralPath $tmp){Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue}}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_RC58_FULL_PACKAGE_SCRIPTS_V2
+          path: lab/borderless/rc58/full_package_scripts/*
+          retention-days: 14
