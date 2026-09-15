@@ -1,9 +1,12 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#include <intrin.h>
 #include <cstdio>
 #include <cstring>
 #include "ptar_rc54_gui_callsite_probe.h"
+
+#pragma intrinsic(_ReturnAddress)
 
 using namespace ptar_rc54;
 using namespace ptar_rc41;
