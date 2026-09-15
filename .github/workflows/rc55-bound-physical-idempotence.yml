@@ -1,0 +1,136 @@
+name: RC55 Bound Physical Idempotence Lab
+
+on:
+  push:
+    branches:
+      - lab/rc55-bound-physical-idempotence-20260915
+    paths:
+      - 'lab/raster/rc55/**'
+      - '.github/workflows/rc55-bound-physical-idempotence.yml'
+  workflow_dispatch:
+
+jobs:
+  windows-raster-idempotence:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate RC52 legacy and RC55 fixed context hooks
+        shell: cmd
+        run: |
+          python lab\raster\rc52\build_rc52_context_hooks.py lab\raster\rc55\generated\ptar_rc41_context_hooks_rc52.cpp || exit /b 10
+          python lab\raster\rc55\build_rc55_context_hooks.py lab\raster\rc55\generated\ptar_rc41_context_hooks_rc52.cpp lab\raster\rc55\generated\ptar_rc41_context_hooks_rc55.cpp || exit /b 11
+          findstr /C:"viewport_is_exact_full_physical" lab\raster\rc55\generated\ptar_rc41_context_hooks_rc55.cpp >nul || exit /b 12
+          findstr /C:"scissor_is_exact_full_physical" lab\raster\rc55\generated\ptar_rc41_context_hooks_rc55.cpp >nul || exit /b 13
+          findstr /C:"requestedViewportCount_=0;haveViewportState_=false" lab\raster\rc55\generated\ptar_rc41_context_hooks_rc55.cpp >nul || exit /b 14
+          findstr /C:"requestedScissorCount_=0;haveScissorState_=false" lab\raster\rc55\generated\ptar_rc41_context_hooks_rc55.cpp >nul || exit /b 15
+
+      - name: Build legacy reproducer and RC55 fixed host
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 20
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\raster\rc41
+          mkdir lab\raster\rc55\legacy 2>nul
+          mkdir lab\raster\rc55\fixed 2>nul
+          cl %CFLAGS% lab\raster\rc55\ptar_rc55_bound_physical_host.cpp lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc55\generated\ptar_rc41_context_hooks_rc52.cpp /Fo:lab\raster\rc55\legacy\ /Fe:lab\raster\rc55\legacy\legacy.exe d3d11.lib user32.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 21
+          cl %CFLAGS% lab\raster\rc55\ptar_rc55_bound_physical_host.cpp lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc55\generated\ptar_rc41_context_hooks_rc55.cpp /Fo:lab\raster\rc55\fixed\ /Fe:lab\raster\rc55\fixed\fixed.exe d3d11.lib user32.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 22
+
+      - name: Prove field signature on RC52 and correction on RC55
+        shell: cmd
+        run: |
+          pushd lab\raster\rc55\legacy
+          legacy.exe
+          set LEGACY_RC=%ERRORLEVEL%
+          type RC55_BOUND_PHYSICAL_HOST.txt
+          if "%LEGACY_RC%"=="0" exit /b 30
+          findstr /C:"BOUND_PHYSICAL_EXACT=FAIL actual_vp=853.333x480.000 actual_sc=854x480" RC55_BOUND_PHYSICAL_HOST.txt >nul || exit /b 31
+          popd
+          pushd lab\raster\rc55\fixed
+          fixed.exe || exit /b 32
+          type RC55_BOUND_PHYSICAL_HOST.txt
+          findstr /C:"BOUND_PHYSICAL_EXACT=PASS actual_vp=1280.000x720.000 actual_sc=1280x720" RC55_BOUND_PHYSICAL_HOST.txt >nul || exit /b 33
+          findstr /C:"BOUND_PHYSICAL_REPEAT32=PASS" RC55_BOUND_PHYSICAL_HOST.txt >nul || exit /b 34
+          findstr /C:"BOUND_LOGICAL_MAP=PASS actual_vp=1280.000x720.000 actual_sc=1280x720" RC55_BOUND_PHYSICAL_HOST.txt >nul || exit /b 35
+          findstr /C:"BOUND_SMALL_UNCHANGED=PASS" RC55_BOUND_PHYSICAL_HOST.txt >nul || exit /b 36
+          findstr /C:"REBIND_PHYSICAL_REPLAY=PASS actual_vp=1280.000x720.000 actual_sc=1280x720" RC55_BOUND_PHYSICAL_HOST.txt >nul || exit /b 37
+          findstr /C:"RC55_BOUND_PHYSICAL_HOST=PASS failures=0" RC55_BOUND_PHYSICAL_HOST.txt >nul || exit /b 38
+          popd
+
+      - name: Run inherited RC52 regression host against RC55
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 40
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\raster\rc41
+          cl %CFLAGS% lab\raster\rc52\ptar_rc52_raster_state_host.cpp lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc55\generated\ptar_rc41_context_hooks_rc55.cpp /Fo:lab\raster\rc55\fixed\rc52_ /Fe:lab\raster\rc55\fixed\rc52_regression.exe d3d11.lib user32.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 41
+          pushd lab\raster\rc55\fixed
+          rc52_regression.exe || exit /b 42
+          type RC52_RASTER_STATE_HOST.txt
+          findstr /C:"RC52_RASTER_STATE_HOST=PASS failures=0" RC52_RASTER_STATE_HOST.txt >nul || exit /b 43
+          popd
+
+      - name: Build production RC55 sidecar
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 50
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\raster\rc41
+          cl %CFLAGS% /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc55\generated\ptar_rc41_context_hooks_rc55.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fo:lab\raster\rc55\fixed\ /Fe:lab\raster\rc55\fixed\ptar_rc41.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 51
+          certutil -hashfile lab\raster\rc55\fixed\ptar_rc41.dll SHA256
+
+      - name: Run inherited production host against RC55
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 60
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\raster\rc41
+          cl %CFLAGS% lab\raster\rc41\ptar_rc41_prod_host.cpp /Fo:lab\raster\rc55\fixed\prod_host.obj /Fe:lab\raster\rc55\fixed\prod_host.exe d3d11.lib dxgi.lib user32.lib /link /SUBSYSTEM:CONSOLE,6.03 || exit /b 61
+          pushd lab\raster\rc55\fixed
+          prod_host.exe || exit /b 62
+          type RC41_PROD_HOST_RESULT.txt
+          findstr /C:"RC41_PROD_HOST=PASS" RC41_PROD_HOST_RESULT.txt >nul || exit /b 63
+          popd
+
+      - name: Stress corrected and inherited raster behavior
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          1..64 | ForEach-Object {
+            Push-Location 'lab/raster/rc55/fixed'
+            try {
+              & .\fixed.exe
+              if($LASTEXITCODE -ne 0){ throw "RC55 direct-bound stress failed iteration $_ rc=$LASTEXITCODE" }
+              & .\rc52_regression.exe
+              if($LASTEXITCODE -ne 0){ throw "RC52 inherited stress failed iteration $_ rc=$LASTEXITCODE" }
+            } finally { Pop-Location }
+          }
+          $sha=(Get-FileHash 'lab/raster/rc55/fixed/ptar_rc41.dll' -Algorithm SHA256).Hash.ToLowerInvariant()
+          @(
+            'RC55_BOUND_PHYSICAL_IDEMPOTENCE=PASS',
+            'FIELD_SIGNATURE_REPRODUCED=1280x720_to_853.333x480_on_RC52',
+            'FIXED_BOUND_PHYSICAL=1280x720_to_1280x720',
+            'BOUND_LOGICAL_1920x1080_TO_1280x720=PASS',
+            'BOUND_SMALL_SEMANTICS_UNCHANGED=PASS',
+            'REBIND_PHYSICAL_REPLAY=PASS',
+            'RC52_INHERITED_HOST=PASS',
+            'RC41_PROD_HOST=PASS',
+            'STRESS_CYCLES=64+64 PASS',
+            "RC55_RASTER_SHA256=$sha"
+          ) | Set-Content 'lab/raster/rc55/RC55_VALIDATION_SUMMARY.txt' -Encoding ASCII
+          Get-Content 'lab/raster/rc55/RC55_VALIDATION_SUMMARY.txt'
+
+      - name: Upload RC55 evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PTAR_RC55_BOUND_PHYSICAL_IDEMPOTENCE
+          path: |
+            lab/raster/rc55/RC55_VALIDATION_SUMMARY.txt
+            lab/raster/rc55/legacy/RC55_BOUND_PHYSICAL_HOST.txt
+            lab/raster/rc55/fixed/RC55_BOUND_PHYSICAL_HOST.txt
+            lab/raster/rc55/fixed/RC52_RASTER_STATE_HOST.txt
+            lab/raster/rc55/fixed/RC41_PROD_HOST_RESULT.txt
+            lab/raster/rc55/fixed/ptar_rc41.dll
+            lab/raster/rc55/generated/*.cpp
+          retention-days: 14
