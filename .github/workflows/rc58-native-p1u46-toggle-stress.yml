@@ -1,0 +1,69 @@
+name: RC58 Native P1U46 Windowed Borderless Stress
+
+on:
+  push:
+    branches: [lab/rc58-virtual-presenter-mode-20260915]
+    paths:
+      - 'lab/borderless/rc58/ptar_borderless_rc58_native_toggle.cpp'
+      - 'lab/borderless/rc58/ptar_rc58_p1u46_f10_host.cpp'
+      - '.github/workflows/rc58-native-p1u46-toggle-stress.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-toggle:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Reconstruct exact field runtime and RC55 raster
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o='lab/borderless/rc58/native_test';New-Item -ItemType Directory -Force $o|Out-Null
+          python lab/borderless/rc48/rebuild_exact_field_runtime.py payload/d3d11.dll "$o/d3d11.dll";if($LASTEXITCODE-ne0){throw 'runtime reconstruction failed'}
+          $h=(Get-FileHash "$o/d3d11.dll" -Algorithm SHA256).Hash.ToLowerInvariant();if($h-ne'6f1686992bef971c9995df9f0cb91b93c6946988e12a837e5de956df37c9082b'){throw "runtime drift $h"};Copy-Item "$o/d3d11.dll" "$o/win81_nis_dx11_x64.dll"
+          $ini=Get-Content payload/win81_nis.ini -Raw;$ini=[regex]::Replace($ini,'(?m)^OutputWidth=.*$','OutputWidth=1920');$ini=[regex]::Replace($ini,'(?m)^OutputHeight=.*$','OutputHeight=1080');$ini=[regex]::Replace($ini,'(?m)^RenderWidth=.*$','RenderWidth=1280');$ini=[regex]::Replace($ini,'(?m)^RenderHeight=.*$','RenderHeight=720');Set-Content "$o/win81_nis.ini" $ini -Encoding ASCII
+          python lab/raster/rc52/build_rc52_context_hooks.py lab/raster/rc58_native_rc52.cpp;if($LASTEXITCODE-ne0){throw 'rc52 generation'}
+          python lab/raster/rc55/build_rc55_context_hooks.py lab/raster/rc58_native_rc52.cpp lab/raster/rc58_native_rc55.cpp;if($LASTEXITCODE-ne0){throw 'rc55 generation'}
+          Write-Host 'RC58_NATIVE_PREP=PASS'
+      - name: Build no-geometry carrier twice RC55 and host
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 20
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603
+          mkdir lab\borderless\rc58\native_test\p1 2>nul
+          mkdir lab\borderless\rc58\native_test\p2 2>nul
+          cl %CFLAGS% /LD lab\borderless\rc58\ptar_borderless_rc58_native_toggle.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fo:lab\borderless\rc58\native_test\p1\ /Fe:lab\borderless\rc58\native_test\p1\ptar_borderless.dll user32.lib advapi32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 21
+          cl %CFLAGS% /LD lab\borderless\rc58\ptar_borderless_rc58_native_toggle.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fo:lab\borderless\rc58\native_test\p2\ /Fe:lab\borderless\rc58\native_test\p2\ptar_borderless.dll user32.lib advapi32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 22
+          set RCFLAGS=%CFLAGS% /I lab\raster\rc41
+          cl %RCFLAGS% /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc58_native_rc55.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fo:lab\borderless\rc58\native_test\ /Fe:lab\borderless\rc58\native_test\ptar_rc41.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 23
+          cl %CFLAGS% lab\borderless\rc58\ptar_rc58_p1u46_f10_host.cpp /Fo:lab\borderless\rc58\native_test\ /Fe:lab\borderless\rc58\native_test\Warhammer.exe user32.lib advapi32.lib gdi32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:WINDOWS,6.03 || exit /b 24
+          copy /y lab\borderless\rc58\native_test\p1\ptar_borderless.dll lab\borderless\rc58\native_test\ptar_borderless.dll >nul
+      - name: Reproducibility PE and no-geometry static gates
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$p1='lab/borderless/rc58/native_test/p1/ptar_borderless.dll';$p2='lab/borderless/rc58/native_test/p2/ptar_borderless.dll';$h1=(Get-FileHash $p1 -Algorithm SHA256).Hash.ToLowerInvariant();$h2=(Get-FileHash $p2 -Algorithm SHA256).Hash.ToLowerInvariant();if($h1-ne$h2){throw 'carrier not reproducible'};$r=(Get-FileHash 'lab/borderless/rc58/native_test/ptar_rc41.dll' -Algorithm SHA256).Hash.ToLowerInvariant();if($r-ne'271187ab9fd82b6829c52a667223f241ec79e98fa340b13c9a72270142156949'){throw "RC55 drift $r"};$src=Get-Content 'lab/borderless/rc58/ptar_borderless_rc58_native_toggle.cpp' -Raw;foreach($bad in @('SetWindowPos(','SetWindowLongPtr','ResizeBuffers(','SetParent(','ShowWindow(','SetWindowRgn(','WM_STYLECHANGING','GWLP_WNDPROC')){if($src.Contains($bad)){throw "forbidden geometry/window mutation $bad"}};$b=[IO.File]::ReadAllBytes($p1);$pe=[BitConverter]::ToInt32($b,0x3C);if([BitConverter]::ToUInt16($b,$pe+4)-ne0x8664-or[BitConverter]::ToUInt16($b,$pe+24)-ne0x20B-or[BitConverter]::ToUInt16($b,$pe+72)-ne6-or[BitConverter]::ToUInt16($b,$pe+74)-ne3){throw 'PE Win8.1 gate'};@("RC58_NATIVE_CARRIER_SHA256=$h1","RC55_RASTER_SHA256=$r",'NO_GEOMETRY_MUTATION=PASS','RC58_REPRODUCIBLE=PASS','PE_X64_WIN81=PASS')|Set-Content 'lab/borderless/rc58/native_test/RC58_NATIVE_BUILD.txt' -Encoding ASCII;Get-Content 'lab/borderless/rc58/native_test/RC58_NATIVE_BUILD.txt'
+      - name: Exact P1U46 500 Windowed-Borderless round trips
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o=(Resolve-Path 'lab/borderless/rc58/native_test').Path;$p=Start-Process "$o/Warhammer.exe" -WorkingDirectory $o -PassThru;if(-not$p.WaitForExit(900000)){Stop-Process $p.Id -Force;throw 'native stress timeout'};$ev=Join-Path $o 'RC58_P1U46_F10_STRESS.txt';if(Test-Path $ev){$e=[IO.File]::ReadAllText($ev,[Text.Encoding]::Unicode);Write-Host $e}else{throw 'host evidence missing'};foreach($n in @('win81_nis.log','ptar_borderless_rc58.log','ptar_rc41_bootstrap.log','ptar_rc41.log')){$q=Join-Path $o $n;if(Test-Path $q){Write-Host "===== $n =====";Get-Content $q -Tail 120}};if($p.ExitCode-ne0){throw "host rc=$($p.ExitCode)"};if(-not$e.Contains('RC58_P1U46_F10_STRESS=PASS cycles=500')){throw 'stress marker missing'};$rt=Get-Content (Join-Path $o 'win81_nis.log') -Raw;$gd=([regex]::Matches($rt,'HOTKEY TOGGLE PRESENTER: GAME DIRECT requested')).Count;$usr=([regex]::Matches($rt,'HOTKEY TOGGLE PRESENTER: USR PRESENTER requested')).Count;if($gd-lt500-or$usr-lt500){throw "toggle count direct=$gd usr=$usr"};if(-not$rt.Contains('OK: P1U46 ACTIVE OUTPUT PATH = GAME DIRECT')){throw 'GAME DIRECT activation absent'};if(-not$rt.Contains('OK: P1U46 ACTIVE OUTPUT PATH = USR PRESENTER')){throw 'USR activation absent'};if($rt.Contains('ERROR: P1U46 USR PRESENTER activation failed')){throw 'USR activation failure'};if(-not$rt.Contains('PTAR-NG MoE v01 exact x1.5 active')){throw 'x1.5 path absent'};$carrier=Get-Content (Join-Path $o 'ptar_borderless_rc58.log') -Raw;if(-not$carrier.Contains('RC58_GAME_HWND_MUTATION=NONE')-or-not$carrier.Contains('RC58_PRESENTER_GEOMETRY_MUTATION=NONE')){throw 'carrier geometry contract absent'};$boot=Get-Content (Join-Path $o 'ptar_rc41_bootstrap.log') -Raw;if(-not$boot.Contains('RC41B_ACTIVATION_PROVEN')){throw 'RC55 raster bootstrap absent'};Write-Host "RC58_NATIVE_P1U46_STRESS=PASS direct=$gd usr=$usr"
+      - name: Final summary
+        shell: powershell
+        run: |
+          $o='lab/borderless/rc58/native_test';$h=(Get-FileHash "$o/p1/ptar_borderless.dll" -Algorithm SHA256).Hash.ToLowerInvariant();@('RC58_NATIVE_P1U46_TOGGLE=PASS','WINDOWED=P1U46_GAME_DIRECT','BORDERLESS=P1U46_USR_PRESENTER','MODE_SWITCH=P1U46_F10_SAFE_BOUNDARY','500_ROUND_TRIPS=PASS','GAME_HWND_GEOMETRY_UNCHANGED=PASS','PRESENTER_GEOMETRY_SIDE_EFFECTS=NONE','P1U46_EXACT=PASS','RC55_RASTER_UNCHANGED=PASS',"RC58_CARRIER_SHA256=$h")|Set-Content "$o/RC58_NATIVE_FINAL.txt" -Encoding ASCII;Get-Content "$o/RC58_NATIVE_FINAL.txt"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PTAR_RC58_NATIVE_P1U46_STRESS
+          path: |
+            lab/borderless/rc58/native_test/*.txt
+            lab/borderless/rc58/native_test/*.log
+            lab/borderless/rc58/native_test/p1/ptar_borderless.dll
+            lab/borderless/rc58/native_test/ptar_rc41.dll
+          if-no-files-found: warn
+          retention-days: 14
