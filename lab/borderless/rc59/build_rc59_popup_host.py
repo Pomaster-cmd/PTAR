@@ -5,6 +5,13 @@ OUT=Path('lab/borderless/rc59/generated/ptar_rc59_popup_host.cpp')
 s=SRC.read_text(encoding='utf-8')
 s=s.replace('RC58','RC59').replace('rc58','rc59')
 s=s.replace('if(!set_pref(0)){fclose(ev);return 10;}','if(!set_pref(1)){fclose(ev);return 10;}',1)
+# Hosted Windows runner is only 1024px wide. The real field monitor is 1920x1080;
+# permit a >1024 top-level tracking width so SetWindowPos can exercise the exact
+# 1280x720 client geometry instead of being clipped by the runner's default max-track size.
+old_proc='static LRESULT CALLBACK Proc(HWND h,UINT m,WPARAM w,LPARAM l){if(m==WM_ERASEBKGND){RECT r{};GetClientRect(h,&r);FillRect((HDC)w,&r,g_brush);return 1;}return DefWindowProcW(h,m,w,l);}'
+new_proc='static LRESULT CALLBACK Proc(HWND h,UINT m,WPARAM w,LPARAM l){if(m==WM_GETMINMAXINFO&&l){MINMAXINFO* mm=(MINMAXINFO*)l;mm->ptMaxTrackSize.x=4096;mm->ptMaxTrackSize.y=2160;}if(m==WM_ERASEBKGND){RECT r{};GetClientRect(h,&r);FillRect((HDC)w,&r,g_brush);return 1;}return DefWindowProcW(h,m,w,l);}'
+if old_proc not in s: raise RuntimeError('host Proc anchor missing')
+s=s.replace(old_proc,new_proc,1)
 old='DWORD style=WS_OVERLAPPEDWINDOW|WS_VISIBLE;RECT wr{0,0,1280,720};AdjustWindowRectEx(&wr,style,FALSE,0);HWND game=CreateWindowExW(0,wc.lpszClassName,L"Warhammer: Inquisitor - Martyr",style,35,25,wr.right-wr.left,wr.bottom-wr.top,nullptr,nullptr,inst,nullptr);'
 new='DWORD style=WS_POPUP|WS_VISIBLE;RECT wr{0,0,1920,1080};HWND game=CreateWindowExW(0,wc.lpszClassName,L"Warhammer: Inquisitor - Martyr",style,0,0,wr.right-wr.left,wr.bottom-wr.top,nullptr,nullptr,inst,nullptr);'
 if old not in s: raise RuntimeError('window construction anchor missing')
@@ -25,7 +32,6 @@ if(!set_pref(1)||!wait_state(d,q,false,10000)){restore(rb);fclose(ev);return 23;
 if(!set_pref(0)||!wait_state(d,q,true,10000)){restore(rb);fclose(ev);return 26;}for(unsigned i=0;i<60;++i)if(!d.frame()){restore(rb);fclose(ev);return 27;}Geometry afterPref{};if(!geom(game,afterPref)||!same(afterPref,base)||!query(q,bs)||bs.restoreFailures!=0){restore(rb);fclose(ev);return 28;}fwprintf(ev,L"POPUP_RECOVERY_PREF_ROUNDTRIP=PASS\n");fflush(ev);
 '''
 s=s[:a]+repl+s[b:]
-# In the 500-cycle loop, RC59's invariant is stronger: game HWND never leaves canonical windowed geometry even while presenter is active.
 old_b='if(!geom(presenter,pg)||pg.cw!=1920||pg.ch!=1080){fwprintf(ev,L"FAIL cycle=%u presenter=%ux%u\\n",i,pg.cw,pg.ch);restore(rb);fclose(ev);return 32;}'
 new_b='Geometry gb{};if(!geom(presenter,pg)||pg.cw!=1920||pg.ch!=1080||!geom(game,gb)||!same(gb,base)||!game_windowed(gb)){fwprintf(ev,L"FAIL cycle=%u borderless game=%ux%u presenter=%ux%u\\n",i,gb.cw,gb.ch,pg.cw,pg.ch);restore(rb);fclose(ev);return 32;}'
 if old_b not in s: raise RuntimeError('borderless cycle anchor missing')
