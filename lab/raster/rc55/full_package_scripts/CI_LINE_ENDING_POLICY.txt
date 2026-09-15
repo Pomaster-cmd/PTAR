@@ -1,0 +1,1 @@
+RC55 full-package PowerShell sources are checked out byte-exact with LF line endings for SHA-256 parity with the field package.
