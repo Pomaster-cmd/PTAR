@@ -1,0 +1,181 @@
+name: RC56 Presenter Only Borderless
+
+on:
+  push:
+    branches:
+      - lab/rc56-presenter-only-borderless-20260915
+    paths:
+      - 'lab/borderless/rc56/**'
+      - '.github/workflows/rc56-presenter-only-borderless.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-rc56:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate RC56 presenter-only carrier
+        shell: cmd
+        run: |
+          python lab\borderless\rc56\build_rc56_presenter_only.py lab\borderless\rc56\generated || exit /b 10
+          type lab\borderless\rc56\generated\RC56_GENERATION.txt
+          findstr /C:"RC56_BORDERLESS_POLICY=PRESENTER_ONLY_GAME_UNTOUCHED" lab\borderless\rc56\generated\ptar_borderless_rc45_presenter_only.cpp >nul || exit /b 11
+          findstr /C:"return GameProc(h,m,w,l);" lab\borderless\rc56\generated\ptar_borderless_rc45_presenter_only.cpp >nul && exit /b 12 || ver >nul
+          findstr /C:"enforce_geometry();" lab\borderless\rc56\generated\ptar_borderless_rc45_presenter_only.cpp >nul && exit /b 13 || ver >nul
+          findstr /C:"RC51_PRESENTER_RESYNC_PASS" lab\borderless\rc56\generated\ptar_borderless_rc56_prod.cpp >nul || exit /b 14
+          echo RC56_STATIC_POLICY=PASS
+
+      - name: Prove RC55 raster tree unchanged
+        shell: cmd
+        run: |
+          git diff --quiet 4855c75bd9ae8e613ca0f94c2c3a7ea4eb5950ae HEAD -- lab/raster
+          if errorlevel 1 exit /b 20
+          echo RC55_RASTER_TREE_UNCHANGED=PASS
+
+      - name: Build RC56 twice and standalone policy host
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 30
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603
+          mkdir lab\borderless\rc56\repro_a 2>nul
+          mkdir lab\borderless\rc56\repro_b 2>nul
+          mkdir lab\borderless\rc56\standalone 2>nul
+          cl %CFLAGS% /LD lab\borderless\rc56\generated\ptar_borderless_rc56_prod.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fo:lab\borderless\rc56\repro_a\ /Fe:lab\borderless\rc56\repro_a\ptar_borderless.dll user32.lib advapi32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 31
+          cl %CFLAGS% /LD lab\borderless\rc56\generated\ptar_borderless_rc56_prod.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fo:lab\borderless\rc56\repro_b\ /Fe:lab\borderless\rc56\repro_b\ptar_borderless.dll user32.lib advapi32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 32
+          copy /y lab\borderless\rc56\repro_a\ptar_borderless.dll lab\borderless\rc56\standalone\ptar_borderless.dll >nul
+          cl %CFLAGS% lab\borderless\rc56\ptar_rc56_presenter_only_host.cpp /Fe:lab\borderless\rc56\standalone\rc56_host.exe user32.lib advapi32.lib /link /SUBSYSTEM:WINDOWS,6.03 || exit /b 33
+
+      - name: Verify reproducibility and Win81 PE target
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $a=(Get-FileHash 'lab/borderless/rc56/repro_a/ptar_borderless.dll' -Algorithm SHA256).Hash.ToLowerInvariant()
+          $b=(Get-FileHash 'lab/borderless/rc56/repro_b/ptar_borderless.dll' -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($a -ne $b){throw "RC56 /Brepro mismatch $a $b"}
+          $bytes=[IO.File]::ReadAllBytes('lab/borderless/rc56/repro_a/ptar_borderless.dll')
+          $pe=[BitConverter]::ToInt32($bytes,0x3c);$machine=[BitConverter]::ToUInt16($bytes,$pe+4);$opt=$pe+24;$majorOS=[BitConverter]::ToUInt16($bytes,$opt+40);$minorOS=[BitConverter]::ToUInt16($bytes,$opt+42);$majorSub=[BitConverter]::ToUInt16($bytes,$opt+48);$minorSub=[BitConverter]::ToUInt16($bytes,$opt+50)
+          if($machine -ne 0x8664){throw "not x64 machine=0x$('{0:X4}' -f $machine)"}
+          if($majorOS -gt 6 -or ($majorOS -eq 6 -and $minorOS -gt 3)){throw "OS target too new $majorOS.$minorOS"}
+          if($majorSub -gt 6 -or ($majorSub -eq 6 -and $minorSub -gt 3)){throw "subsystem target too new $majorSub.$minorSub"}
+          @("RC56_SHA256=$a","REPRODUCIBLE=PASS","PE_MACHINE=X64","OS_TARGET=$majorOS.$minorOS","SUBSYSTEM_TARGET=$majorSub.$minorSub") | Set-Content 'lab/borderless/rc56/RC56_COMPONENTS.txt' -Encoding ASCII
+          Get-Content 'lab/borderless/rc56/RC56_COMPONENTS.txt'
+
+      - name: Run 500-cycle presenter-only transition policy
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o=(Resolve-Path 'lab/borderless/rc56/standalone').Path
+          $p=Start-Process -FilePath "$o/rc56_host.exe" -WorkingDirectory $o -PassThru
+          if(-not $p.WaitForExit(180000)){Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue;throw 'transition host timeout'}
+          if($p.ExitCode -ne 0){if(Test-Path "$o/RC56_TRANSITION_HOST.txt"){Get-Content "$o/RC56_TRANSITION_HOST.txt" -Encoding Unicode};throw "transition host rc=$($p.ExitCode)"}
+          $txt=[IO.File]::ReadAllText("$o/RC56_TRANSITION_HOST.txt",[Text.Encoding]::Unicode);Write-Host $txt
+          if(-not $txt.Contains('RC56_TRANSITION_STRESS=PASS cycles=500 game_untouched=1 presenter_only=1')){throw 'transition marker missing'}
+
+      - name: Run direct-borderless startup isolation stress
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o=(Resolve-Path 'lab/borderless/rc56/standalone').Path
+          $p=Start-Process -FilePath "$o/rc56_host.exe" -ArgumentList 'direct' -WorkingDirectory $o -PassThru
+          if(-not $p.WaitForExit(120000)){Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue;throw 'direct borderless host timeout'}
+          if($p.ExitCode -ne 0){if(Test-Path "$o/RC56_DIRECT_BORDERLESS_HOST.txt"){Get-Content "$o/RC56_DIRECT_BORDERLESS_HOST.txt" -Encoding Unicode};throw "direct borderless host rc=$($p.ExitCode)"}
+          $txt=[IO.File]::ReadAllText("$o/RC56_DIRECT_BORDERLESS_HOST.txt",[Text.Encoding]::Unicode);Write-Host $txt
+          if(-not $txt.Contains('RC56_DIRECT_BORDERLESS=PASS game_untouched=1 presenter_native=1 messages=2000')){throw 'direct marker missing'}
+
+      - name: Reconstruct exact P1U46 and exact RC55 raster
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';Add-Type -AssemblyName System.Windows.Forms
+          $o='lab/borderless/rc56/integrated';New-Item -ItemType Directory -Force $o | Out-Null
+          $base=(Get-FileHash payload/d3d11.dll -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($base -ne '864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c'){throw "canonical runtime drift $base"}
+          python lab/borderless/rc48/rebuild_exact_field_runtime.py payload/d3d11.dll "$o/d3d11.dll"
+          if($LASTEXITCODE -ne 0){throw 'runtime reconstruction failed'}
+          $runtime=(Get-FileHash "$o/d3d11.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($runtime -ne '6f1686992bef971c9995df9f0cb91b93c6946988e12a837e5de956df37c9082b'){throw "P1U46 mismatch $runtime"}
+          Copy-Item "$o/d3d11.dll" "$o/win81_nis_dx11_x64.dll" -Force
+          $b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds;$ow=[int]$b.Width;$oh=[int]$b.Height;$rw=[int][math]::Floor($ow*2/3);$rh=[int][math]::Floor($oh*2/3)
+          $ini=Get-Content payload/win81_nis.ini -Raw
+          $ini=[regex]::Replace($ini,'(?m)^OutputWidth=.*$',"OutputWidth=$ow");$ini=[regex]::Replace($ini,'(?m)^OutputHeight=.*$',"OutputHeight=$oh");$ini=[regex]::Replace($ini,'(?m)^RenderWidth=.*$',"RenderWidth=$rw");$ini=[regex]::Replace($ini,'(?m)^RenderHeight=.*$',"RenderHeight=$rh")
+          Set-Content "$o/win81_nis.ini" $ini -Encoding ASCII
+          Copy-Item 'lab/borderless/rc56/repro_a/ptar_borderless.dll' "$o/ptar_borderless.dll" -Force
+          python lab/raster/rc52/build_rc52_context_hooks.py lab/raster/rc56_rc52.cpp
+          if($LASTEXITCODE -ne 0){throw 'RC52 generator failed'}
+          python lab/raster/rc55/build_rc55_context_hooks.py lab/raster/rc56_rc52.cpp lab/raster/rc56_rc55.cpp
+          if($LASTEXITCODE -ne 0){throw 'RC55 generator failed'}
+          "OUTPUT=${ow}x${oh} RENDER=${rw}x${rh} RUNTIME=$runtime" | Set-Content 'lab/borderless/rc56/RC56_INTEGRATED_GEOMETRY.txt' -Encoding ASCII
+
+      - name: Build exact RC55 raster and P1U46 stress executable
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 40
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603 /I lab\raster\rc41
+          cl %CFLAGS% /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc56_rc55.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fo:lab\borderless\rc56\integrated\ /Fe:lab\borderless\rc56\integrated\ptar_rc41.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 41
+          cl %CFLAGS% lab\presenter\rc51\ptar_rc51_auto_stress_host.cpp /Fo:lab\borderless\rc56\integrated\ /Fe:lab\borderless\rc56\integrated\Warhammer.exe user32.lib advapi32.lib gdi32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:WINDOWS,6.03 || exit /b 42
+
+      - name: Verify exact RC55 raster hash
+        shell: powershell
+        run: |
+          $h=(Get-FileHash 'lab/borderless/rc56/integrated/ptar_rc41.dll' -Algorithm SHA256).Hash.ToLowerInvariant();Write-Host "RC55=$h"
+          if($h -ne '271187ab9fd82b6829c52a667223f241ec79e98fa340b13c9a72270142156949'){throw "RC55 raster drift $h"}
+
+      - name: Run inherited P1U46 60-cycle integrated stress
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o=(Resolve-Path 'lab/borderless/rc56/integrated').Path
+          $p=Start-Process -FilePath "$o/Warhammer.exe" -WorkingDirectory $o -PassThru
+          if(-not $p.WaitForExit(300000)){Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue;throw 'integrated stress timeout'}
+          $rc=$p.ExitCode;Write-Host "RC56_INTEGRATED_EXIT=$rc"
+          $ev=Join-Path $o 'RC51_AUTO_STRESS.txt';if(Test-Path $ev){$txt=[IO.File]::ReadAllText($ev,[Text.Encoding]::Unicode);Write-Host $txt}else{throw 'integrated evidence missing'}
+          foreach($n in @('win81_nis.log','ptar_borderless_rc38.log','ptar_rc41.log','ptar_rc41_bootstrap.log')){$f=Join-Path $o $n;if(Test-Path $f){Write-Host "===== $n tail =====";Get-Content $f -Tail 160}}
+          if($rc -ne 0){throw "integrated host failed rc=$rc"}
+          foreach($marker in @('MODE_CYCLES=60 PASS','WINDOW_RESIZE_STRESS=PASS','MINIMIZE_RESTORE_PIXELS=PASS','RC51_AUTO_STRESS=PASS')){if(-not $txt.Contains($marker)){throw "missing $marker"}}
+          $ctl=Get-Content (Join-Path $o 'ptar_borderless_rc38.log') -Raw
+          if($ctl.Contains('FAIL RC51 presenter resync')){throw 'RC51 resync failure logged'}
+          if(-not $ctl.Contains('RC56_BORDERLESS_POLICY=PRESENTER_ONLY_GAME_UNTOUCHED')){throw 'RC56 presenter-only path not exercised'}
+          $rt=Get-Content (Join-Path $o 'win81_nis.log') -Raw
+          if(-not $rt.Contains('game exclusive fullscreen is rejected')){throw 'P1U46 windowed policy contract missing'}
+          if($rt.Contains('natural game ResizeBuffers failed')){throw 'game ResizeBuffers failure logged'}
+          Write-Host 'RC56_P1U46_INTEGRATED_STRESS=PASS'
+
+      - name: Summarize RC56 candidate
+        shell: powershell
+        run: |
+          $carrier=(Get-FileHash 'lab/borderless/rc56/repro_a/ptar_borderless.dll' -Algorithm SHA256).Hash.ToLowerInvariant()
+          $raster=(Get-FileHash 'lab/borderless/rc56/integrated/ptar_rc41.dll' -Algorithm SHA256).Hash.ToLowerInvariant()
+          @(
+            'RC56_PRESENTER_ONLY_BORDERLESS=PASS',
+            'WINDOWED_BASELINE=RC55_UNCHANGED',
+            'GAME_HWND_BORDERLESS_AUTHORITY=DISABLED',
+            'PRESENTER_NATIVE_BORDERLESS=PASS',
+            'DIRECT_BORDERLESS_START=PASS',
+            'PRESENTER_ONLY_TRANSITIONS=500_CYCLES_PASS',
+            'P1U46_INTEGRATED_TRANSITIONS=60_CYCLES_PASS',
+            'RC51_PRESENTER_RESYNC=PASS',
+            'RC55_RASTER_HASH=271187ab9fd82b6829c52a667223f241ec79e98fa340b13c9a72270142156949',
+            "RC56_CARRIER_SHA256=$carrier",
+            "RC55_RASTER_SHA256=$raster"
+          ) | Set-Content 'lab/borderless/rc56/RC56_SUMMARY.txt' -Encoding ASCII
+          Get-Content 'lab/borderless/rc56/RC56_SUMMARY.txt'
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PTAR_RC56_PRESENTER_ONLY_BORDERLESS
+          path: |
+            lab/borderless/rc56/RC56_SUMMARY.txt
+            lab/borderless/rc56/RC56_COMPONENTS.txt
+            lab/borderless/rc56/RC56_INTEGRATED_GEOMETRY.txt
+            lab/borderless/rc56/generated/*
+            lab/borderless/rc56/standalone/*.txt
+            lab/borderless/rc56/integrated/*.txt
+            lab/borderless/rc56/integrated/*.log
+            lab/borderless/rc56/repro_a/ptar_borderless.dll
+            lab/borderless/rc56/integrated/ptar_rc41.dll
+          if-no-files-found: warn
+          retention-days: 14
