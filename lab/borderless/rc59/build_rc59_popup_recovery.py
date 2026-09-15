@@ -24,10 +24,26 @@ s=s.replace(old,new,1)
 
 anchor='static void restore_window_ui() noexcept {'
 if anchor not in s: raise RuntimeError('restore function anchor missing')
-canon=r'''static void canonicalize_startup_ui() noexcept {
+canon=r'''static bool handoff_p1u46_window_policy_ui() noexcept {
+    BYTE* base=nullptr;if(!runtime_ok(g_runtime,base)||!base){logline("FAIL RC59 P1U46 policy ABI guard");return false;}
+    // Exact P1U46 ABI, guarded above by the runtime identity/layout contract:
+    // RVA 0x034FFA68 is the game-window policy mode consumed by the style/exstyle sanitizers.
+    //   0 = canonical overlapped/windowed policy
+    //   1 = startup popup policy captured from a WindowStyle=1 launch
+    //   2 = P1U46 input-geometry special mode
+    // The field failure is mode=1 persisting after the native USR presenter is active.
+    volatile BYTE* policyMode=(volatile BYTE*)(base+0x034FFA68u);
+    const BYTE before=*policyMode;
+    if(before==2){logfmt("FAIL RC59 P1U46 policy mode2 unsafe",before,0,0,0);return false;}
+    *policyMode=0;MemoryBarrier();const BYTE after=*policyMode;
+    logfmt("RC59_P1U46_POLICY_HANDOFF",before,after,0,0);
+    return after==0;
+}
+static void canonicalize_startup_ui() noexcept {
     InterlockedExchange(&g_canonicalizeDone,0);InterlockedExchange(&g_canonicalizeOk,0);
     if(!IsWindow(g_game)||!g_renderW||!g_renderH){logline("FAIL RC59 canonicalize invalid state");InterlockedExchange(&g_canonicalizeDone,1);return;}
     const LONG_PTR beforeStyle=GetWindowLongPtrW(g_game,GWL_STYLE),beforeEx=GetWindowLongPtrW(g_game,GWL_EXSTYLE);
+    if(!handoff_p1u46_window_policy_ui()){InterlockedExchange(&g_canonicalizeDone,1);return;}
     LONG_PTR wantedStyle=(beforeStyle&~((LONG_PTR)WS_POPUP))|((LONG_PTR)WS_OVERLAPPEDWINDOW);
     wantedStyle|=(beforeStyle&((LONG_PTR)WS_VISIBLE|(LONG_PTR)WS_CLIPSIBLINGS|(LONG_PTR)WS_CLIPCHILDREN));
     RECT wr{0,0,(LONG)g_renderW,(LONG)g_renderH};
