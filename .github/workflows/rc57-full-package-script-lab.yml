@@ -1,0 +1,126 @@
+name: RC57 Full Additive Package Script Lab
+
+on:
+  push:
+    branches: [lab/rc57-borderless-startup-handshake-20260915]
+    paths:
+      - 'lab/borderless/rc57/build_rc57_full_package_scripts.py'
+      - 'lab/borderless/rc57/build_rc57_startup_handshake.py'
+      - 'lab/borderless/rc56/build_rc56_presenter_only.py'
+      - '.github/workflows/rc57-full-package-script-lab.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package-scripts:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate exact RC57 package scripts
+        shell: cmd
+        run: |
+          python lab\borderless\rc57\build_rc57_full_package_scripts.py lab\borderless\rc57\full_package_scripts || exit /b 10
+
+      - name: Exact script hash gates
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$r='lab/borderless/rc57/full_package_scripts'
+          $e=@{
+            'install.ps1'='ec20bc4fdd4de7431994a020eadcac0c993744ee4fe6b9c816caff7e97ddec91';
+            'verify.ps1'='9f6e8cd749aac635d38ad78e8f1afd5420a75b1a3c2bc4f3f04d92506022e2b4';
+            'rollback.ps1'='aee9e44eb741cba85dc10bfead3eceb11b77636c18a376cceccd076fc3939879';
+            'uninstall_overlay.ps1'='62797479b708854729bc72ca64c83ce97afc559ca6ab185e4aeaa40b980f4587';
+            'collect_rc41.ps1'='88aa0356435685a822b588ea5bd8ca7f526b10989edd0697ca312bee3b8d1b41';
+            'rc55_gui_migration.ps1'='10a87355e56a84af2ad2905d31313b0c17e64aa6169b2fd1084201f3e52c2a1b'
+          }
+          foreach($n in $e.Keys){$h=(Get-FileHash (Join-Path $r $n) -Algorithm SHA256).Hash.ToLowerInvariant();Write-Host "$n $h";if($h -ne $e[$n]){throw "$n exact package hash mismatch"}}
+          Write-Host 'RC57_SCRIPT_HASHES=6/6 PASS'
+
+      - name: Windows PowerShell parser gate
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$r='lab/borderless/rc57/full_package_scripts'
+          foreach($n in @('install.ps1','verify.ps1','rollback.ps1','uninstall_overlay.ps1','collect_rc41.ps1','rc55_gui_migration.ps1')){
+            $tok=$null;$err=$null;[void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path (Join-Path $r $n)),[ref]$tok,[ref]$err)
+            if($err.Count){$err|ForEach-Object{Write-Host $_.Message};throw "$n parse failed"}
+          }
+          Write-Host 'RC57_PS_PARSE=6/6 PASS'
+
+      - name: Static safety and policy contracts
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$r='lab/borderless/rc57/full_package_scripts'
+          $i=Get-Content (Join-Path $r 'install.ps1') -Raw;$v=Get-Content (Join-Path $r 'verify.ps1') -Raw;$rb=Get-Content (Join-Path $r 'rollback.ps1') -Raw;$u=Get-Content (Join-Path $r 'uninstall_overlay.ps1') -Raw;$c=Get-Content (Join-Path $r 'collect_rc41.ps1') -Raw
+          foreach($x in @($i,$rb,$u)){if($x -notmatch 'aeee0a4ee9eafb2a7fc46373024db63b9ac4a63932b2455bd47b2db09d56c616'){throw 'RC56 upgrade/rollback allowlist missing'};if($x -notmatch 'c14f92add5cdfc7f05030dd3c3fd9a86b83ce8dac81042c1ab8b6e0237f05684'){throw 'RC57 allowlist missing'}}
+          if($i -notmatch "ExpectedBorderless='c14f92add5cdfc7f05030dd3c3fd9a86b83ce8dac81042c1ab8b6e0237f05684'"){throw 'RC57 install expected hash missing'}
+          if($i -notmatch "package='PTAR_RC57_BORDERLESS_STARTUP_HANDSHAKE'"){throw 'RC57 install state missing'}
+          if($v -notmatch 'VERIFY_RC57_STARTUP_HANDSHAKE=PASS'){throw 'RC57 verify marker missing'}
+          if($c -notmatch 'PTAR_RC57_RESULTS_' -or $c -notmatch 'RC57_INITIAL_BORDERLESS=DEFERRED_TO_WINDOWED_BOOT'){throw 'RC57 collector contract missing'}
+          foreach($n in @('install.ps1','verify.ps1','rollback.ps1','collect_rc41.ps1')){$x=Get-Content (Join-Path $r $n) -Raw;if($x -match 'WindowStyle[^\r\n]*-Value\s+1'){throw "$n forces WindowStyle=1"};if($x -match 'AffectGuiResolution[^\r\n]*-Value\s+1'){throw "$n forces AffectGuiResolution=1"}}
+          foreach($n in @('install.ps1','verify.ps1','rollback.ps1','collect_rc41.ps1','rc55_gui_migration.ps1')){$x=Get-Content (Join-Path $r $n) -Raw;if($x -match 'Remove-Item\s+[^\r\n]*-Recurse'){throw "$n contains recursive deletion"}}
+          if($u -notmatch 'OVERLAY_OWNERSHIP\.tsv' -or $u -notmatch '\(Sha \$p\)-eq \$a\[2\]'){throw 'uninstall ownership/SHA gate missing'}
+          Write-Host 'RC57_STATIC_SAFETY=PASS'
+
+      - name: Build RC56 and RC57 production carriers plus RC55 raster
+        shell: cmd
+        run: |
+          python lab\borderless\rc56\build_rc56_presenter_only.py lab\borderless\rc57\build_rc56 || exit /b 20
+          python lab\borderless\rc57\build_rc57_startup_handshake.py lab\borderless\rc57\build_rc57 || exit /b 21
+          python lab\raster\rc52\build_rc52_context_hooks.py lab\raster\rc57_pkg_rc52.cpp || exit /b 22
+          python lab\raster\rc55\build_rc55_context_hooks.py lab\raster\rc57_pkg_rc52.cpp lab\raster\rc57_pkg_rc55.cpp || exit /b 23
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 24
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603
+          mkdir lab\borderless\rc57\pkg_bin\rc56 2>nul
+          mkdir lab\borderless\rc57\pkg_bin\rc57 2>nul
+          cl %CFLAGS% /LD lab\borderless\rc57\build_rc56\ptar_borderless_rc56_prod.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fo:lab\borderless\rc57\pkg_bin\rc56\ /Fe:lab\borderless\rc57\pkg_bin\rc56\ptar_borderless.dll user32.lib advapi32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 25
+          cl %CFLAGS% /LD lab\borderless\rc57\build_rc57\ptar_borderless_rc57_prod.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fo:lab\borderless\rc57\pkg_bin\rc57\ /Fe:lab\borderless\rc57\pkg_bin\rc57\ptar_borderless.dll user32.lib advapi32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 26
+          set RCFLAGS=%CFLAGS% /I lab\raster\rc41
+          cl %RCFLAGS% /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc57_pkg_rc55.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fo:lab\borderless\rc57\pkg_bin\ /Fe:lab\borderless\rc57\pkg_bin\ptar_rc41.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 27
+
+      - name: Binary identity gates
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$h56=(Get-FileHash 'lab/borderless/rc57/pkg_bin/rc56/ptar_borderless.dll' -Algorithm SHA256).Hash.ToLowerInvariant();$h57=(Get-FileHash 'lab/borderless/rc57/pkg_bin/rc57/ptar_borderless.dll' -Algorithm SHA256).Hash.ToLowerInvariant();$hr=(Get-FileHash 'lab/borderless/rc57/pkg_bin/ptar_rc41.dll' -Algorithm SHA256).Hash.ToLowerInvariant();if($h56 -ne 'aeee0a4ee9eafb2a7fc46373024db63b9ac4a63932b2455bd47b2db09d56c616'){throw "RC56 drift $h56"};if($h57 -ne 'c14f92add5cdfc7f05030dd3c3fd9a86b83ce8dac81042c1ab8b6e0237f05684'){throw "RC57 drift $h57"};if($hr -ne '271187ab9fd82b6829c52a667223f241ec79e98fa340b13c9a72270142156949'){throw "RC55 raster drift $hr"};Write-Host 'RC57_BINARY_IDENTITY=PASS'
+
+      - name: Fixture upgrade from failed RC56 while preserving WindowStyle
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$f=(Join-Path $env:TEMP ('ptar_rc57_pkg_'+[guid]::NewGuid().ToString('N')));New-Item -ItemType Directory -Force $f|Out-Null;$ov=Join-Path $f 'RC41_LOGICAL_NATIVE_SUBRASTER';$pl=Join-Path $ov 'payload';New-Item -ItemType Directory -Force $pl|Out-Null;New-Item -ItemType File -Path (Join-Path $f 'Warhammer.exe')|Out-Null
+          try{
+            python lab/borderless/rc48/rebuild_exact_field_runtime.py payload/d3d11.dll (Join-Path $pl 'd3d11.dll');if($LASTEXITCODE -ne 0){throw 'runtime'};Copy-Item (Join-Path $pl 'd3d11.dll') (Join-Path $pl 'win81_nis_dx11_x64.dll')
+            Copy-Item payload/win81_nis.ini (Join-Path $pl 'win81_nis.ini');Copy-Item payload/win81_nis_version.txt (Join-Path $pl 'win81_nis_version.txt');Copy-Item 'lab/borderless/rc57/pkg_bin/rc57/ptar_borderless.dll' (Join-Path $pl 'ptar_borderless.dll');Copy-Item 'lab/borderless/rc57/pkg_bin/ptar_rc41.dll' (Join-Path $pl 'ptar_rc41.dll')
+            Copy-Item 'lab/borderless/rc57/full_package_scripts/*.ps1' $ov
+            # Current field-like state: exact runtime + failed RC56 carrier + RC55 raster.
+            Copy-Item (Join-Path $pl 'd3d11.dll') (Join-Path $f 'd3d11.dll');Copy-Item (Join-Path $pl 'win81_nis_dx11_x64.dll') (Join-Path $f 'win81_nis_dx11_x64.dll');Copy-Item (Join-Path $pl 'win81_nis.ini') (Join-Path $f 'win81_nis.ini');Copy-Item (Join-Path $pl 'win81_nis_version.txt') (Join-Path $f 'win81_nis_version.txt');Copy-Item 'lab/borderless/rc57/pkg_bin/rc56/ptar_borderless.dll' (Join-Path $f 'ptar_borderless.dll');Copy-Item 'lab/borderless/rc57/pkg_bin/ptar_rc41.dll' (Join-Path $f 'ptar_rc41.dll')
+            $key='HKCU:\Software\NeoCore Games\Warhammer Martyr\Options';New-Item -Path $key -Force|Out-Null;$oldExists=$false;$old=$null;try{$old=[int](Get-ItemProperty -LiteralPath $key -Name WindowStyle -ErrorAction Stop).WindowStyle;$oldExists=$true}catch{};Set-ItemProperty -LiteralPath $key -Name WindowStyle -Type DWord -Value 1
+            & (Join-Path $ov 'install.ps1');if($LASTEXITCODE -ne 0){throw "install rc=$LASTEXITCODE"}
+            $h=(Get-FileHash (Join-Path $f 'ptar_borderless.dll') -Algorithm SHA256).Hash.ToLowerInvariant();if($h -ne 'c14f92add5cdfc7f05030dd3c3fd9a86b83ce8dac81042c1ab8b6e0237f05684'){throw 'RC57 not installed'};$ws=[int](Get-ItemProperty -LiteralPath $key -Name WindowStyle).WindowStyle;if($ws -ne 1){throw "WindowStyle changed to $ws"}
+            $latest=(Get-Content (Join-Path $f '_PTAR_UNINSTALL/state/LATEST_STATE.txt') -TotalCount 1).Trim();$m=Get-Content (Join-Path $latest 'install_state.json') -Raw|ConvertFrom-Json;if(([string]$m.package) -ne 'PTAR_RC57_BORDERLESS_STARTUP_HANDSHAKE'){throw 'state package mismatch'};if(([string]$m.original.'ptar_borderless.dll'.sha) -ne 'aeee0a4ee9eafb2a7fc46373024db63b9ac4a63932b2455bd47b2db09d56c616'){throw 'RC56 original backup not proven'}
+            Write-Host 'RC56_TO_RC57_INSTALL=PASS';Write-Host 'WINDOWSTYLE_1_PRESERVED=PASS';Write-Host 'RC56_BACKUP_STATE=PASS'
+          } finally {
+            if($key){if($oldExists){Set-ItemProperty -LiteralPath $key -Name WindowStyle -Type DWord -Value $old -ErrorAction SilentlyContinue}else{Remove-ItemProperty -LiteralPath $key -Name WindowStyle -ErrorAction SilentlyContinue}}
+            Remove-Item -LiteralPath $f -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Unknown carrier refusal
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$i=Get-Content 'lab/borderless/rc57/full_package_scripts/install.ps1' -Raw;if($i -notmatch "KnownBorderless"){throw 'allowlist absent'};if($i -notmatch "Sidecar borderless local inconnu, installation refusee"){throw 'unknown refusal absent'};Write-Host 'UNKNOWN_CARRIER_FAIL_CLOSED=PASS'
+
+      - name: Export certified scripts
+        shell: powershell
+        run: |
+          $r='lab/borderless/rc57/full_package_scripts';Get-ChildItem $r -File|ForEach-Object{"$($_.Name) $((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())"}|Set-Content (Join-Path $r 'RC57_SCRIPT_SHA256.txt') -Encoding ASCII
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_RC57_CERTIFIED_FULL_PACKAGE_SCRIPTS
+          path: lab/borderless/rc57/full_package_scripts/
+          if-no-files-found: error
+          retention-days: 14
