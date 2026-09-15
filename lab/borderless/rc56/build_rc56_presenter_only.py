@@ -25,6 +25,11 @@ def build(out_dir: Path):
     out_dir.mkdir(parents=True, exist_ok=True)
 
     rc45 = read("lab/borderless/rc45/ptar_borderless_rc45_prod.cpp")
+    # The generated copy lives one directory deeper than the canonical RC45
+    # source, so preserve its dependencies with explicit relocated paths.
+    rc45 = replace_once(rc45, '#include "../rc38/ptar_borderless_rc38.cpp"', '#include "../../rc38/ptar_borderless_rc38.cpp"', "relocate RC38 include")
+    rc45 = replace_once(rc45, '#include "../rc43/ptar_borderless_mode_policy.h"', '#include "../../rc43/ptar_borderless_mode_policy.h"', "relocate RC43 include")
+    rc45 = replace_once(rc45, '#include "../../raster/rc41b/ptar_rc41b_bootstrap.h"', '#include "../../../raster/rc41b/ptar_rc41b_bootstrap.h"', "relocate bootstrap include")
 
     helper_anchor = "static void rc45_follow_windowed_presenter(bool raiseZ) noexcept {"
     helper = r'''static void rc56_presenter_borderless_only(bool raiseZ) noexcept {
@@ -62,7 +67,7 @@ def build(out_dir: Path):
     InterlockedExchange(&g_active,1);
     g_monitor=g_rc45Monitor;
     // RC56: P1U46 owns the low-resolution game HWND and explicitly requires it
-    // to stay windowed.  Borderless therefore means presenter-only geometry.
+    // to stay windowed. Borderless therefore means presenter-only geometry.
     rc56_presenter_borderless_only(true);
     if(!wasBorderless) InterlockedIncrement64(&g_rc45ToBorderless);
     logline("RC56_BORDERLESS_POLICY=PRESENTER_ONLY_GAME_UNTOUCHED");
@@ -101,7 +106,7 @@ def build(out_dir: Path):
     old_dispatch = "    if(InterlockedCompareExchange(&g_rc45Borderless,0,0)) return GameProc(h,m,w,l);"
     new_dispatch = r'''    if(InterlockedCompareExchange(&g_rc45Borderless,0,0)) {
         // RC56: the game WndProc chain is never replaced by RC38 borderless
-        // authority.  Only the separate presenter occupies the monitor.
+        // authority. Only the separate presenter occupies the monitor.
         const LRESULT r=call_next(g_gameNext,h,m,w,l);
         if(!internal && (m==WM_WINDOWPOSCHANGED || m==WM_SIZE || m==WM_MOVE ||
                          m==WM_SHOWWINDOW || m==WM_ACTIVATE || m==WM_SETFOCUS)) {
