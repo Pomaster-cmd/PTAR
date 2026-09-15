@@ -1,0 +1,32 @@
+name: RC55 Export Full Package Scripts
+
+on:
+  push:
+    branches:
+      - lab/rc55-bound-physical-idempotence-20260915
+    paths:
+      - '.github/workflows/rc55-export-full-package-scripts.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify source set exists
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $root='lab/raster/rc55/full_package_scripts'
+          $names=@('install.ps1','verify.ps1','rollback.ps1','uninstall_overlay.ps1','collect_rc41.ps1','rc55_gui_migration.ps1')
+          foreach($n in $names){if(-not(Test-Path -LiteralPath (Join-Path $root $n) -PathType Leaf)){throw "missing $n"}}
+          $names|ForEach-Object{"$($_) $((Get-FileHash (Join-Path $root $_) -Algorithm SHA256).Hash.ToLowerInvariant())"}|Set-Content "$root/RC55_FULL_PACKAGE_SCRIPT_SHA256.txt" -Encoding ASCII
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_RC55_FULL_PACKAGE_SCRIPTS
+          path: lab/raster/rc55/full_package_scripts/
+          if-no-files-found: error
+          retention-days: 7
