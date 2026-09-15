@@ -1,0 +1,113 @@
+name: RC59 Field Popup Startup Recovery
+
+on:
+  push:
+    branches: [lab/rc59-field-popup-startup-recovery-20260915]
+    paths:
+      - 'lab/borderless/rc59/**'
+      - '.github/workflows/rc59-field-popup-recovery.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  popup-recovery:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate RC59 carrier and field-faithful popup host
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          python lab/borderless/rc59/build_rc59_popup_recovery.py
+          if($LASTEXITCODE-ne0){throw 'RC59 source generation failed'}
+          python lab/borderless/rc59/build_rc59_popup_host.py
+          if($LASTEXITCODE-ne0){throw 'RC59 host generation failed'}
+          $src=Get-Content 'lab/borderless/rc59/generated/ptar_borderless_rc59_mode_bridge.cpp' -Raw
+          foreach($must in @('RC59_FIELD_POPUP_START_DETECTED','RC59_WAIT_P1U46_CANONICAL_WINDOW','RC59_CANONICAL_WINDOW_CAPTURED_AFTER_WAIT','RC59_GAME_HWND_POLICY=ALWAYS_CANONICAL_WINDOWED_RENDER_SIZE')){if(-not$src.Contains($must)){throw "missing $must"}}
+          foreach($bad in @('ResizeBuffers(','SetParent(','SetWindowRgn(')){if($src.Contains($bad)){throw "forbidden $bad"}}
+          Write-Host 'RC59_SOURCE_SCOPE=PASS'
+
+      - name: Reconstruct exact P1U46 and exact RC55 raster
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o='lab/borderless/rc59/run';New-Item -ItemType Directory -Force $o|Out-Null
+          python lab/borderless/rc48/rebuild_exact_field_runtime.py payload/d3d11.dll "$o/d3d11.dll"
+          if($LASTEXITCODE-ne0){throw 'runtime reconstruction'}
+          $runtime=(Get-FileHash "$o/d3d11.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($runtime-ne'6f1686992bef971c9995df9f0cb91b93c6946988e12a837e5de956df37c9082b'){throw "runtime drift $runtime"}
+          Copy-Item "$o/d3d11.dll" "$o/win81_nis_dx11_x64.dll" -Force
+          $ini=Get-Content payload/win81_nis.ini -Raw
+          $ini=[regex]::Replace($ini,'(?m)^OutputWidth=.*$','OutputWidth=1920');$ini=[regex]::Replace($ini,'(?m)^OutputHeight=.*$','OutputHeight=1080');$ini=[regex]::Replace($ini,'(?m)^RenderWidth=.*$','RenderWidth=1280');$ini=[regex]::Replace($ini,'(?m)^RenderHeight=.*$','RenderHeight=720')
+          Set-Content "$o/win81_nis.ini" $ini -Encoding ASCII
+          python lab/raster/rc52/build_rc52_context_hooks.py lab/raster/rc59_rc52.cpp
+          if($LASTEXITCODE-ne0){throw 'rc52 generation'}
+          python lab/raster/rc55/build_rc55_context_hooks.py lab/raster/rc59_rc52.cpp lab/raster/rc59_rc55.cpp
+          if($LASTEXITCODE-ne0){throw 'rc55 generation'}
+
+      - name: Build RC59 twice exact RC55 and popup host
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          if errorlevel 1 exit /b 20
+          set CFLAGS=/nologo /EHsc /std:c++17 /W4 /WX /MT /D_WIN32_WINNT=0x0603 /DWINVER=0x0603
+          mkdir lab\borderless\rc59\run\p1 2>nul
+          mkdir lab\borderless\rc59\run\p2 2>nul
+          cl %CFLAGS% /LD lab\borderless\rc59\generated\ptar_borderless_rc59_mode_bridge.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fo:lab\borderless\rc59\run\p1\ /Fe:lab\borderless\rc59\run\p1\ptar_borderless.dll user32.lib advapi32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 21
+          cl %CFLAGS% /LD lab\borderless\rc59\generated\ptar_borderless_rc59_mode_bridge.cpp lab\raster\rc41b\ptar_rc41b_bootstrap.cpp /Fo:lab\borderless\rc59\run\p2\ /Fe:lab\borderless\rc59\run\p2\ptar_borderless.dll user32.lib advapi32.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 22
+          set RCFLAGS=%CFLAGS% /I lab\raster\rc41
+          cl %RCFLAGS% /LD lab\raster\rc41\ptar_rc41_target_classifier.cpp lab\raster\rc59_rc55.cpp lab\raster\rc41\ptar_rc41_resource_bridge.cpp lab\raster\rc41\ptar_rc41_swapchain_policy.cpp lab\raster\rc41\ptar_rc41_swapchain_hooks.cpp lab\raster\rc41\ptar_rc41_prod.cpp /Fo:lab\borderless\rc59\run\ /Fe:lab\borderless\rc59\run\ptar_rc41.dll user32.lib d3d11.lib dxgi.lib /link /Brepro /SUBSYSTEM:WINDOWS,6.03 || exit /b 23
+          cl %CFLAGS% lab\borderless\rc59\generated\ptar_rc59_popup_host.cpp /Fo:lab\borderless\rc59\run\ /Fe:lab\borderless\rc59\run\Warhammer.exe user32.lib advapi32.lib gdi32.lib d3d11.lib dxgi.lib /link /SUBSYSTEM:WINDOWS,6.03 || exit /b 24
+          copy /y lab\borderless\rc59\run\p1\ptar_borderless.dll lab\borderless\rc59\run\ptar_borderless.dll >nul
+
+      - name: Binary reproducibility and inheritance gates
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o='lab/borderless/rc59/run'
+          $h1=(Get-FileHash "$o/p1/ptar_borderless.dll" -Algorithm SHA256).Hash.ToLowerInvariant();$h2=(Get-FileHash "$o/p2/ptar_borderless.dll" -Algorithm SHA256).Hash.ToLowerInvariant();if($h1-ne$h2){throw "non reproducible $h1 $h2"}
+          $r=(Get-FileHash "$o/ptar_rc41.dll" -Algorithm SHA256).Hash.ToLowerInvariant();if($r-ne'271187ab9fd82b6829c52a667223f241ec79e98fa340b13c9a72270142156949'){throw "RC55 drift $r"}
+          $b=[IO.File]::ReadAllBytes("$o/p1/ptar_borderless.dll");$pe=[BitConverter]::ToInt32($b,0x3C);if([BitConverter]::ToUInt16($b,$pe+4)-ne0x8664-or[BitConverter]::ToUInt16($b,$pe+24)-ne0x20B-or[BitConverter]::ToUInt16($b,$pe+72)-ne6-or[BitConverter]::ToUInt16($b,$pe+74)-ne3){throw 'PE x64 Win8.1 gate'}
+          @("RC59_CARRIER_SHA256=$h1","RC55_RASTER_SHA256=$r",'RC59_REPRODUCIBLE=PASS','PE_X64_WIN81=PASS','P1U46_EXACT=PASS')|Set-Content 'lab/borderless/rc59/RC59_COMPONENTS.txt' -Encoding ASCII
+          Get-Content 'lab/borderless/rc59/RC59_COMPONENTS.txt'
+
+      - name: Field-faithful saved Borderless popup startup plus 500 roundtrips
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop';$o=(Resolve-Path 'lab/borderless/rc59/run').Path
+          $p=Start-Process "$o/Warhammer.exe" -WorkingDirectory $o -PassThru
+          if(-not$p.WaitForExit(300000)){Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue;throw 'RC59 popup stress watchdog >300s'}
+          $ev=Join-Path $o 'RC59_MODE_BRIDGE_STRESS.txt';if(-not(Test-Path $ev)){throw 'RC59 evidence absent'};$e=[IO.File]::ReadAllText($ev,[Text.Encoding]::Unicode);Write-Host $e
+          foreach($n in @('win81_nis.log','ptar_borderless_rc59.log','ptar_rc41_bootstrap.log','ptar_rc41.log')){$q=Join-Path $o $n;if(Test-Path $q){Write-Host "===== $n =====";Get-Content $q -Tail 250}}
+          if($p.ExitCode-ne0){throw "RC59 host rc=$($p.ExitCode)"}
+          foreach($must in @('START_BORDERLESS_POPUP_RECOVERY=PASS game=1280x720 presenter=1920x1080','POPUP_RECOVERY_TO_WINDOWED=PASS game=1280x720','WINDOWED_TO_BORDERLESS_GAME_HWND_STABLE=PASS','POPUP_RECOVERY_PREF_ROUNDTRIP=PASS','RC59_MODE_BRIDGE_STRESS=PASS cycles=500')){if(-not$e.Contains($must)){throw "evidence missing $must"}}
+          $ctl=Get-Content (Join-Path $o 'ptar_borderless_rc59.log') -Raw
+          foreach($must in @('RC59_FIELD_POPUP_START_DETECTED','RC59_WAIT_P1U46_CANONICAL_WINDOW','RC59_CANONICAL_WINDOW_CAPTURED_AFTER_WAIT','RC59_GAME_HWND_POLICY=ALWAYS_CANONICAL_WINDOWED_RENDER_SIZE','RC59_MODE_BRIDGE_INSTALLED')){if(-not$ctl.Contains($must)){throw "carrier log missing $must"}}
+          if($ctl.Contains('FAIL RC59')){throw 'RC59 carrier reported failure'}
+          $rt=Get-Content (Join-Path $o 'win81_nis.log') -Raw;if($rt.Contains('ERROR: P1U46 USR PRESENTER activation failed')){throw 'USR activation failure'};if(-not$rt.Contains('PTAR-NG MoE v01 exact x1.5 active')){throw 'x1.5 absent'}
+          $boot=Get-Content (Join-Path $o 'ptar_rc41_bootstrap.log') -Raw;if(-not$boot.Contains('RC41B_ACTIVATION_PROVEN')){throw 'RC55 bootstrap absent'}
+          Write-Host 'RC59_FIELD_POPUP_RECOVERY_500=PASS'
+
+      - name: Summary
+        shell: powershell
+        run: |
+          $o='lab/borderless/rc59/run';$h=(Get-FileHash "$o/p1/ptar_borderless.dll" -Algorithm SHA256).Hash.ToLowerInvariant()
+          @('RC59_FIELD_POPUP_RECOVERY=PASS','FIELD_INITIAL_POPUP_REPRODUCED=PASS','P1U46_CANONICALIZATION_WAIT=PASS','GAME_HWND_ALWAYS_WINDOWED_1280x720=PASS','INITIAL_BORDERLESS_PRESENTER_1920x1080=PASS','WINDOWED_BORDERLESS_WINDOWED=PASS','TRANSITIONS_500_CYCLES=PASS','RESTORE_FAILURES=0','RC55_RASTER_UNCHANGED=PASS',"RC59_CARRIER_SHA256=$h")|Set-Content 'lab/borderless/rc59/RC59_FINAL.txt' -Encoding ASCII
+          Get-Content 'lab/borderless/rc59/RC59_FINAL.txt'
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PTAR_RC59_FIELD_POPUP_RECOVERY
+          path: |
+            lab/borderless/rc59/RC59_*.txt
+            lab/borderless/rc59/run/*.txt
+            lab/borderless/rc59/run/*.log
+            lab/borderless/rc59/run/p1/ptar_borderless.dll
+            lab/borderless/rc59/run/ptar_rc41.dll
+          if-no-files-found: warn
+          retention-days: 14
