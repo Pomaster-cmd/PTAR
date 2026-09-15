@@ -31,7 +31,7 @@ public:
     GuiCallsiteProbe& operator=(const GuiCallsiteProbe&) = delete;
 
     bool configure(HMODULE gameModule, HMODULE sidecarModule, const ptar_rc41::Contract& contract) noexcept;
-    void observe(const QueryObservation& observation, bool primaryBound) noexcept;
+    void observe(const QueryObservation& observation) noexcept;
 
 private:
     static constexpr size_t kMaxCallsites = 256;
@@ -41,7 +41,6 @@ private:
         uintptr_t rva = 0;
         QueryKind kind = QueryKind::GetDesc;
         ptar_rc41::CallerDomain domain = ptar_rc41::CallerDomain::Unknown;
-        bool primaryBound = false;
         UINT physicalW = 0;
         UINT physicalH = 0;
         UINT reportedW = 0;
@@ -69,5 +68,7 @@ private:
     bool configured_ = false;
     bool tableFullLogged_ = false;
 };
+
+GuiCallsiteProbe& global_gui_callsite_probe() noexcept;
 
 } // namespace ptar_rc54
