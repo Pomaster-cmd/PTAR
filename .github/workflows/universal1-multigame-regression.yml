@@ -127,3 +127,5 @@ jobs:
 
           $global:LASTEXITCODE=0
           Write-Host 'UNIVERSAL1_MULTIGAME_WINDOWS=PASS'
+
+# Post-promotion verification trigger: UNIVERSAL1 package promoted and staging cleaned.
