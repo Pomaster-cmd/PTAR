@@ -1,0 +1,88 @@
+[PASS] required 01-INSTALL_GW16.bat
+[PASS] required 02-VERIFY_INSTALL.bat
+[PASS] required 04-COLLECT_RESULTS.bat
+[PASS] required README.md
+[PASS] required README_TEST.txt
+[PASS] required LICENSE
+[PASS] required payload/d3d11.dll
+[PASS] required payload/win81_nis_dx11_x64.dll
+[PASS] required payload/win81_nis.ini
+[PASS] required payload/win81_nis_version.txt
+[PASS] required diag/base/SAFEPOINT11_FUSEDDETAIL1_BASE.dll
+[PASS] required diag/patch_gw16h_recorder_hudrec1.py
+[PASS] required diag/validate_recorder_hudrec1.py
+[PASS] required diag/GW16H_HUDREC1_FINDING.txt
+[PASS] required diag/FG_MARKER_VISIBILITY.bat
+[PASS] required diag/set_vblank_diagnostics.ps1
+[PASS] required diag/validate_fg_marker_visibility.py
+[PASS] required diag/FG_MARKER_VISIBILITY_VALIDATION.txt
+[PASS] required diag/BUILD_MANIFEST.json
+[PASS] required diag/SHA256SUMS.txt
+[PASS] required _PTAR_UNINSTALL/PTAR_STATIC_OWNERSHIP.tsv
+[PASS] required _PTAR_UNINSTALL/PTAR_STATIC_DIRS.tsv
+[PASS] required _PTAR_UNINSTALL/PTAR_SAFE_UNINSTALL.ps1
+[PASS] runtime exact HUDREC1 :: e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429
+[PASS] runtime mirror exact HUDREC1 :: e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429
+[PASS] runtime mirrors exact
+[PASS] INI exact canonical :: bd39b7c703ddf7a8658bed4df620232d00c06972351ca404c2d8386187fd3f50
+[PASS] version exact HUDREC1 :: 7ea6a7a47b463d780aeb752c7a8b9c1ea74db61336f8a44f6e1799fd8439d2fc
+[PASS] bundled canonical SAFEPOINT11 exact :: 864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c
+[PASS] whole binary same size :: (320000, 320000)
+[PASS] exact 3-byte delta :: 0xd0,0xd1,0x4cbbc
+[PASS] single functional byte outside checksum
+[PASS] installer hash lock e81e4c62
+[PASS] installer hash lock bd39b7c7
+[PASS] installer hash lock 7ea6a7a4
+[PASS] verifier hash lock e81e4c62
+[PASS] verifier hash lock bd39b7c7
+[PASS] verifier hash lock 7ea6a7a4
+[PASS] installer accepts canonical SAFEPOINT11 predecessor
+[PASS] installer package id
+[PASS] collector HUDREC finding
+[PASS] collector HUDREC validation
+[PASS] collector unique ZIP no Remove-Item
+[PASS] marker helper only VBlankDiagnostics key
+[PASS] marker helper backup before write
+[PASS] marker helper no Remove-Item
+[PASS] version GW16H_HUDREC1=RECORDER_CAPTURES_VISIBLE_PRESENTER_HUD
+[PASS] version RECORDER_HUD_FPS=INCLUDED_WHEN_OVERLAY_ENABLED
+[PASS] version RECORDER_FG_ON_FEED=UNCHANGED_ISOLATED_FINAL_BACKBUFFER
+[PASS] version FG_VISIBLE_MARKER_CONTROL=VBlankDiagnostics_DIAG_MENU
+[PASS] README video recording with PTAR HUD / FPS
+[PASS] README FG cadence marker (blinking squares)
+[PASS] README VBlankDiagnostics=0/1
+[PASS] README_TEST targeted two-clip HUDREC hardware gate
+[PASS] manifest package :: PTAR_GW16H_UNIFIEDREC3_SAFEPOINT11_FUSEDDETAIL1_HUDREC1
+[PASS] manifest filename
+[PASS] manifest runtime :: e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429
+[PASS] manifest HUDREC base
+[PASS] manifest functional bytes
+[PASS] manifest whole delta
+[PASS] manifest FG algorithm unchanged
+[PASS] manifest QSV unchanged
+[PASS] manifest hardware gate targeted
+[PASS] manifest payload locks
+[PASS] manifest marker validation
+[PASS] execute validate_recorder_hudrec1.py :: ['[PASS] HUD recording contract marker', 'RECORDER_HUDREC1_VALIDATION=38/38 PASS']
+[PASS] execute validate_win81_path_handoff.py :: ['[PASS] actual run executes dedicated EXE', 'WIN81_PATH_HANDOFF_VALIDATION=29/29 PASS']
+[PASS] execute validate_ps4_compat.py :: ['[PASS] BAT explicit WindowsPowerShell host FG_MARKER_VISIBILITY.bat', 'PS4_COMPAT_VALIDATION=31/31 PASS']
+[PASS] execute validate_auto_wrapper_build.py :: ['[PASS] rebuilt relocation map equals packaged :: 55', 'AUTO_WRAPPER_BUILD_VALIDATION=26/26 PASS']
+[PASS] execute validate_fg_marker_visibility.py :: ['[PASS] verify model rejects invalid marker value', 'FG_MARKER_VISIBILITY_VALIDATION=17/17 PASS']
+[PASS] inherited canonical report FG_FUSEDDETAIL1_VALIDATION.txt
+[PASS] inherited canonical report UNIFIED_RECORDER_VALIDATION.txt
+[PASS] inherited canonical report RECORDER_QSV_PRIORITY_VALIDATION.txt
+[PASS] inherited canonical report RECORDER_NATIVE_STATE_GUARD_VALIDATION.txt
+[PASS] inherited canonical report GW16_RUNTIME_VALIDATION.txt
+[PASS] SHA registry coverage :: (115, 115)
+[PASS] ownership coverage :: (116, 116)
+[PASS] ownership IDs contiguous :: 116
+[PASS] SHA registry hashes exact
+[PASS] ownership hashes exact
+[PASS] ownership hashes SHA registry
+[PASS] no work product __pycache__
+[PASS] no work product *.pyc
+[PASS] no work product *.pyo
+[PASS] no work product *disasm*
+[PASS] no work product *.bak
+[PASS] no work product hudrec1_candidate*.dll
+GW16_HUDREC1_PACKAGE_VALIDATION=87/87 PASS
