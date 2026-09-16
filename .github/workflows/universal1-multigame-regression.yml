@@ -29,6 +29,17 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Restore integrity-locked payload bytes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          git config core.autocrlf false
+          git checkout-index --force --all
+          $hini=(Get-FileHash payload/win81_nis.ini -Algorithm SHA256).Hash.ToLowerInvariant()
+          $hver=(Get-FileHash payload/win81_nis_version.txt -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($hini -ne 'dea8a93e97d3ad1b438973822d67ca9ac12477b5774933eea135ab71776c5648'){throw "INI payload checkout drift $hini"}
+          if($hver -ne 'bf31c0593b5fec78c533ba6f994866bc8d4921139bff4d602fde292c6a376f15'){throw "version payload checkout drift $hver"}
+          Write-Host 'PAYLOAD_CHECKOUT_INTEGRITY=PASS'
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -58,6 +69,17 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Restore integrity-locked payload bytes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          git config core.autocrlf false
+          git checkout-index --force --all
+          $hini=(Get-FileHash payload/win81_nis.ini -Algorithm SHA256).Hash.ToLowerInvariant()
+          $hver=(Get-FileHash payload/win81_nis_version.txt -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($hini -ne 'dea8a93e97d3ad1b438973822d67ca9ac12477b5774933eea135ab71776c5648'){throw "INI payload checkout drift $hini"}
+          if($hver -ne 'bf31c0593b5fec78c533ba6f994866bc8d4921139bff4d602fde292c6a376f15'){throw "version payload checkout drift $hver"}
+          Write-Host 'PAYLOAD_CHECKOUT_INTEGRITY=PASS'
       - name: Exercise two unrelated x64 executable names and reject x86
         shell: pwsh
         run: |
