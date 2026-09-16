@@ -1,0 +1,39 @@
+[PASS] runtime exact HUDREC1 :: e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429
+[PASS] mirror exact HUDREC1 :: e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429
+[PASS] runtime mirrors exact
+[PASS] runtime size unchanged :: 320000
+[PASS] native wrapper mov signature :: 488b0d08f677ff
+[PASS] FG-OFF recorder uses native presenter swapchain :: 0x2c7dfc8
+[PASS] native guarded submit call opcode :: 0xe8
+[PASS] native guarded submit target unchanged :: 0x34fe804
+[PASS] FG-ON recorder texture load signature :: 4c8b05ade1c60248
+[PASS] FG-ON recorder wrapper call signature :: e8e28d4d038b057c
+[PASS] F9 isolated backbuffer presence check signature :: 48833d57c7c60200
+[PASS] F9 isolated source load signature :: 4c8b0597c6c60248
+[PASS] FG-ON recorder texture is isolated final backbuffer :: 0x2c93ce8
+[PASS] F9 isolated source is same final backbuffer :: 0x2c93ce8
+[PASS] native F9 presenter selector signature :: 488b05f494c602
+[PASS] native F9 selects same presenter swapchain :: 0x2c7dfc8
+[PASS] native HUD draw precedes recorder at all four routes
+[PASS] native HUD success string present
+[PASS] PE machine x64 :: 0x8664
+[PASS] PE32+ magic :: 0x20b
+[PASS] PE subsystem version unchanged from validated SAFEPOINT11 :: 6.0
+[PASS] canonical SAFEPOINT11 base bundled exact :: 864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c
+[PASS] HUDREC1 exact 3-byte whole-binary delta :: 0xd0,0xd1,0x4cbbc
+[PASS] only functional byte outside PE checksum :: 0xd0,0xd1,0x4cbbc
+[PASS] HUDREC1 patcher exits PASS :: ['FG_ON_RECORDER=UNCHANGED']
+[PASS] HUDREC1 patcher reproduces payload exact :: e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429
+[PASS] FG-ON isolated frame render call :: 0x26d50
+[PASS] FG-ON dedicated HUD draw occurs inside render helper :: 0x28750
+[PASS] FG-ON recorder call follows render/HUD call
+[PASS] dedicated HUD helper live FPS selector signature :: 0x2cce5bc
+[PASS] dedicated HUD helper fallback FPS selector signature :: 0x2cce4fc
+[PASS] Overlay remains enabled
+[PASS] VBlankDiagnostics key present
+[PASS] marker powershell writes VBlankDiagnostics
+[PASS] marker tool leaves Overlay untouched
+[PASS] friendly marker menu has status/on/off
+[PASS] HUDREC1 version marker
+[PASS] HUD recording contract marker
+RECORDER_HUDREC1_VALIDATION=38/38 PASS
