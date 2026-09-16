@@ -3,9 +3,9 @@ $PackRoot=Split-Path -Parent $PSScriptRoot
 $Payload=Join-Path $PackRoot 'payload'
 $StateRoot=Join-Path $PackRoot '_PTAR_UNINSTALL\state'
 $Log=Join-Path $PSScriptRoot 'PTAR_GW16_INSTALL_LAST.log'
-$ExpectedRuntime='864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c'
+$ExpectedRuntime='e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429'
 $ExpectedIni='bd39b7c703ddf7a8658bed4df620232d00c06972351ca404c2d8386187fd3f50'
-$ExpectedVersion='8c15a4ab74222f1efc7305315bf25dd06903f45bd568abdd3a04d152501e0c51'
+$ExpectedVersion='7ea6a7a47b463d780aeb752c7a8b9c1ea74db61336f8a44f6e1799fd8439d2fc'
 $KnownPtar=@(
  '60f88d6175c3a42f2a082211503f391309d1381c897909d8dec86398a8c392df',
  '3d4d777c943ced0f475df1371d3a2f9eeb5eeb80c66e9fb217c4d91057f32453',
@@ -41,7 +41,8 @@ $KnownPtar=@(
  'e7c1b14f263505a64442d16aa1088c43b04a81665641c159a3da1181267bac53',
  'c573b4c4ca102867ca67dbd16e1e6d36e3057f43d85b343fca94803000de0040',
  '613714f5ac70bc94867a3044dd067f4de18bb3ef65262c60f0febce2ca9d4c70',
- '864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c'
+ '864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c',
+ 'e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429'
 )
 function Sha([string]$p){if(Test-Path -LiteralPath $p -PathType Leaf){return (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant()}return $null}
 function L([string]$s){$x='['+(Get-Date -Format 'HH:mm:ss')+'] '+$s;Write-Host $x;Add-Content -LiteralPath $Log -Value $x -Encoding UTF8}
@@ -68,7 +69,7 @@ foreach($p in @($a,$c)){
 }
 New-Item -ItemType Directory -Path $StateRoot -Force|Out-Null
 $state=Join-Path $StateRoot ('INSTALL_'+(Get-Date -Format 'yyyyMMdd_HHmmss_fff'));New-Item -ItemType Directory -Path $state -Force|Out-Null
-$m=[ordered]@{schema=3;package='GW16H_UNIFIEDREC3_SAFEPOINT11_FUSEDDETAIL1';game_root=$g;pack_root=$PackRoot;installed=@{};original=@{};windowstyle=@{};known_ptar=$KnownPtar}
+$m=[ordered]@{schema=3;package='GW16H_UNIFIEDREC3_SAFEPOINT11_FUSEDDETAIL1_HUDREC1';game_root=$g;pack_root=$PackRoot;installed=@{};original=@{};windowstyle=@{};known_ptar=$KnownPtar}
 foreach($r in @(@('d3d11.dll',$a,$ExpectedRuntime),@('win81_nis_dx11_x64.dll',$c,$ExpectedRuntime),@('win81_nis.ini',$i,$ExpectedIni),@('win81_nis_version.txt',$v,$ExpectedVersion))){
  $n=$r[0];$p=$r[1];$installSha=$r[2];$e=Test-Path -LiteralPath $p -PathType Leaf
  $x=[ordered]@{exists=$e;sha=$null;backup=$null;ptar=$false}
@@ -87,4 +88,4 @@ Set-Content -LiteralPath (Join-Path $StateRoot 'LATEST_STATE.txt') -Value $state
 Set-Content -LiteralPath (Join-Path $PackRoot 'win81_nis_install_target.txt') -Value $g -Encoding ASCII
 Copy-Item -LiteralPath $pr -Destination $a -Force;Copy-Item -LiteralPath $pc -Destination $c -Force;Copy-Item -LiteralPath $pi -Destination $i -Force;Copy-Item -LiteralPath $pv -Destination $v -Force
 if((Sha $a)-ne $ExpectedRuntime -or (Sha $c)-ne $ExpectedRuntime -or (Sha $i)-ne $ExpectedIni -or (Sha $v)-ne $ExpectedVersion){F 'Post-install hash mismatch.' 30}
-L 'INSTALL=PASS';L ('GAME_ROOT='+$g);L ('RUNTIME_SHA256='+$ExpectedRuntime);L 'GW16H UNIFIEDREC3 SAFEPOINT11/FUSEDDETAIL1: branch from SAFEPOINT8/TDETAIL4; fused profile-3 detail stabilizer reuses existing FG bilinear texture loads, adds no resource/dispatch, and mathematically bypasses QUALITY.';exit 0
+L 'INSTALL=PASS';L ('GAME_ROOT='+$g);L ('RUNTIME_SHA256='+$ExpectedRuntime);L 'GW16H SAFEPOINT11/FUSEDDETAIL1 HUDREC1: recorder uses final presenter BackBuffer0 so the PTAR HUD/FPS is included in MP4; FG algorithm and FUSEDDETAIL1 are unchanged.';exit 0
