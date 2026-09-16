@@ -31,7 +31,7 @@ Hardware validation on the Windows 8.1 / GTX 960M reference machine confirmed th
 
 The functional DLL delta from SAFEPOINT11 is intentionally minimal: one functional byte at the native recorder swapchain source selection, plus the PE checksum update.
 
-## FG cadence marker — blinking squares
+## FG cadence marker (blinking squares)
 
 The small blinking squares visible while FG is active are the **VBlank visible cadence marker**. They are independent from the main PTAR HUD/FPS.
 
@@ -95,7 +95,7 @@ Files use the naming scheme:
 
 F9 is independent from the MP4 recorder and can be used while video recording is active.
 
-## Integrated video recording — CTRL+F9
+## Video recording with PTAR HUD / FPS — CTRL+F9
 
 Press **`CTRL+F9`** to start recording and press it again to stop/finalize the MP4.
 
