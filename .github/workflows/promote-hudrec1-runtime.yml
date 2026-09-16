@@ -11,7 +11,6 @@ permissions:
 
 jobs:
   promote:
-    if: github.event.head_commit.message == 'promote: stage HUDREC1 runtime'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,42 +24,8 @@ jobs:
           if($base -ne '864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c'){ throw "Unexpected baseline DLL: $base" }
           New-Item -ItemType Directory -Force diag/base | Out-Null
           Copy-Item payload/d3d11.dll diag/base/SAFEPOINT11_FUSEDDETAIL1_BASE.dll -Force
-          @'
-import hashlib, struct
-from pathlib import Path
-src=Path('payload/d3d11.dll')
-out=Path('payload/d3d11.hudrec1.dll')
-data=bytearray(src.read_bytes())
-BASE='864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c'
-OUT='e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429'
-if hashlib.sha256(data).hexdigest()!=BASE: raise SystemExit('BASE_SHA mismatch')
-pe=struct.unpack_from('<I',data,0x3C)[0]
-if data[pe:pe+4]!=b'PE\0\0': raise SystemExit('PE signature missing')
-nsec=struct.unpack_from('<H',data,pe+6)[0]; optsz=struct.unpack_from('<H',data,pe+20)[0]; sec_off=pe+24+optsz
-secs=[]
-for i in range(nsec):
- o=sec_off+i*40; name=bytes(data[o:o+8]).split(b'\0')[0].decode('ascii','replace'); vs,va,rs,rp=struct.unpack_from('<IIII',data,o+8); secs.append((name,va,vs,rp,rs))
-def r2o(rva):
- for name,va,vs,rp,rs in secs:
-  if va<=rva<va+max(vs,rs): return rp+(rva-va),name
- raise SystemExit('RVA not mapped')
-PATCH=0x34FE9B9; OLD=0x02C7E010; NEW=0x02C7DFC8
-off,sec=r2o(PATCH)
-if sec!='.dwmlab' or bytes(data[off:off+3])!=b'\x48\x8b\x0d': raise SystemExit('signature mismatch')
-old_disp=struct.unpack_from('<i',data,off+3)[0]
-if PATCH+7+old_disp!=OLD: raise SystemExit('old target mismatch')
-struct.pack_into('<i',data,off+3,NEW-(PATCH+7))
-co=pe+24+64
-struct.pack_into('<I',data,co,0)
-t=0; i=0
-while i+1<len(data): t=(t+data[i]+(data[i+1]<<8))&0xffffffff; i+=2
-if i<len(data): t+=data[i]
-t=(t&0xffff)+(t>>16); t=t+(t>>16); chk=((t&0xffff)+len(data))&0xffffffff
-struct.pack_into('<I',data,co,chk)
-if hashlib.sha256(data).hexdigest()!=OUT: raise SystemExit('OUT_SHA mismatch')
-out.write_bytes(data)
-print('HUDREC1_RUNTIME_PATCH=PASS')
-'@ | Set-Content -Encoding ASCII _hudrec_patch.py
+          $patch='aW1wb3J0IGhhc2hsaWIsIHN0cnVjdApmcm9tIHBhdGhsaWIgaW1wb3J0IFBhdGgKc3JjPVBhdGgoInBheWxvYWQvZDNkMTEuZGxsIikKb3V0PVBhdGgoInBheWxvYWQvZDNkMTEuaHVkcmVjMS5kbGwiKQpkYXRhPWJ5dGVhcnJheShzcmMucmVhZF9ieXRlcygpKQpCQVNFPSI4NjRjMGNhOGYyNGYyMmY2YTNjZDRjMjFhMGUyMTNmNDMxZjUyNjhlNjliMDRlMzg2MGM1MmZlNzI2MDBmYzNjIgpPVVQ9ImU4MWU0YzYyMzk0NjJiYzdhOTNjM2ZkN2Q3YWJiNGJkOTZlMDlkYjFmMDEzZWI0OGE0NmY0MDM0MWZmYTY0MjkiCmlmIGhhc2hsaWIuc2hhMjU2KGRhdGEpLmhleGRpZ2VzdCgpIT1CQVNFOiByYWlzZSBTeXN0ZW1FeGl0KCJCQVNFX1NIQSBtaXNtYXRjaCIpCnBlPXN0cnVjdC51bnBhY2tfZnJvbSgiPEkiLGRhdGEsMHgzQylbMF0KaWYgZGF0YVtwZTpwZSs0XSE9YiJQRVwwXDAiOiByYWlzZSBTeXN0ZW1FeGl0KCJQRSBzaWduYXR1cmUgbWlzc2luZyIpCm5zZWM9c3RydWN0LnVucGFja19mcm9tKCI8SCIsZGF0YSxwZSs2KVswXQpvcHRzej1zdHJ1Y3QudW5wYWNrX2Zyb20oIjxIIixkYXRhLHBlKzIwKVswXQpzZWNfb2ZmPXBlKzI0K29wdHN6CnNlY3M9W10KZm9yIGkgaW4gcmFuZ2UobnNlYyk6CiBvPXNlY19vZmYraSo0MAogbmFtZT1ieXRlcyhkYXRhW286bys4XSkuc3BsaXQoYiJcMCIpWzBdLmRlY29kZSgiYXNjaWkiLCJyZXBsYWNlIikKIHZzLHZhLHJzLHJwPXN0cnVjdC51bnBhY2tfZnJvbSgiPElJSUkiLGRhdGEsbys4KQogc2Vjcy5hcHBlbmQoKG5hbWUsdmEsdnMscnAscnMpKQpkZWYgcjJvKHJ2YSk6CiBmb3IgbmFtZSx2YSx2cyxycCxycyBpbiBzZWNzOgogIGlmIHZhPD1ydmE8dmErbWF4KHZzLHJzKTogcmV0dXJuIHJwKyhydmEtdmEpLG5hbWUKIHJhaXNlIFN5c3RlbUV4aXQoIlJWQSBub3QgbWFwcGVkIikKUEFUQ0g9MHgzNEZFOUI5OyBPTEQ9MHgwMkM3RTAxMDsgTkVXPTB4MDJDN0RGQzgKb2ZmLHNlYz1yMm8oUEFUQ0gpCmlmIHNlYyE9Ii5kd21sYWIiIG9yIGJ5dGVzKGRhdGFbb2ZmOm9mZiszXSkhPWIiXHg0OFx4OGJceDBkIjogcmFpc2UgU3lzdGVtRXhpdCgic2lnbmF0dXJlIG1pc21hdGNoIikKb2xkX2Rpc3A9c3RydWN0LnVucGFja19mcm9tKCI8aSIsZGF0YSxvZmYrMylbMF0KaWYgUEFUQ0grNytvbGRfZGlzcCE9T0xEOiByYWlzZSBTeXN0ZW1FeGl0KCJvbGQgdGFyZ2V0IG1pc21hdGNoIikKc3RydWN0LnBhY2tfaW50bygiPGkiLGRhdGEsb2ZmKzMsTkVXLShQQVRDSCs3KSkKY289cGUrMjQrNjQKc3RydWN0LnBhY2tfaW50bygiPEkiLGRhdGEsY28sMCkKdD0wOyBpPTAKd2hpbGUgaSsxPGxlbihkYXRhKToKIHQ9KHQrZGF0YVtpXSsoZGF0YVtpKzFdPDw4KSkmMHhmZmZmZmZmZgogaSs9MgppZiBpPGxlbihkYXRhKTogdCs9ZGF0YVtpXQp0PSh0JjB4ZmZmZikrKHQ+PjE2KQp0PXQrKHQ+PjE2KQpjaGs9KCh0JjB4ZmZmZikrbGVuKGRhdGEpKSYweGZmZmZmZmZmCnN0cnVjdC5wYWNrX2ludG8oIjxJIixkYXRhLGNvLGNoaykKaWYgaGFzaGxpYi5zaGEyNTYoZGF0YSkuaGV4ZGlnZXN0KCkhPU9VVDogcmFpc2UgU3lzdGVtRXhpdCgiT1VUX1NIQSBtaXNtYXRjaCIpCm91dC53cml0ZV9ieXRlcyhkYXRhKQpwcmludCgiSFVEUkVDMV9SVU5USU1FX1BBVENIPVBBU1MiKQo='
+          [IO.File]::WriteAllBytes('_hudrec_patch.py',[Convert]::FromBase64String($patch))
           python _hudrec_patch.py
           Move-Item payload/d3d11.hudrec1.dll payload/d3d11.dll -Force
           Copy-Item payload/d3d11.dll payload/win81_nis_dx11_x64.dll -Force
