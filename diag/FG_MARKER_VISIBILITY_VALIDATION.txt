@@ -1,0 +1,18 @@
+[PASS] payload has one VBlankDiagnostics key :: ['VBlankDiagnostics=1']
+[PASS] payload default marker enabled :: ['VBlankDiagnostics=1']
+[PASS] payload HUD enabled independently
+[PASS] menu STATUS action
+[PASS] menu ON action
+[PASS] menu OFF action
+[PASS] menu says HUD/FPS stays active
+[PASS] helper targets only VBlankDiagnostics
+[PASS] helper makes backup
+[PASS] helper readback uses GetPrivateProfileIntW
+[PASS] helper no destructive remove
+[PASS] verifier explicitly supports marker toggle
+[PASS] verify model accepts default marker ON
+[PASS] verify model accepts marker OFF only
+[PASS] verify model rejects unrelated HUD change
+[PASS] verify model rejects duplicate marker key
+[PASS] verify model rejects invalid marker value
+FG_MARKER_VISIBILITY_VALIDATION=17/17 PASS
