@@ -31,7 +31,7 @@ The stabilizer numerator contains a profile gate based on G. At QUALITY G=.35, i
 
 LAB RESULT / TARGET
 -------------------
-On the TDETAIL4 field corpus used for development, the fused proxy materially reduced high-motion excursion on the selection circle and floor grilles while leaving low-motion pixel change near zero. The test is a proxy because the recorded video does not expose exact runtime motion vectors or pre-present surfaces. Hardware visual validation is still required.
+On the TDETAIL4 field corpus used for development, the fused proxy materially reduced high-motion excursion on the selection circle and floor grilles while leaving low-motion pixel change near zero. The test is a proxy because the recorded video does not expose exact runtime motion vectors or pre-present surfaces. SAFEPOINT11/FUSEDDETAIL1 is already the promoted hardware-validated baseline. HUDREC1 does not reopen that visual-quality gate.
 
 INSTALLATION
 ------------
@@ -39,12 +39,29 @@ INSTALLATION
 2. Lancer 01-INSTALL_GW16.bat.
 3. Lancer 02-VERIFY_INSTALL.bat et exiger VERIFY=PASS.
 
-UNIQUE GATE MATERIEL
---------------------
-1. PTAR 1280x720 -> 1920x1080 + FG actif.
-2. CTRL+F8: selectionner le profil 3 CONSERVATIVE.
-3. Reproduire un deplacement/camera avec le cercle au pied du personnage et les grilles visibles.
-4. Enregistrer 10-15 s avec CTRL+F9.
-5. Envoyer la video et le ZIP de 04-COLLECT_RESULTS.bat.
+BASELINE HARDWARE STATUS
+------------------------
+SAFEPOINT11/FUSEDDETAIL1 is already hardware validated. No new broad visual/pacing regression run is required for HUDREC1.
 
-Le meme run servira a juger simultanement le gain visuel et l'absence de regression de pacing/recorder.
+
+
+HUDREC1 - VIDEO AVEC HUD / FPS
+--------------------------------
+Cette variante conserve SAFEPOINT11/FUSEDDETAIL1 et modifie uniquement la source de capture du recorder natif FG OFF : le recorder lit maintenant le BackBuffer0 du presenter PTAR visible, le meme domaine visuel que la capture F9, au lieu du backbuffer jeu pre-HUD.
+
+Resultat attendu : quand Overlay=1, les videos CTRL+F9 contiennent le HUD PTAR et notamment la valeur FPS. Le chemin recorder FG ON et l'algorithme FG sont inchanges.
+
+MARQUEUR FG (PETITS CARRES)
+----------------------------
+Lancer diag\FG_MARKER_VISIBILITY.bat pour lire, activer ou desactiver uniquement les petits carres clignotants de cadence FG. Ce reglage pilote VBlankDiagnostics et ne coupe pas le HUD/FPS.
+
+
+GATE MATERIEL HUDREC1
+---------------------
+Une seule session materielle tres courte est necessaire apres les gates labo :
+1. laisser Overlay=1 ;
+2. CLIP A - FG OFF : enregistrer environ 5 s avec CTRL+F9, puis verifier dans le MP4 que le HUD PTAR et la valeur FPS sont visibles ;
+3. CLIP B - FG ON : activer FG avec CTRL+F6, enregistrer environ 5 s avec CTRL+F9, puis verifier que le HUD PTAR et la valeur FPS restent visibles ;
+4. optionnel : utiliser diag\\FG_MARKER_VISIBILITY.bat pour masquer/afficher uniquement les petits carres FG et verifier que le HUD/FPS reste visible.
+
+Le clip A est le gate fonctionnel principal de HUDREC1, car le patch binaire modifie uniquement la source du recorder FG OFF. Le clip B confirme que le chemin FG ON, laisse inchange, reste bien post-HUD. Aucune suite de regression materielle large n'est demandee.
