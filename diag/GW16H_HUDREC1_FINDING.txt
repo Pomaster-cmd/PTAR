@@ -1,0 +1,38 @@
+PTAR GW16H SAFEPOINT11/FUSEDDETAIL1 - HUDREC1 FINDING
+DATE=2026-09-16
+STATUS=LAB_STATIC_VALIDATED_HARDWARE_VIDEO_GATE_PENDING
+
+BASE_RUNTIME_SHA256=864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c
+HUDREC1_RUNTIME_SHA256=e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429
+
+USER REQUIREMENT
+- Integrated CTRL+F9 MP4 must include the visible PTAR HUD, especially FPS.
+- The blinking FG cadence squares must be independently switchable from diag without hiding HUD/FPS.
+
+ROOT CAUSE / ROUTE ANALYSIS
+- FG-OFF native recorder wrapper RVA 0x34FE980 previously acquired BackBuffer0 from P1U46 game swapchain global RVA 0x02C7E010.
+- Native presenter routes call P1U46 in-frame HUD helper RVA 0x13CE0 immediately before the recorder wrapper.
+- F9 native capture selects the visible PTAR presenter swapchain global RVA 0x02C7DFC8.
+- Therefore the old recorder source was not the same final visible surface used by the PTAR presenter/F9 path.
+
+HUDREC1 PATCH
+- One functional RIP-displacement byte at RVA 0x34FE9B9 redirects only the FG-OFF recorder swapchain source:
+  0x02C7E010 (game swapchain) -> 0x02C7DFC8 (visible PTAR presenter swapchain).
+- PE checksum is recalculated.
+- Total binary byte delta from canonical SAFEPOINT11 is 3 bytes: 1 functional byte + 2 PE checksum bytes.
+- FG-ON recorder route is unchanged and still consumes isolated final BackBuffer0 RVA 0x02C93CE8, the same final isolated surface used by F9.
+- Native state-guard submit remains RVA 0x34FE804.
+- FG/FUSEDDETAIL1 algorithms, quality policy, NVENC ME, QSV conversion and pacing are unchanged.
+
+FG CADENCE MARKER
+- The small blinking squares are the existing VBlank visible cadence marker.
+- diag\FG_MARKER_VISIBILITY.bat exposes STATUS / ON / OFF by changing only VBlankDiagnostics=0/1 using the existing safe helper.
+- Overlay remains 1; HUD/FPS is not disabled.
+- The helper creates an INI backup before mutation.
+- verify.ps1 accepts exactly this one supported INI difference and rejects other changes.
+
+HARDWARE GATE
+One short GTX 960M session with two approximately 5-second recordings is still required:
+- CLIP A, FG OFF: confirms the actually modified native recorder route captures the visible HUD/FPS.
+- CLIP B, FG ON: confirms the unchanged isolated final-backbuffer recorder route still captures HUD/FPS.
+No broad hardware regression suite is required.
