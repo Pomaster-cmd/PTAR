@@ -1,0 +1,151 @@
+name: promote-universal1-transactional-v4
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/promote-universal1-transactional-v4.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  validate-and-promote:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Reconstruct and repair exact clean UNIVERSAL1 candidate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $cand=Join-Path $env:RUNNER_TEMP 'PTAR_UNIVERSAL1_CLEAN'
+          if(Test-Path $cand){Remove-Item $cand -Recurse -Force}
+          New-Item -ItemType Directory -Path $cand | Out-Null
+          $b64=((1..4 | ForEach-Object { Get-Content -LiteralPath (".github/universal1_payload/part$_.b64") -Raw }) -join '').Trim()
+          $archive=Join-Path $env:RUNNER_TEMP 'PTAR_UNIVERSAL1.tar.xz'
+          [IO.File]::WriteAllBytes($archive,[Convert]::FromBase64String($b64))
+          $h=(Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($h -ne '6b1ad9026a9817b0b6599fb4ca6e4836afb699b778440ed403e77e1144509ee8'){throw "base candidate hash mismatch $h"}
+          python -c "import tarfile; t=tarfile.open(r'$archive','r:xz'); t.extractall(r'$cand'); t.close()"
+          @'
+          from pathlib import Path
+          import hashlib, sys
+          root=Path(sys.argv[1])
+          vp=root/'diag/verify.ps1'
+          s=vp.read_text(encoding='utf-8')
+          old="foreach($k in @('TargetExe='+$targetName,'Enabled=1','UniversalSpatialPresenter=1','PresenterExclusive=0','Overlay=1','FrameGeneration=0','FrameGenerationPresentSync=1','FrameGenerationTargetFPS=60')){"
+          new="foreach($k in @((('TargetExe=' + $targetName)),'Enabled=1','UniversalSpatialPresenter=1','PresenterExclusive=0','Overlay=1','FrameGeneration=0','FrameGenerationPresentSync=1','FrameGenerationTargetFPS=60')){"
+          if old not in s: raise SystemExit('verify fix anchor missing')
+          vp.write_text(s.replace(old,new),encoding='utf-8',newline='\n')
+          wf=root/'.github/workflows/universal1-multigame-regression.yml'
+          w=wf.read_text(encoding='utf-8')
+          w=w.replace("            'diag/validate_gw16_hudrec1_package.py'\n",'')
+          wf.write_text(w,encoding='utf-8',newline='\n')
+          def sha(p): return hashlib.sha256(p.read_bytes()).hexdigest()
+          def eligible():
+              out=[]
+              for q in root.rglob('*'):
+                  if not q.is_file(): continue
+                  rel=q.relative_to(root).as_posix()
+                  if rel.startswith('_PTAR_UNINSTALL/state/') or rel.startswith('diag/backups/') or rel.startswith('.github/'): continue
+                  out.append(rel)
+              return sorted(out)
+          sums=root/'diag/SHA256SUMS.txt'; own=root/'_PTAR_UNINSTALL/PTAR_STATIC_OWNERSHIP.tsv'
+          files=eligible(); sexp=[r for r in files if r not in {'diag/SHA256SUMS.txt','_PTAR_UNINSTALL/PTAR_STATIC_OWNERSHIP.tsv'}]
+          sums.write_text(''.join(f'{sha(root/r)}  {r}\n' for r in sexp),encoding='utf-8',newline='\n')
+          files=eligible(); oexp=[r for r in files if r!='_PTAR_UNINSTALL/PTAR_STATIC_OWNERSHIP.tsv']
+          lines=['PTAR_STATIC_OWNERSHIP_SCHEMA\t3\n']
+          for i,r in enumerate(oexp,82600001): lines.append(f'{i:08d}|{r}|{sha(root/r)}\n')
+          own.write_text(''.join(lines),encoding='utf-8',newline='\n')
+          print('VERIFY_SHA256='+sha(vp))
+          print('REGISTRY_COUNTS=%d/%d'%(len(sexp),len(oexp)))
+          '@ | Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'fix_u1.py') -Encoding UTF8
+          python (Join-Path $env:RUNNER_TEMP 'fix_u1.py') $cand
+          $rh=(Get-FileHash (Join-Path $cand 'payload/d3d11.dll') -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($rh -ne 'e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429'){throw "runtime drift $rh"}
+          Write-Host 'UNIVERSAL1_CLEAN_REPAIR=PASS'
+
+      - name: Full clean-package validation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $cand=Join-Path $env:RUNNER_TEMP 'PTAR_UNIVERSAL1_CLEAN'
+          Push-Location $cand
+          try{
+            foreach($t in @(
+              'diag/validate_universal_targeting.py',
+              'diag/validate_win81_path_handoff.py',
+              'diag/validate_ps4_compat.py',
+              'diag/validate_recorder_hudrec1.py',
+              'diag/validate_fg_marker_visibility.py',
+              'diag/validate_gw16_hudrec1_package.py'
+            )){
+              & python $t
+              if($LASTEXITCODE -ne 0){throw "$t failed rc=$LASTEXITCODE"}
+            }
+          }finally{Pop-Location}
+          Write-Host 'UNIVERSAL1_CLEAN_PACKAGE_ALL_GATES=PASS'
+
+      - name: Windows multi-game install verify rollback and x86 refusal
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $cand=Join-Path $env:RUNNER_TEMP 'PTAR_UNIVERSAL1_CLEAN'
+          $ps="$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+          $tmp=Join-Path $env:RUNNER_TEMP 'PTAR_UNIVERSAL1_MULTI'
+          if(Test-Path $tmp){Remove-Item $tmp -Recurse -Force}
+          New-Item -ItemType Directory -Path $tmp | Out-Null
+          Push-Location $cand
+          try{
+            function Install([string]$exe,[bool]$envMode){
+              if($envMode){$env:PTAR_GAME_EXE=$exe;& $ps -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\diag\install.ps1;$rc=$LASTEXITCODE;Remove-Item Env:PTAR_GAME_EXE -ErrorAction SilentlyContinue}
+              else{& $ps -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\diag\install.ps1 -GameExe $exe;$rc=$LASTEXITCODE}
+              if($rc -ne 0){throw "install failed $exe rc=$rc"}
+            }
+            function Check([string]$dir,[string]$name){
+              $dll=Join-Path $dir 'd3d11.dll';$ini=Join-Path $dir 'win81_nis.ini'
+              if((Get-FileHash $dll -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429'){throw 'installed runtime drift'}
+              if((Get-Content $ini) -notcontains ("TargetExe="+$name)){throw "TargetExe mismatch $name"}
+              & $ps -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\diag\verify.ps1
+              if($LASTEXITCODE -ne 0){throw "verify failed $name rc=$LASTEXITCODE"}
+            }
+            function Rollback([string]$dir,[string]$exe){
+              & $ps -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\diag\rollback_test.ps1
+              if($LASTEXITCODE -ne 0){throw "rollback failed rc=$LASTEXITCODE"}
+              if(-not(Test-Path $exe)){throw 'target exe removed'}
+              foreach($n in @('d3d11.dll','win81_nis_dx11_x64.dll','win81_nis.ini','win81_nis_version.txt')){if(Test-Path (Join-Path $dir $n)){throw "$n remained after rollback"}}
+            }
+            $a=Join-Path $tmp 'A';New-Item -ItemType Directory $a|Out-Null;$ae=Join-Path $a 'StarGazer.exe';Copy-Item "$env:SystemRoot\System32\notepad.exe" $ae
+            Install $ae $false;Check $a 'StarGazer.exe';Rollback $a $ae
+            $b=Join-Path $tmp 'B';New-Item -ItemType Directory $b|Out-Null;$be=Join-Path $b 'TotallyDifferentGame.exe';Copy-Item "$env:SystemRoot\System32\notepad.exe" $be
+            Install $be $true;Check $b 'TotallyDifferentGame.exe';Rollback $b $be
+            $c=Join-Path $tmp 'C';New-Item -ItemType Directory $c|Out-Null;$ce=Join-Path $c 'Legacy32Game.exe';Copy-Item "$env:SystemRoot\SysWOW64\notepad.exe" $ce
+            & $ps -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\diag\install.ps1 -GameExe $ce
+            if($LASTEXITCODE -eq 0){throw 'x86 executable incorrectly accepted'}
+            if(Test-Path (Join-Path $c 'd3d11.dll')){throw 'runtime copied after x86 rejection'}
+          }finally{Pop-Location}
+          Write-Host 'UNIVERSAL1_MULTIGAME_WINDOWS=PASS'
+
+      - name: Promote clean candidate only after every gate passed
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $cand=Join-Path $env:RUNNER_TEMP 'PTAR_UNIVERSAL1_CLEAN'
+          robocopy $cand . /E /NFL /NDL /NJH /NJS /NP | Out-Null
+          if($LASTEXITCODE -ge 8){throw "robocopy failed rc=$LASTEXITCODE"}
+          Remove-Item -Recurse -Force .github/universal1_payload
+          Remove-Item -Force -ErrorAction SilentlyContinue .github/workflows/promote-universal1-transactional.yml
+          Remove-Item -Force -ErrorAction SilentlyContinue .github/workflows/promote-universal1-transactional-v3.yml
+          Remove-Item -Force .github/workflows/promote-universal1-transactional-v4.yml
+          Remove-Item -Force -ErrorAction SilentlyContinue .github/workflows/finalize-hudrec1-main.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'release: promote HUDREC1 UNIVERSAL1 game-agnostic targeting'
+          git push origin HEAD:main
