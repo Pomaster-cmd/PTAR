@@ -23,9 +23,11 @@ try{
   $rawRoot=$rawRoot.Trim().Trim('"')
   if(-not(Test-Path -LiteralPath $rawRoot -PathType Container)){throw ('Racine jeu introuvable : '+$rawRoot)}
   $GameRoot=[IO.Path]::GetFullPath($rawRoot)
-  if(-not(Test-Path -LiteralPath (Join-Path $GameRoot 'Warhammer.exe') -PathType Leaf)){
-    throw ('Warhammer.exe absent de la racine detectee : '+$GameRoot)
-  }
+  $targetExe=[string]$env:PTAR_TARGET_EXE
+  if([string]::IsNullOrWhiteSpace($targetExe)){throw 'PTAR_TARGET_EXE absent.'}
+  $targetExe=[IO.Path]::GetFullPath($targetExe.Trim().Trim('"'))
+  if(-not(Test-Path -LiteralPath $targetExe -PathType Leaf)){throw ('Executable cible absent : '+$targetExe)}
+  if((Split-Path -Parent $targetExe).TrimEnd('\') -ine $GameRoot.TrimEnd('\')){throw 'PTAR_TARGET_EXE ne correspond pas a PTAR_GAME_ROOT.'}
   $err=Join-Path $GameRoot 'PTAR_VISIBLE_VERIFIER_LAST_ERROR.txt'
 
   $src=Join-Path $PSScriptRoot 'PTARVisiblePacingVerifier.cs'

@@ -1,0 +1,56 @@
+[PASS] runtime exact HUDREC1 retained :: e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429
+[PASS] runtime mirror exact
+[PASS] runtime excludes Warhammer.exe
+[PASS] runtime excludes Warhammer
+[PASS] runtime excludes Inquisitor
+[PASS] runtime excludes NeoCore
+[PASS] INI has one dynamic target placeholder
+[PASS] version marks dynamic target
+[PASS] historical validation exe is metadata only
+[PASS] install no Warhammer executable lock
+[PASS] install no NeoCore registry lock
+[PASS] verify no Warhammer executable lock
+[PASS] verify no NeoCore registry lock
+[PASS] collect no Warhammer executable lock
+[PASS] collect no NeoCore registry lock
+[PASS] rollback no Warhammer executable lock
+[PASS] rollback no NeoCore registry lock
+[PASS] uninstall no Warhammer executable lock
+[PASS] uninstall no NeoCore registry lock
+[PASS] marker no Warhammer executable lock
+[PASS] marker no NeoCore registry lock
+[PASS] arm no Warhammer executable lock
+[PASS] arm no NeoCore registry lock
+[PASS] runner no Warhammer executable lock
+[PASS] runner no NeoCore registry lock
+[PASS] installer explicit path parameter
+[PASS] installer env path override
+[PASS] installer interactive candidate selection
+[PASS] installer PE64 guard
+[PASS] installer schema 4
+[PASS] installer exact path process guard
+[PASS] installer stores target exe/name
+[PASS] installer writes root handoff
+[PASS] installer writes exe handoff
+[PASS] installer builds dynamic INI
+[PASS] installer does not mutate registry
+[PASS] verify requires schema 4
+[PASS] verify dynamic target contract
+[PASS] verify permits only marker toggle in addition
+[PASS] collector resolves installation state
+[PASS] rollback exact target process guard
+[PASS] uninstall exact target process guard
+[PASS] uninstall has no WindowStyle registry restore
+[PASS] marker resolves state
+[PASS] visible verifier uses target handoff
+[PASS] runner validates target exe
+[PASS] 03-INSTALL_QSV_HELPER_WIN81.bat uses generic target root handoff
+[PASS] 03-INSTALL_QSV_HELPER_WIN81.bat has no title-specific fallback
+[PASS] 04-TEST_QSV_5S_MP4.bat uses generic target root handoff
+[PASS] 04-TEST_QSV_5S_MP4.bat has no title-specific fallback
+[PASS] QSV installer requires recorded target handoff
+[PASS] QSV installer has no renderer-name heuristic
+[PASS] README declares game agnostic
+[PASS] README documents explicit exe path
+[PASS] README distinguishes validation title
+UNIVERSAL_TARGETING_VALIDATION=55/55 PASS

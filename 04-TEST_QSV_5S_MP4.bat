@@ -12,7 +12,6 @@ if exist "%TARGET_FILE%" (
     if not defined TARGET set "TARGET=%%~A"
   )
 )
-if not defined TARGET if exist "%ROOT%SatGat-Win64-Shipping.exe" set "TARGET=%ROOT%"
 
 if not defined TARGET (
  echo [FAIL] Cible introuvable.

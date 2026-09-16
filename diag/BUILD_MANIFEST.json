@@ -1,11 +1,11 @@
 {
-  "package": "PTAR_GW16H_UNIFIEDREC3_SAFEPOINT11_FUSEDDETAIL1",
-  "package_filename": "PTAR_GW16H_UNIFIEDREC3_SAFEPOINT11_FUSEDDETAIL1.zip",
-  "build_date": "2026-09-06",
+  "package": "PTAR_GW16H_UNIFIEDREC3_SAFEPOINT11_FUSEDDETAIL1_HUDREC1_UNIVERSAL1",
+  "package_filename": "PTAR_GW16H_UNIFIEDREC3_SAFEPOINT11_FUSEDDETAIL1_HUDREC1_UNIVERSAL1.zip",
+  "build_date": "2026-09-16",
   "runtime": {
     "base": "GW12 LOADSHEDSOFT1",
     "base_sha256": "50cf02fee971e615f0dba26a7614e27b833486a993cf569fe5369a0fa5b41f59",
-    "sha256": "864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c",
+    "sha256": "e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429",
     "auto_wrapper_rva": "0x34FFC80",
     "auto_mode_rva": "0x34FFF20",
     "auto_fallback_rva": "0x34FFF00",
@@ -185,7 +185,38 @@
       "presenter_pacing_changed": false,
       "recorder_changed": false,
       "resource_topology_changed": false
-    }
+    },
+    "recorder_hudrec1": {
+      "base_sha256": "864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c",
+      "runtime_sha256": "e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429",
+      "native_wrapper_rva": "0x34FE980",
+      "patch_site_rva": "0x34FE9B9",
+      "old_fg_off_swapchain_rva": "0x02C7E010",
+      "new_fg_off_swapchain_rva": "0x02C7DFC8",
+      "native_hud_helper_rva": "0x13CE0",
+      "native_f9_presenter_swapchain_rva": "0x02C7DFC8",
+      "fg_on_final_backbuffer_rva": "0x02C93CE8",
+      "functional_byte_changes": 1,
+      "pe_checksum_byte_changes": 2,
+      "fg_algorithm_changed": false,
+      "fuseddetail1_changed": false,
+      "qsv_conversion_changed": false,
+      "hardware_video_gate": "PENDING_TWO_SHORT_MP4_CONFIRMATIONS_FG_OFF_THEN_FG_ON",
+      "base_bundle": "diag/base/SAFEPOINT11_FUSEDDETAIL1_BASE.dll",
+      "whole_binary_delta_file_offsets": [
+        "0xD0",
+        "0xD1",
+        "0x4CBBC"
+      ],
+      "whole_binary_delta_count": 3,
+      "fg_on_hud_render_call": "0x25A8C -> 0x26D50 -> dedicated HUD helper 0x28750 before recorder 0x25B49",
+      "fg_on_fps_sources": [
+        "0x02CCE5BC live",
+        "0x02CCE4FC fallback"
+      ]
+    },
+    "targeting": "DYNAMIC_INSTALL_SELECTION",
+    "target_exe_template": "__PTAR_TARGET_EXE__"
   },
   "presentation_policy": {
     "fg_on": {
@@ -240,29 +271,30 @@
   "recorder_policy": {
     "architecture": "single original internal B18K18 recorder path",
     "hotkey": "CTRL+F9",
-    "fg_on": "same production recorder captures final REAL+GENERATED isolated presenter texture",
-    "fg_off": "same production recorder consumes CTRL+F9 on all four native USR presenter routes and captures native swapchain BackBuffer0 REAL texture",
+    "fg_on": "unchanged production recorder captures final REAL+GENERATED isolated presenter BackBuffer0 after the PTAR render/HUD path",
+    "fg_off": "production recorder consumes CTRL+F9 on all four native USR presenter routes and captures visible PTAR presenter BackBuffer0 after native HUD draw; HUD/FPS included when Overlay=1",
     "external_bridge": "absent",
     "start_hud": "original production notice 14",
     "stop_hud": "original production notice 16",
     "helper": "tools/qsv/b18k17_ffmpeg.exe",
     "profiles": "original VideoRecordProfile 1/2/3 retained",
-    "patch_scope": "SAFEPOINT2 routing + SAFEPOINT3 local GPU state + SAFEPOINT4 native state guard retained; SAFEPOINT5 changes only encode-thread and FFmpeg/QSV consumer scheduling from below-normal to normal",
+    "patch_scope": "HUDREC1 changes only FG-OFF recorder source game swapchain -> visible PTAR presenter; SAFEPOINT2/3/4/5 and FG-ON recorder route retained",
     "resource_guards": "mode-aware retained",
     "device_identity_guard": "mode-aware retained",
     "toggle_timing": "deferred action8 consumed on isolated FG presenter route or native USR presenter route",
-    "native_backbuffer_api": "IDXGISwapChain::GetBuffer(0, IID_ID3D11Texture2D)",
+    "native_backbuffer_api": "IDXGISwapChain::GetBuffer(0, IID_ID3D11Texture2D) on visible presenter swapchain RVA 0x02C7DFC8 for FG OFF",
     "gpu_state": "recorder-local fullscreen VS + rasterizer state, device-owned and recreated on device change",
     "native_context_state_guard": "save/restore every state category changed by B18K18 conversion; 17 getter-acquired COM refs released",
     "consumer_scheduling": "encode/pipe thread NORMAL; FFmpeg/QSV process NORMAL; GPU readback worker remains BELOW_NORMAL",
     "queue_frames": 32,
-    "queue_resize": "NO"
+    "queue_resize": "NO",
+    "hud_recording": "Overlay/HUD/FPS are on the recorded final presenter surface; field MP4 confirmation pending"
   },
   "installer_fix": {
-    "scope": "INSTALLFIX1 hash-lock discipline inherited; exact SAFEPOINT11/FUSEDDETAIL1 payload hashes regenerated",
-    "expected_runtime_sha256": "864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c",
-    "expected_ini_sha256": "bd39b7c703ddf7a8658bed4df620232d00c06972351ca404c2d8386187fd3f50",
-    "expected_version_sha256": "8c15a4ab74222f1efc7305315bf25dd06903f45bd568abdd3a04d152501e0c51",
+    "scope": "HUDREC1 exact payload hashes; baseline SAFEPOINT11 retained as known upgrade source; marker toggle supported only in installed INI verifier",
+    "expected_runtime_sha256": "e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429",
+    "expected_ini_sha256": "dea8a93e97d3ad1b438973822d67ca9ac12477b5774933eea135ab71776c5648",
+    "expected_version_sha256": "bf31c0593b5fec78c533ba6f994866bc8d4921139bff4d602fde292c6a376f15",
     "known_ptar_includes_safepoint1": true,
     "known_ptar_includes_safepoint2": true,
     "known_ptar_includes_safepoint3": true,
@@ -271,7 +303,10 @@
     "known_ptar_includes_safepoint6": true,
     "known_ptar_includes_safepoint7": true,
     "known_ptar_includes_safepoint8": true,
-    "known_ptar_includes_safepoint11": true
+    "known_ptar_includes_safepoint11": true,
+    "known_ptar_includes_hudrec1": true,
+    "dynamic_target_exe": true,
+    "state_schema": 4
   },
   "safepoint1_finding": {
     "field_result": "PTAR_GW16H_RESULTS_20260905_181248.zip",
@@ -282,11 +317,11 @@
     "safepoint2_fix": "wrap all four active native USR post-present sites, obtain BackBuffer0 from the native swapchain, and feed native device/context/texture into the original B18K18 while retaining mode-aware fail-closed guards"
   },
   "hardware_state": {
-    "canonical_runtime": "SAFEPOINT8/TDETAIL4 remains the field FG-quality baseline until SAFEPOINT11/FUSEDDETAIL1 visual+cost gate passes",
+    "canonical_runtime": "SAFEPOINT11/FUSEDDETAIL1/HUDREC1 runtime hardware validated on reference machine; UNIVERSAL1 changes packaging/target selection only and keeps runtime bytes exact.",
     "safepoint1": "FIELD_FAILED_NATIVE_USR_REQUEST_NOT_CONSUMED",
     "safepoint2": "FIELD_FAILED_ZERO_FRAMES_155_GPU_PREP_FAILURES",
     "required_targeted_gates": [
-      "One PTAR+FG profile-3 FUSEDDETAIL1 run: same-scene selection-circle + floor-grille video plus collector; judge visual shimmer and verify no pacing/recorder regression. Exact GPU time is not claimed without the GTX 960M run."
+      "One short GTX 960M session: Clip A ~5 s CTRL+F9 with FG OFF confirming HUD/FPS in MP4 on the modified route; Clip B ~5 s CTRL+F9 with FG ON confirming HUD/FPS on the unchanged route; no broad regression suite requested."
     ],
     "safepoint3": "FIELD_VIDEO_ENCODE_PASS_642_FRAMES_BUT_NATIVE_CONTEXT_VISUAL_STATE_CORRUPTION",
     "safepoint4": "FIELD_PASS_FG_OFF_NATIVE_USR_VIDEO_AND_VISUAL_STATE",
@@ -295,7 +330,9 @@
     "safepoint6": "FIELD_IMPROVED_VS_Q3_BUT_REJECTED_HIGH_MOTION_BIDIRECTIONAL_DETAIL_OSCILLATION",
     "safepoint7": "FIELD_LOCALIZED_REMAINING_SHIMMER_TO_SELECTION_CIRCLE_AND_FLOOR_GRILLES",
     "safepoint8": "LAB_VALIDATED_TARGETED_TDETAIL4_VISUAL_GATE_PENDING",
-    "safepoint11": "LAB_STATIC_AND_PROXY_VALIDATED_HARDWARE_VISUAL_COST_GATE_PENDING"
+    "safepoint11": "PROMOTED_HARDWARE_VALIDATED_BASELINE",
+    "hudrec1": "FIELD_PASS_HUD_FPS_VIDEO_CONFIRMED",
+    "universal1": "LAB_VALIDATION_PENDING; cross-game field validation required"
   },
   "safepoint2_finding": {
     "field_result": "PTAR_GW16H_RESULTS_20260906_093852.zip",
@@ -341,15 +378,20 @@
     "pacing": "54/54 PASS",
     "production_recorder": "29/29 PASS",
     "f4": "21/21 PASS",
-    "win81_path": "29/29 PASS",
-    "powershell4": "30/30 PASS",
+    "win81_path": "38/38 PASS UNIVERSAL",
+    "powershell4": "31/31 PASS",
     "auto_wrapper": "26/26 PASS",
     "inherited_safepoint2": "59/59 PASS",
     "inherited_safepoint3": "73/73 PASS",
     "inherited_safepoint4": "54/54 PASS",
     "fg_tdetail3": "139/139 PASS",
     "fg_tdetail4": "65/65 PASS",
-    "fg_fuseddetail1": "70/70 PASS"
+    "fg_fuseddetail1": "70/70 PASS",
+    "recorder_hudrec1": "38/38 PASS",
+    "inherited_safepoint11": "Canonical SAFEPOINT11 reports retained; algorithmic runtime scope proven unchanged by exact 3-byte differential gate.",
+    "fg_marker_visibility": "17/17 PASS",
+    "universal_targeting": "55/55 PASS",
+    "package_universal1": "119/119 PASS"
   },
   "safepoint6_tdetail2_finding": {
     "video": "B18K18_QSV_20260906_142840_925_PID11648-PTAR.mp4",
@@ -372,5 +414,32 @@
     "lineage": "branch from SAFEPOINT8/TDETAIL4; SAFEPOINT9/10 parameter experiments rejected/not required",
     "lab_proxy": "circle and floor-grille strong-motion excursions materially reduced; low-motion mean pixel change near zero",
     "cost_claim": "no added source-level texture Load site/resource/Dispatch; exact hardware GPU time pending"
+  },
+  "marker_control": {
+    "tool": "diag/FG_MARKER_VISIBILITY.bat",
+    "key": "WIN81_NIS/VBlankDiagnostics",
+    "values": {
+      "0": "hide visible cadence squares",
+      "1": "show visible cadence squares"
+    },
+    "hud_fps_independent": true,
+    "backup_before_write": true,
+    "verify_policy": "only VBlankDiagnostics=0/1 may differ from payload INI"
+  },
+  "universal_targeting": {
+    "version": "UNIVERSAL1",
+    "runtime_binary_changed": false,
+    "runtime_sha256": "e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429",
+    "scope": "x64 Direct3D 11 compatible games",
+    "selection": [
+      "explicit -GameExe path",
+      "PTAR_GAME_EXE environment",
+      "PTAR_TARGET_EXE.txt hint",
+      "same-folder/parent x64 EXE autodetection",
+      "interactive selection"
+    ],
+    "state_schema": 4,
+    "game_specific_registry_mutation": false,
+    "warhammer_role": "historical hardware-validation title only"
   }
 }

@@ -28,4 +28,5 @@
 [PASS] BAT explicit WindowsPowerShell host 04-COLLECT_RESULTS.bat
 [PASS] BAT explicit WindowsPowerShell host 05-ROLLBACK_TEST.bat
 [PASS] BAT explicit WindowsPowerShell host 06-DESINSTALLER_PTAR_COMPLET.bat
-PS4_COMPAT_VALIDATION=30/30 PASS
+[PASS] BAT explicit WindowsPowerShell host FG_MARKER_VISIBILITY.bat
+PS4_COMPAT_VALIDATION=31/31 PASS

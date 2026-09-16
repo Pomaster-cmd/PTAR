@@ -1,228 +1,228 @@
+
+## Universal game targeting — UNIVERSAL1
+
+PTAR is **not tied to Warhammer**. Warhammer/Inquisitor is only one historical hardware-validation title.
+
+The current runtime DLL is game-agnostic: the exact HUDREC1 binary `e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429` contains no `Warhammer`, `Inquisitor` or `NeoCore` literal. `TargetExe` is selected at installation time and written into the installed INI.
+
+Supported targeting workflow:
+
+- extract PTAR beside the real x64 game executable and run `01-INSTALL_GW16.bat`;
+- if exactly one suitable x64 EXE is present, it is selected automatically;
+- if several are present, the installer asks which one to target;
+- for games whose renderer lives elsewhere (for example `Binaries\Win64`), run:
+  `01-INSTALL_GW16.bat "C:\full\path\Game.exe"`
+- the exact executable and its directory are stored in `win81_nis_install_exe.txt`, `win81_nis_install_target.txt` and the installation state;
+- verify, collection, visible-frame diagnostics, marker control, rollback and uninstall all reuse that recorded target;
+- no game-specific registry key is modified.
+
+The current production binary is x64 D3D11. Games using another graphics API or a 32-bit process require a corresponding PTAR runtime and are outside this build's compatibility envelope.
+
+
 # PTAR
 
 **PTAR** is an experimental Windows 8.1 / Direct3D 11 spatial reconstruction and frame-generation research project.
 
-PTAR combines the PTAR-NG MoE spatial reconstruction path with an asynchronous frame-generation pipeline using NVIDIA NVENC motion-estimation capabilities, a custom Direct3D 11 presentation path and an integrated QSV recorder.
+PTAR combines the PTAR-NG MoE spatial reconstruction path with an asynchronous frame-generation pipeline using NVIDIA NVENC motion-estimation capabilities and a custom Direct3D 11 presentation path. The project targets measurable, reproducible graphics improvements on legacy Windows/GPU configurations, with external visible-frame validation and non-destructive install/rollback tooling.
 
-> **Current validated runtime:** **GW16H UNIFIEDREC3 — SAFEPOINT11 / FUSEDDETAIL1 / HUDREC1** on Windows 8.1 x64 / GTX 960M.
-> Runtime SHA-256: `e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429`
-> Validated package SHA-256: `74de9ef43b012bdbf2175946fcabdc157fe9594401eb01922b79761248794b0a`
+> **Current runtime:** **SAFEPOINT11 / FUSEDDETAIL1 / HUDREC1 UNIVERSAL1** — game-agnostic x64 Direct3D 11 targeting. HUDREC1 runtime bytes remain `e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429`.
 
-## Current baseline — SAFEPOINT11 / FUSEDDETAIL1 / HUDREC1
+## Current baseline — SAFEPOINT11 / FUSEDDETAIL1
 
-HUDREC1 is the current hardware-validated delivery baseline. It keeps the validated SAFEPOINT11/FUSEDDETAIL1 spatial and frame-generation algorithms and changes only the native FG-OFF recorder source so the encoded MP4 contains the final PTAR HUD, including the live FPS value.
+SAFEPOINT11 keeps the validated GW16H presenter, recorder, QSV scheduling, hotkey and native-state fixes, and branches the FG quality work from SAFEPOINT8/TDETAIL4. SAFEPOINT9/10 parameter experiments are deliberately excluded from this lineage.
 
-The original SAFEPOINT11/FUSEDDETAIL1 runtime remains the direct ancestor:
+The main visual change is **FUSEDDETAIL1**, fused directly into the existing generated-frame compute shader for profile 3 **CONSERVATIVE**.
 
-`864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c`
-
-The HUDREC1 runtime is:
-
-`e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429`
-
-Hardware validation on the Windows 8.1 / GTX 960M reference machine confirmed that the integrated recorder now includes the PTAR HUD/FPS in recorded video.
-
-## What HUDREC1 changes
-
-- **FG ON:** unchanged recorder route; the recorder already consumes the final isolated REAL + GENERATED presenter backbuffer after HUD composition.
-- **FG OFF:** the recorder now consumes `BackBuffer0` from the final visible PTAR presenter instead of the game swapchain pre-HUD backbuffer.
-- With `Overlay=1`, the encoded MP4 contains the visible PTAR HUD, including FPS.
-- The FG algorithm, FUSEDDETAIL1 shader, quality profiles, NVENC ME policy, QSV conversion path and presentation cadence are otherwise unchanged.
-
-The functional DLL delta from SAFEPOINT11 is intentionally minimal: one functional byte at the native recorder swapchain source selection, plus the PE checksum update.
-
-## FG cadence marker (blinking squares)
-
-The small blinking squares visible while FG is active are the **VBlank visible cadence marker**. They are independent from the main PTAR HUD/FPS.
-
-Use:
-
-`diag\FG_MARKER_VISIBILITY.bat`
-
-The tool provides **STATUS / ON / OFF** control and changes only `VBlankDiagnostics=0/1`. Turning the marker OFF does **not** disable the FPS display or the rest of the HUD. The installed INI is backed up before modification, and `02-VERIFY_INSTALL.bat` accepts this supported setting difference while continuing to reject unrelated INI modifications.
-
-## Usage modes
-
-### PTAR with Frame Generation OFF
-
-This is the default startup mode (`FrameGeneration=0`).
-
-- PTAR spatial reconstruction remains active.
-- Only REAL frames are presented.
-- The integrated recorder remains available.
-- HUDREC1 records the final PTAR/native REAL presenter stream **with HUD/FPS** when `Overlay=1`.
-- The full FG profile cycle can be selected while FG is OFF.
-
-Use **`CTRL+F6`** to enable frame generation.
-
-### PTAR with Frame Generation ON
-
-- Spatial reconstruction remains active.
-- REAL and GENERATED frames are explicitly ordered by the presenter.
-- The validated FG target is 60 FPS.
-- The old automatic 30-FPS fallback is disabled.
-- The recorder captures the final REAL + GENERATED presenter stream, including HUD/FPS when `Overlay=1`.
-
-Use **`CTRL+F6`** again to disable FG.
-
-## FG quality profiles
-
-| ID | Profile | ME tier | Behaviour |
-|---:|---|---|---|
-| 0 | **LEGACY** | /3 | Historical /3 ME path + Guard65 |
-| 1 | **BALANCED** | /3 | /3 ME + Guard50 |
-| 2 | **QUALITY** | /2 | /2 ME + Guard35; FUSEDDETAIL1 bypassed |
-| 3 | **CONSERVATIVE / FUSEDDETAIL1** | /2 | /2 ME + Guard25, compressed motion trust and FUSEDDETAIL1 temporal-detail stabilizer |
-
-The configured default is **QUALITY (2)**.
-
-`CTRL+F8` behaviour:
-
-- first press shows the current profile without changing it;
-- press again while the notice is visible to select the next permitted profile;
-- FG OFF: full `0 -> 1 -> 2 -> 3` cycle;
-- FG ON: QUALITYSAFE1 keeps changes inside the current ME tier (`0 <-> 1` or `2 <-> 3`).
-
-To cross from `/2` to `/3` or vice versa, disable FG first, select the desired profile, then re-enable FG.
-
-## Screenshot capture — F9
-
-Press **`F9`** to capture a BMP through PTAR's integrated capture path.
-
-Files use the naming scheme:
-
-`win81_nis_capture_N.bmp`
-
-F9 is independent from the MP4 recorder and can be used while video recording is active.
-
-## Video recording with PTAR HUD / FPS — CTRL+F9
-
-Press **`CTRL+F9`** to start recording and press it again to stop/finalize the MP4.
-
-HUDREC1 records the visible PTAR output:
-
-- **FG OFF:** final native PTAR presenter + HUD/FPS;
-- **FG ON:** final REAL + GENERATED presenter + HUD/FPS.
-
-### Video recording profiles
-
-`VideoRecordProfile` in `payload/win81_nis.ini` selects the recorder profile:
-
-| Value | Name | Resolution / FPS | Bitrate | Intended use |
-|---:|---|---|---:|---|
-| 1 | **QUALITY** | 1920x1080 / 30 FPS | 16000 kbps | Maximum spatial detail |
-| 2 | **MOTION** | 1600x900 / 60 FPS | 17000 kbps | Motion/FG demonstrations with lower capture load |
-| 3 | **COMBINED** | 1920x1080 / 60 FPS | 22000 kbps | Full spatial detail + 60 FPS; heaviest mode |
-
-The validated package uses **profile 3 — COMBINED**. Invalid values safely fall back to profile 1.
-
-## Runtime hotkeys
-
-| Shortcut | Runtime action |
-|---|---|
-| **F6** | Manual filter action |
-| **CTRL+F6** | Toggle Frame Generation ON / OFF |
-| **F7** | Integrated benchmark (3 s warm-up + 10 s measurement in the current config) |
-| **F8** | Show PTAR runtime status |
-| **CTRL+F8** | Show/change FG quality profile |
-| **F9** | Capture BMP screenshot |
-| **CTRL+F9** | Start/stop integrated MP4 video recording |
-| **F10** | Toggle PTAR presenter |
-| **CTRL+F11** | Toggle PTAR HUD/overlay |
-| **F12** | Select next filter |
-
-`CTRL+F6` and `CTRL+F8` retain explicit hotkey-isolation fixes so their base-key actions do not leak into plain F6/F8 handling.
-
-## QUALITY versus CONSERVATIVE
-
-**QUALITY** remains the highest-fidelity FG profile. FUSEDDETAIL1 is mathematically bypassed at its `G=.35` gate. A historical field defect remains documented: motion-trail/ghost-like persistence can appear around the moving character with FG active.
-
-**CONSERVATIVE / FUSEDDETAIL1** prioritizes temporal stability on difficult thin/repetitive structures and materially reduces localized shimmer/detail oscillation on the validated problem areas.
-
-## Spatial reconstruction — PTAR-NG MoE
-
-The spatial path remains **PTAR-NG MoE v01**, commonly used at:
-
-`1280x720 -> 1920x1080`
-
-for exact x1.5 reconstruction in both dimensions. Spatial reconstruction and frame generation remain separate subsystems.
-
-## FUSEDDETAIL1
-
-FUSEDDETAIL1 is active only on profile 3 CONSERVATIVE. It is a temporal-detail stabilizer, not a sharpening filter.
-
-Design constraints retained from SAFEPOINT11:
+Its design constraints are cost-first:
 
 - no new texture resource;
 - no new UAV;
 - no new resource binding;
 - no new Dispatch;
-- source-level `.Load()` count remains 7;
-- REAL frames remain untouched;
-- only a small ALU/min/max/lerp tail is added to GENERATED.
+- source-level `.Load()` count remains **7**, identical to TDETAIL4;
+- REAL frames are untouched;
+- only a small ALU/min/max/lerp tail is added to the GENERATED path.
+
+FUSEDDETAIL1 reuses the four bilinear texels already loaded from each REAL endpoint, estimates a local 2x2 green-channel range and limits only excessive GENERATED deviation from the unwarped REAL blend.
+
+It is a temporal-detail stabilizer, **not a sharpening filter**.
+
+## Hardware validation status
+
+The SAFEPOINT11/FUSEDDETAIL1 hardware gate was run on the Windows 8.1 / GTX 960M reference machine with PTAR x1.5 and FG active, using profile 3 **CONSERVATIVE**.
+
+The field run confirmed the intended improvement on the two localized high-frequency problem areas used during development:
+
+- the selection circle / halo at the character feet;
+- repetitive floor grilles / vents.
+
+Compared with the TDETAIL4 reference capture, the strong high-frequency frame-to-frame excursion on aligned problem windows fell substantially. The field video also showed no corresponding presenter, FG-runtime or QSV failure signature attributable to FUSEDDETAIL1.
+
+The validated runtime identity is:
+
+`864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c`
+
+The validated package supplied for promotion has SHA-256:
+
+`dd2287c2e9d5e3ba7cc0c588821c47419ce1aaaee37a7f5a4b3b25d792786114`
+
+Static package checks in the promoted package include:
+
+- FUSEDDETAIL1 validation: **70/70 PASS**;
+- package validation: **83/83 PASS**;
+- internal SHA ledger: **103/103** entries verified before promotion.
+
+
+## HUDREC1 — video recording with PTAR HUD / FPS
+
+This package keeps the validated **SAFEPOINT11 / FUSEDDETAIL1** frame-generation and spatial-reconstruction algorithms unchanged and changes only the native FG-OFF recorder source so recorded MP4 files can contain the same PTAR HUD that is visible on screen.
+
+- **FG ON:** the recorder continues to consume the existing final isolated presenter BackBuffer used by the validated REAL + GENERATED path; this route is unchanged.
+- **FG OFF:** the recorder now consumes `BackBuffer0` from the final visible PTAR presenter instead of the game swapchain BackBuffer. The native HUD draw already occurs immediately before recorder submission.
+- With `Overlay=1`, the recorded image is therefore intended to include the PTAR HUD, including the **FPS** value.
+- The FG algorithm, FUSEDDETAIL1 shader, quality profiles, NVENC ME policy, QSV recorder conversion path and presentation cadence are not otherwise changed.
+
+The HUD recording change is lab/static validated in this package. The final hardware gate is one short GTX 960M session with two ~5 s recordings: Clip A with FG OFF (the modified route) and Clip B with FG ON (the preserved route), both confirming that HUD/FPS is visible in the encoded MP4.
+
+### FG cadence marker (blinking squares)
+
+The small blinking squares shown while FG is active are the **VBlank visible cadence marker**. They are independent from the main HUD/FPS display.
+
+Run:
+
+`diag\\FG_MARKER_VISIBILITY.bat`
+
+The menu can:
+
+1. show the current marker state;
+2. enable the blinking FG squares;
+3. disable the blinking FG squares;
+4. exit without changing anything.
+
+This changes only `VBlankDiagnostics=0/1`. It does **not** disable the PTAR HUD or FPS. The tool backs up the installed INI before changing it, and `02-VERIFY_INSTALL.bat` accepts this single supported configuration difference while still rejecting any other unexpected INI modification.
+
+## QUALITY versus CONSERVATIVE
+
+The current profile semantics are intentionally different.
+
+### QUALITY
+
+QUALITY remains the highest-fidelity FG profile. FUSEDDETAIL1 is mathematically bypassed at the QUALITY gate (`G=.35`), so SAFEPOINT11 does not intentionally alter QUALITY image synthesis.
+
+A remaining field defect has been identified in QUALITY: a visible **motion trail / ghost-like persistence around the moving character with FG active**. This is tracked separately from the FUSEDDETAIL1 work.
+
+### CONSERVATIVE
+
+CONSERVATIVE prioritizes temporal stability on difficult thin/repetitive structures. FUSEDDETAIL1 is active here and materially reduces the localized shimmer/detail oscillation observed in earlier profile-3 experiments.
+
+The intention is not to make CONSERVATIVE globally softer. Stable and low-motion content should remain nearly unchanged while unstable generated high-frequency detail is selectively bounded.
+
+## Spatial reconstruction — PTAR-NG MoE
+
+The current spatial path remains **PTAR-NG MoE v01**, commonly used at:
+
+`1280x720 -> 1920x1080`
+
+for an exact x1.5 reconstruction in both dimensions.
+
+Spatial reconstruction and frame generation remain distinct subsystems. The next major quality work therefore targets the PTAR reconstruction engine itself rather than trying to compensate for spatial limitations inside FG.
+
+## What next — PTAR-NG MoE v02 / Native Detail Recovery
+
+The next planned development phase is an improvement of the **PTAR engine itself**.
+
+The objective is to move PTAR's reconstructed 1080p image materially closer to a native 1920x1080 reference while retaining the performance characteristics that make PTAR useful on hardware such as the GTX 960M.
+
+The first v02 laboratory branch will keep the current single-pass architecture and will initially try to preserve the current texture-sampling budget. The main research directions are:
+
+1. **x1.5 subpixel-phase reconstruction** — exploit the repeating phase structure of the fixed 720p -> 1080p mapping instead of treating every output position identically;
+2. **stronger directional experts** — improve reconstruction of horizontal, vertical and diagonal structures rather than merely increasing local contrast;
+3. **bounded micro-detail residual** — recover useful luminance detail while preventing halos, ringing and artificial oversharpening;
+4. **flat/edge/texture discrimination** — avoid turning 720p aliasing or noise into false detail;
+5. **anti-ringing / anti-shimmer constraints** — spatial quality gains must not recreate the temporal instability already observed on grilles, circles and other repetitive structures.
+
+The native 1080p field capture will be used as ground truth in the laboratory:
+
+`native 1080p -> controlled downsample to 720p -> PTAR candidate -> comparison with original native 1080p`
+
+Candidates will be evaluated before any new hardware request. The initial goal is to gain fidelity mainly through better computation/weights rather than additional bandwidth. A higher-cost variant with one extra texture access will only be considered if the sampling-constant v02 path does not close enough of the native-quality gap.
+
+Only after the spatial engine has improved sufficiently will the remaining QUALITY FG motion-trail defect be revisited on top of the stronger spatial baseline.
+
+## Frame-generation architecture
+
+PTAR's frame-generation pipeline includes:
+
+- Direct3D 11 proxy/presenter interception;
+- asynchronous generated-frame work;
+- NVIDIA NVENC-based motion-estimation support;
+- explicit REAL / GENERATED ordering;
+- isolated display/presentation handling;
+- visible cadence diagnostics;
+- external visible-frame verification;
+- live FG quality-profile infrastructure;
+- original B18K18/QSV recorder integration with the SAFEPOINT recorder/state fixes.
+
+A generated frame counts as successful only when it is actually delivered through the visible DXGI/DWM presentation chain. Internal counters are diagnostic data, not proof of visible frame rate.
 
 ## Recorder and state-safety lineage
 
-HUDREC1 retains the validated recorder work from SAFEPOINT11:
+SAFEPOINT11 retains the validated recorder work developed before FUSEDDETAIL1, including:
 
-- one original B18K18/QSV recorder path;
+- one original internal B18K18 recorder path;
 - `CTRL+F9` recording with FG ON or OFF;
-- recorder-local fullscreen VS/rasterizer state tied to the active recorder device;
-- native immediate-context state save/restore around conversion;
-- QSV encode/pipe scheduling at NORMAL;
-- GPU readback worker at BELOW_NORMAL;
+- native swapchain BackBuffer0 capture for FG-OFF USR paths;
+- recorder-local fullscreen VS / rasterizer state tied to the active recorder device;
+- native immediate-context state save/restore around the recorder conversion path;
+- QSV encode/pipe scheduling at NORMAL while the GPU readback worker remains BELOW_NORMAL;
 - safe finalization and evidence collection.
 
-HUDREC1 changes only the FG-OFF source swapchain used for the recorder feed.
+These subsystems were intentionally not redesigned for FUSEDDETAIL1.
 
-## Installation / validation
+## Installation / controlled validation
 
 1. Close the game.
 2. Run `01-INSTALL_GW16.bat`.
 3. Run `02-VERIFY_INSTALL.bat` and require `VERIFY=PASS`.
-4. Launch the game.
-5. PTAR starts with FG OFF.
-6. `CTRL+F6` toggles FG.
-7. `CTRL+F8` selects the supported FG profile.
-8. `F9` captures a BMP.
-9. `CTRL+F9` starts/stops MP4 recording.
-10. `diag\FG_MARKER_VISIBILITY.bat` controls only the blinking FG cadence marker.
-11. `04-COLLECT_RESULTS.bat` collects diagnostics when needed.
+4. Launch the test scene.
+5. Enable FG with the supported hotkey path.
+6. Use `CTRL+F8` for the supported live FG profile selection policy.
+7. Use `CTRL+F9` to start/stop the integrated recorder when evidence is needed.
+8. Run `04-COLLECT_RESULTS.bat` to collect the diagnostic package.
 
-`05-ROLLBACK_TEST.bat` provides controlled rollback. `06-DESINSTALLER_PTAR_COMPLET.bat` uses the ownership/SHA-aware safe uninstall path.
+Frame generation starts **OFF** by default.
 
-## Validation status
+`05-ROLLBACK_TEST.bat` provides the controlled rollback path. `06-DESINSTALLER_PTAR_COMPLET.bat` uses the ownership/SHA-aware safe uninstall mechanism.
 
-HUDREC1 V2 passed the package laboratory gates before field testing:
+## Validation model
 
-- recorder HUD gate: **38/38 PASS**;
-- FG marker control gate: **17/17 PASS**;
-- package gate: **87/87 PASS**;
-- SHA ledger: **115/115 PASS**;
-- ownership ledger: **116/116 PASS**;
-- deterministic ZIP rebuild: PASS;
-- ZIP CRC: PASS.
+PTAR separates three validation levels:
 
-The final Windows 8.1 / GTX 960M field validation then confirmed the requested behaviour: recorded video contains the PTAR HUD/FPS.
+- **laboratory/static validation** — package structure, deterministic patches, binary identities, shader/source invariants and regression contracts;
+- **runtime validation** — confirmation that the intended runtime/configuration path is active;
+- **hardware field validation** — real GPU/driver timing, visible frame delivery and perceptual behaviour that cannot be proven offline.
+
+Hardware claims are made only from actual hardware evidence.
 
 ## Repository layout
 
-The maintained branches are intentionally limited to:
+- **`main`** — promoted hardware-validated runtime baseline, installer/rollback/recorder tooling, diagnostic evidence and current documentation.
+- **`SOURCE`** — durable PTAR Project Master with source, integration material, corpora, benchmarks, build tooling, validation and historical evidence.
 
-- **`main`** — current hardware-validated SAFEPOINT11/FUSEDDETAIL1/HUDREC1 delivery baseline, installer/rollback/recorder tooling, diagnostics and documentation;
-- **`SOURCE`** — durable PTAR Project Master containing source, integration material, corpora, benchmarks, build tooling, validation and historical evidence.
-
-Experimental Windowed/Borderless RC43-RC66 branches were abandoned and removed.
+Historical evidence is retained as evidence. Missing historical source is identified as missing rather than silently reconstructed and presented as original source.
 
 ## Development policy
 
+PTAR development follows a few strict rules:
+
 - preserve validated subsystems unless the active defect requires a change;
-- promote only after the relevant laboratory and hardware gates;
+- isolate experiments and promote only after the appropriate gate;
 - prefer non-destructive installation, rollback and uninstall behaviour;
 - keep deterministic hashes and evidence with each validated implementation;
-- perform all reproducible laboratory tests before requesting hardware tests;
+- perform all reproducible laboratory tests before requesting a hardware test;
+- request hardware testing only for behaviour that cannot be reproduced locally;
 - never treat an internal FPS counter as proof of visible output;
-- preserve Windows 8.1 compatibility as an absolute constraint.
+- prioritize quality improvements that preserve the performance envelope of the target legacy hardware.
 
 ## License
 

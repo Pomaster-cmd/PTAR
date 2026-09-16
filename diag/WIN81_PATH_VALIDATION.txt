@@ -1,30 +1,39 @@
-[PASS] fixture has spaces
-[PASS] fixture has comma
-[PASS] fixture has hyphen
-[PASS] fixture has trailing backslash
-[PASS] no -GameRoot CLI argument in launcher
+[PASS] fixture has spaces or nested path
+[PASS] installer accepts explicit GameExe
+[PASS] installer supports PTAR_GAME_EXE env
+[PASS] installer supports optional target hint
+[PASS] installer validates PE64
+[PASS] installer stores exact target exe
+[PASS] installer stores target directory handoff
+[PASS] installer stores target executable handoff
+[PASS] installer dynamic TargetExe substitution
+[PASS] installer has no game registry mutation
+[PASS] launcher reads target root handoff
+[PASS] launcher reads target exe handoff
 [PASS] launcher exports PTAR_GAME_ROOT
-[PASS] launcher canonicalizes GAMEROOT dot path
+[PASS] launcher exports PTAR_TARGET_EXE
 [PASS] runner reads PTAR_GAME_ROOT
+[PASS] runner reads PTAR_TARGET_EXE
 [PASS] runner does not use Resolve-Path
-[PASS] root resolution occurs inside try
 [PASS] runner validates root with LiteralPath
-[PASS] runner canonicalizes with GetFullPath
-[PASS] runner validates Warhammer.exe
+[PASS] runner canonicalizes root
+[PASS] runner validates selected exe
+[PASS] runner checks exe/root pairing
 [PASS] runner supports preflight
-[PASS] verify runs same preflight
+[PASS] verify exports same root
+[PASS] verify exports same target exe
 [PASS] PS4 excludes ??
 [PASS] PS4 excludes ?.
 [PASS] PS4 excludes ForEach-Object -Parallel
 [PASS] PS4 excludes ConvertFrom-Json -AsHashtable
 [PASS] PS4 excludes Get-FileHash -InputStream
-[PASS] no Add-Type in runner
 [PASS] direct Framework4 CSC
-[PASS] compile output path object-safe
 [PASS] dedicated executable target
 [PASS] preflight executes compiled EXE
-[PASS] no dynamic assembly loading
 [PASS] no invalid New-Item -LiteralPath
 [PASS] temp directory uses System.IO
 [PASS] actual run executes dedicated EXE
-WIN81_PATH_HANDOFF_VALIDATION=29/29 PASS
+[PASS] functional path excludes Warhammer.exe
+[PASS] functional path excludes NeoCore Games\Warhammer
+[PASS] functional path excludes Get-Process Warhammer
+WIN81_PATH_HANDOFF_UNIVERSAL_VALIDATION=38/38 PASS

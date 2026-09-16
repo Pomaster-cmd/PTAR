@@ -25,10 +25,12 @@ $m=Get-Content -LiteralPath (Join-Path $state 'install_state.json') -Raw|Convert
 if((-not $m.schema) -or ([int]$m.schema -lt 3)){throw 'Etat installation PTAR trop ancien/incomplet pour cette desinstallation securisee.'}
 $target=[IO.Path]::GetFullPath([string]$m.game_root);if(-not $target.EndsWith('\')){$target+='\'}
 
-# Game must be closed. Match by executable path when possible, not only process name.
-$exe=Join-Path $target 'Warhammer.exe';$running=$false
-Get-Process -ErrorAction SilentlyContinue|ForEach-Object{try{if([IO.Path]::GetFullPath($_.MainModule.FileName) -ieq [IO.Path]::GetFullPath($exe)){$running=$true}}catch{}}
-if($running){throw 'Le jeu est ouvert. Aucun fichier ne sera desinstalle.'}
+# Game must be closed. UNIVERSAL1 stores the exact selected executable path.
+$exe=[string]$m.target_exe
+if([string]::IsNullOrWhiteSpace($exe)){throw 'Executable cible absent de l etat UNIVERSAL1.'}
+$exe=[IO.Path]::GetFullPath($exe);$running=$false
+Get-Process -ErrorAction SilentlyContinue|ForEach-Object{try{if([IO.Path]::GetFullPath($_.MainModule.FileName) -ieq $exe){$running=$true}}catch{}}
+if($running){throw ('Le jeu est ouvert : '+$exe+'. Aucun fichier ne sera desinstalle.')}
 L('[CIBLE] '+$target)
 L('[POLITIQUE] Desinstallation par ownership exact + SHA; aucun fichier generique/non-PTAR cible.')
 
@@ -61,11 +63,6 @@ foreach($n in $names){
 # Exact PTAR runtime outputs only. Result ZIPs are intentionally kept for the user.
 foreach($n in @('win81_nis.log','win81_nis_install_target.txt','win81_nis_install_exe.txt','win81_nis_install_backup.txt','win81_nis_quarantined_p1fg7n.txt','PTAR_VISIBLE_VERIFIER_LAST_STATUS.txt','PTAR_VISIBLE_VERIFIER_LAST_OUTPUT.txt','PTAR_VISIBLE_VERIFIER_LAST_SAMPLES.csv','PTAR_VISIBLE_VERIFIER_LAST_ERROR.txt','PTAR_VISIBLE_VERIFIER_LAST_COUNTS.txt','PTAR_FLUIDITY_LAST_OUTPUT.txt','PTAR_FLUIDITY_LAST_SAMPLES.csv','PTAR_FLUIDITY_LAST_DONE.flag','PTAR_FLUIDITY_LAST_ERROR.txt','PTAR_FLUIDITY_PROBE_READY.flag','PTAR_FLUIDITY_PROBE_PID.txt')){
     $p=Join-Path $target $n;if(Test-Path -LiteralPath $p -PathType Leaf){Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue;L('[OK] Sortie dynamique PTAR retiree : '+$n)}
-}
-
-# Restore registry value only if this exact GW16 install changed it.
-if($m.windowstyle -and $m.windowstyle.applied -and $m.windowstyle.exists){
-    if(Test-Path -LiteralPath ([string]$m.windowstyle.key)){Set-ItemProperty -LiteralPath ([string]$m.windowstyle.key) -Name WindowStyle -Value ([int]$m.windowstyle.original);L('[OK] WindowStyle restaure a sa valeur pre-installation GW16.')}
 }
 
 # Cache ownership lists before deleting package control files.

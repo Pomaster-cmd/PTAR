@@ -1,6 +1,6 @@
 PTAR GW16H SAFEPOINT11/FUSEDDETAIL1 - HUDREC1 FINDING
 DATE=2026-09-16
-STATUS=LAB_STATIC_VALIDATED_HARDWARE_VIDEO_GATE_PENDING
+STATUS=FIELD_PASS_HUD_FPS_CONFIRMED
 
 BASE_RUNTIME_SHA256=864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c
 HUDREC1_RUNTIME_SHA256=e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429
@@ -31,8 +31,8 @@ FG CADENCE MARKER
 - The helper creates an INI backup before mutation.
 - verify.ps1 accepts exactly this one supported INI difference and rejects other changes.
 
-HARDWARE GATE
-One short GTX 960M session with two approximately 5-second recordings is still required:
-- CLIP A, FG OFF: confirms the actually modified native recorder route captures the visible HUD/FPS.
-- CLIP B, FG ON: confirms the unchanged isolated final-backbuffer recorder route still captures HUD/FPS.
-No broad hardware regression suite is required.
+HARDWARE RESULT
+- User confirmed the HUDREC1 build works on the reference Windows 8.1 / GTX 960M machine.
+- Integrated CTRL+F9 MP4 includes the PTAR HUD/FPS as required.
+- HUDREC1 runtime is therefore field-validated for the recorder change.
+- UNIVERSAL1 changes only target-selection/package logic; runtime bytes remain exactly HUDREC1.

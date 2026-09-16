@@ -65,3 +65,18 @@ Une seule session materielle tres courte est necessaire apres les gates labo :
 4. optionnel : utiliser diag\\FG_MARKER_VISIBILITY.bat pour masquer/afficher uniquement les petits carres FG et verifier que le HUD/FPS reste visible.
 
 Le clip A est le gate fonctionnel principal de HUDREC1, car le patch binaire modifie uniquement la source du recorder FG OFF. Le clip B confirme que le chemin FG ON, laisse inchange, reste bien post-HUD. Aucune suite de regression materielle large n'est demandee.
+
+
+GATE UNIVERSAL1 - CIBLAGE MULTI-JEU
+====================================
+PTAR n'est pas lie a Warhammer. Le runtime HUDREC1 est conserve byte-identique.
+
+Test recommande :
+1. Extraire le pack a cote de l executable x64 du jeu, ou lancer :
+   01-INSTALL_GW16.bat "C:\chemin\vers\Game.exe"
+2. 02-VERIFY_INSTALL.bat doit afficher VERIFY=PASS.
+3. Verifier que win81_nis.ini installe contient TargetExe=<nom reel du jeu>.
+4. Lancer le jeu D3D11 et confirmer affichage HUD / reconstruction.
+5. CTRL+F9 : confirmer video avec HUD/FPS.
+
+Warhammer/Inquisitor est uniquement un titre de validation historique.

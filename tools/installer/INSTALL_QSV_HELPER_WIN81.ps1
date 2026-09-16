@@ -29,10 +29,6 @@ function Resolve-GameTarget {
         }
     }
 
-    $renderer = Get-ChildItem -LiteralPath $Root -Filter '*-Win64-Shipping.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($renderer -and (Test-Path -LiteralPath (Join-Path $Root 'd3d11.dll') -PathType Leaf)) {
-        return $Root
-    }
     return $null
 }
 
@@ -114,7 +110,7 @@ try {
     New-Item -ItemType Directory -Force -Path $Tools,$DownloadDir | Out-Null
 
     $Target = Resolve-GameTarget
-    if (-not $Target) { throw 'Cible du jeu introuvable. Lance d abord 01-INSTALL_FULLSTACK1.bat.' }
+    if (-not $Target) { throw 'Cible du jeu introuvable. Lance d abord 01-INSTALL_GW16.bat.' }
 
     Write-Log ('[TARGET] ' + $Target)
 

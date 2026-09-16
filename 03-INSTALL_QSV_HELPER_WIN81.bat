@@ -27,13 +27,10 @@ if exist "%TARGET_FILE%" (
   )
 )
 
-if not defined TARGET (
-  if exist "%ROOT%SatGat-Win64-Shipping.exe" set "TARGET=%ROOT%"
-)
 
 if not defined TARGET (
   echo [FAIL] Cible du jeu introuvable.
-  echo        Lance d'abord 01-INSTALL_FULLSTACK1.bat.
+  echo        Lance d'abord 01-INSTALL_GW16.bat.
   pause
   exit /b 21
 )
