@@ -1,0 +1,129 @@
+name: universal1-multigame-regression
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '01-INSTALL_GW16.bat'
+      - '02-VERIFY_INSTALL.bat'
+      - '03-ARM_VISIBLE_FRAME_VERIFIER.bat'
+      - '03-INSTALL_QSV_HELPER_WIN81.bat'
+      - '04-COLLECT_RESULTS.bat'
+      - '04-TEST_QSV_5S_MP4.bat'
+      - '05-ROLLBACK_TEST.bat'
+      - '06-DESINSTALLER_PTAR_COMPLET.bat'
+      - 'README.md'
+      - 'README_TEST.txt'
+      - 'payload/**'
+      - 'diag/**'
+      - '_PTAR_UNINSTALL/**'
+      - 'tools/installer/**'
+      - '.github/workflows/universal1-multigame-regression.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate UNIVERSAL1 repository contracts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $tests=@(
+            'diag/validate_recorder_hudrec1.py',
+            'diag/validate_fg_marker_visibility.py',
+            'diag/validate_universal_targeting.py',
+            'diag/validate_win81_path_handoff.py',
+            'diag/validate_ps4_compat.py'
+          )
+          foreach($t in $tests){
+            Write-Host "== $t =="
+            & python $t
+            if($LASTEXITCODE -ne 0){ throw "$t failed with code $LASTEXITCODE" }
+          }
+          $h=(Get-FileHash payload/d3d11.dll -Algorithm SHA256).Hash.ToLowerInvariant()
+          $hm=(Get-FileHash payload/win81_nis_dx11_x64.dll -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($h -ne 'e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429'){throw "runtime drift $h"}
+          if($hm -ne $h){throw "mirror runtime drift $hm"}
+          Write-Host 'UNIVERSAL1_STATIC=PASS'
+
+  multigame:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exercise two unrelated x64 executable names and reject x86
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $ps="$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+          $tmp=Join-Path $env:RUNNER_TEMP 'PTAR_UNIVERSAL1_MULTI'
+          if(Test-Path $tmp){Remove-Item $tmp -Recurse -Force}
+          New-Item -ItemType Directory -Path $tmp | Out-Null
+
+          function Invoke-Install([string]$exe,[switch]$ViaEnv){
+            if($ViaEnv){
+              $env:PTAR_GAME_EXE=$exe
+              & $ps -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\diag\install.ps1
+              $rc=$LASTEXITCODE
+              Remove-Item Env:PTAR_GAME_EXE -ErrorAction SilentlyContinue
+            }else{
+              & $ps -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\diag\install.ps1 -GameExe $exe
+              $rc=$LASTEXITCODE
+            }
+            if($rc -ne 0){throw "install failed for $exe rc=$rc"}
+          }
+          function Assert-Installed([string]$dir,[string]$name){
+            $dll=Join-Path $dir 'd3d11.dll'
+            $ini=Join-Path $dir 'win81_nis.ini'
+            if(-not(Test-Path $dll)){throw "d3d11.dll absent in $dir"}
+            if(-not(Test-Path $ini)){throw "win81_nis.ini absent in $dir"}
+            $h=(Get-FileHash $dll -Algorithm SHA256).Hash.ToLowerInvariant()
+            if($h -ne 'e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429'){throw "runtime hash drift $h"}
+            $lines=Get-Content $ini
+            if($lines -notcontains ("TargetExe="+$name)){throw "TargetExe mismatch, expected $name"}
+            & $ps -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\diag\verify.ps1
+            if($LASTEXITCODE -ne 0){throw "verify failed for $name rc=$LASTEXITCODE"}
+          }
+          function Invoke-Rollback([string]$dir,[string]$exe){
+            & $ps -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\diag\rollback_test.ps1
+            if($LASTEXITCODE -ne 0){throw "rollback failed rc=$LASTEXITCODE"}
+            if(-not(Test-Path $exe)){throw 'target exe removed by rollback'}
+            foreach($n in @('d3d11.dll','win81_nis_dx11_x64.dll','win81_nis.ini','win81_nis_version.txt')){
+              if(Test-Path (Join-Path $dir $n)){throw "$n remained in fresh target after rollback"}
+            }
+          }
+
+          $a=Join-Path $tmp 'Game_A'
+          New-Item -ItemType Directory -Path $a | Out-Null
+          $aExe=Join-Path $a 'StarGazer.exe'
+          Copy-Item "$env:SystemRoot\System32\notepad.exe" $aExe
+          Invoke-Install $aExe
+          Assert-Installed $a 'StarGazer.exe'
+          Invoke-Rollback $a $aExe
+
+          $b=Join-Path $tmp 'Game_B'
+          New-Item -ItemType Directory -Path $b | Out-Null
+          $bExe=Join-Path $b 'TotallyDifferentGame.exe'
+          Copy-Item "$env:SystemRoot\System32\notepad.exe" $bExe
+          Invoke-Install $bExe -ViaEnv
+          Assert-Installed $b 'TotallyDifferentGame.exe'
+          Invoke-Rollback $b $bExe
+
+          $c=Join-Path $tmp 'Game_32'
+          New-Item -ItemType Directory -Path $c | Out-Null
+          $cExe=Join-Path $c 'Legacy32.exe'
+          Copy-Item "$env:SystemRoot\SysWOW64\notepad.exe" $cExe
+          & $ps -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\diag\install.ps1 -GameExe $cExe
+          $x86rc=$LASTEXITCODE
+          if($x86rc -eq 0){throw 'x86 executable was incorrectly accepted'}
+          if(Test-Path (Join-Path $c 'd3d11.dll')){throw 'runtime copied despite x86 rejection'}
+
+          $global:LASTEXITCODE=0
+          Write-Host 'UNIVERSAL1_MULTIGAME_WINDOWS=PASS'
