@@ -1,8 +1,6 @@
 
 ## Universal game targeting — UNIVERSAL1
 
-PTAR is **not tied to Warhammer**. Warhammer/Inquisitor is only one historical hardware-validation title.
-
 The current runtime DLL is game-agnostic: the exact HUDREC1 binary `e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429` contains no `Warhammer`, `Inquisitor` or `NeoCore` literal. `TargetExe` is selected at installation time and written into the installed INI.
 
 Supported targeting workflow:
