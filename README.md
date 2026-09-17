@@ -1,4 +1,3 @@
-
 ## Universal game targeting — UNIVERSAL1
 
 The current runtime DLL is game-agnostic: the exact HUDREC1 binary `e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429` contains no `Warhammer`, `Inquisitor` or `NeoCore` literal. `TargetExe` is selected at installation time and written into the installed INI.
@@ -15,7 +14,6 @@ Supported targeting workflow:
 - no game-specific registry key is modified.
 
 The current production binary is x64 D3D11. Games using another graphics API or a 32-bit process require a corresponding PTAR runtime and are outside this build's compatibility envelope.
-
 
 # PTAR
 
@@ -70,7 +68,6 @@ Static package checks in the promoted package include:
 - package validation: **83/83 PASS**;
 - internal SHA ledger: **103/103** entries verified before promotion.
 
-
 ## HUDREC1 — video recording with PTAR HUD / FPS
 
 This package keeps the validated **SAFEPOINT11 / FUSEDDETAIL1** frame-generation and spatial-reconstruction algorithms unchanged and changes only the native FG-OFF recorder source so recorded MP4 files can contain the same PTAR HUD that is visible on screen.
@@ -88,7 +85,7 @@ The small blinking squares shown while FG is active are the **VBlank visible cad
 
 Run:
 
-`diag\\FG_MARKER_VISIBILITY.bat`
+`diag\FG_MARKER_VISIBILITY.bat`
 
 The menu can:
 
@@ -114,6 +111,60 @@ A remaining field defect has been identified in QUALITY: a visible **motion trai
 CONSERVATIVE prioritizes temporal stability on difficult thin/repetitive structures. FUSEDDETAIL1 is active here and materially reduces the localized shimmer/detail oscillation observed in earlier profile-3 experiments.
 
 The intention is not to make CONSERVATIVE globally softer. Stable and low-motion content should remain nearly unchanged while unstable generated high-frequency detail is selectively bounded.
+
+## Frame-generation modes, recorder profiles and shortcuts
+
+The current runtime exposes four FG quality profiles. `FrameGenerationQuality=2` is the default profile stored in the INI.
+
+| Profile | Name | Current policy |
+| --- | --- | --- |
+| `0` | **LEGACY** | Historical `/3` motion-estimation tier with `Guard65`. |
+| `1` | **BALANCED** | `/3` motion-estimation tier with `Guard50`. |
+| `2` | **QUALITY** | `/2` motion-estimation tier with `Guard35`; current high-fidelity baseline. FUSEDDETAIL1 is bypassed at this gate. |
+| `3` | **CONSERVATIVE / FUSEDDETAIL1** | TDETAIL4 `/2` tier with `Guard25`, compressed motion trust and the FUSEDDETAIL1 generated-frame detail stabilizer. |
+
+### Changing the FG profile
+
+`CTRL+F8` opens the FG quality/profile control. The first press displays the current profile without changing it; pressing it again while the profile name is visible selects the next permitted profile.
+
+The live-selection scope intentionally depends on FG state:
+
+- **FG ON:** profile changes stay inside the current motion-estimation tier: `0 <-> 1` for the `/3` tier and `2 <-> 3` for the `/2` tier;
+- **FG OFF:** the complete cycle `0 -> 1 -> 2 -> 3` is available;
+- to cross from one ME tier to the other, disable FG, select the wanted profile, then enable FG again.
+
+This restriction avoids changing ME tier underneath an active FG session.
+
+### Recorder profiles
+
+The integrated recorder has three predefined profiles. `VideoRecordProfile=3` is the current default.
+
+| Recorder profile | Name | Resolution | FPS | Bitrate |
+| --- | --- | ---: | ---: | ---: |
+| `1` | **QUALITY** | 1920x1080 | 30 | 16000 kbps |
+| `2` | **MOTION** | 1600x900 | 60 | 17000 kbps |
+| `3` | **COMBINED** | 1920x1080 | 60 | 22000 kbps |
+
+Invalid recorder-profile values fall back to profile `1`.
+
+### Keyboard shortcuts
+
+The table below mirrors the current `[HOTKEYS]` contract in `win81_nis.ini`.
+
+| Shortcut | Action |
+| --- | --- |
+| `F6` | `ManualFilter` |
+| `CTRL+F6` | Toggle frame generation (`FrameGeneration`) |
+| `F7` | `Benchmark` |
+| `F8` | `Status` |
+| `CTRL+F8` | FG quality/profile menu; handled separately from plain `F8` |
+| `F9` | `Capture` |
+| `CTRL+F9` | Start/stop integrated video recording (`VideoRecord`) |
+| `F10` | Toggle presenter (`TogglePresenter`) |
+| `CTRL+F11` | Toggle PTAR HUD (`ToggleHUD`) |
+| `F12` | `FilterNext` |
+
+Chord isolation is deliberate: `CTRL+F6` must not also trigger plain `F6`, and `CTRL+F8` must not also trigger the plain-`F8` status action.
 
 ## Spatial reconstruction — PTAR-NG MoE
 
