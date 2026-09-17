@@ -1,0 +1,3 @@
+payload/win81_nis.ini -text
+payload/win81_nis_version.txt -text
+payload/*.dll binary

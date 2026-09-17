@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     paths:
+      - '.gitattributes'
       - '01-INSTALL_GW16.bat'
       - '02-VERIFY_INSTALL.bat'
       - '03-ARM_VISIBLE_FRAME_VERIFIER.bat'
@@ -29,12 +30,10 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Restore integrity-locked payload bytes
+      - name: Verify integrity-locked payload bytes
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          git config core.autocrlf false
-          git checkout-index --force --all
           $hini=(Get-FileHash payload/win81_nis.ini -Algorithm SHA256).Hash.ToLowerInvariant()
           $hver=(Get-FileHash payload/win81_nis_version.txt -Algorithm SHA256).Hash.ToLowerInvariant()
           if($hini -ne 'dea8a93e97d3ad1b438973822d67ca9ac12477b5774933eea135ab71776c5648'){throw "INI payload checkout drift $hini"}
@@ -69,12 +68,10 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Restore integrity-locked payload bytes
+      - name: Verify integrity-locked payload bytes
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          git config core.autocrlf false
-          git checkout-index --force --all
           $hini=(Get-FileHash payload/win81_nis.ini -Algorithm SHA256).Hash.ToLowerInvariant()
           $hver=(Get-FileHash payload/win81_nis_version.txt -Algorithm SHA256).Hash.ToLowerInvariant()
           if($hini -ne 'dea8a93e97d3ad1b438973822d67ca9ac12477b5774933eea135ab71776c5648'){throw "INI payload checkout drift $hini"}
