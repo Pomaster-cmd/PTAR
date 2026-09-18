@@ -30,19 +30,28 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Verify integrity-locked payload bytes
+      - name: Verify GW16I SATGAT1 payload identity
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          $hini=(Get-FileHash payload/win81_nis.ini -Algorithm SHA256).Hash.ToLowerInvariant()
-          $hver=(Get-FileHash payload/win81_nis_version.txt -Algorithm SHA256).Hash.ToLowerInvariant()
-          if($hini -ne 'dea8a93e97d3ad1b438973822d67ca9ac12477b5774933eea135ab71776c5648'){throw "INI payload checkout drift $hini"}
-          if($hver -ne 'bf31c0593b5fec78c533ba6f994866bc8d4921139bff4d602fde292c6a376f15'){throw "version payload checkout drift $hver"}
-          Write-Host 'PAYLOAD_CHECKOUT_INTEGRITY=PASS'
+          $runtime='bc291f0f91013df7a28630ffef44983856fce6eb71d79aca597ab292012165e0'
+          $ini='dea8a93e97d3ad1b438973822d67ca9ac12477b5774933eea135ab71776c5648'
+          $ver='5eb6553059f675ba1a05f556b06f74dbd07b2fb11e1f1bc91be738057b92c0d2'
+          $h=(Get-FileHash payload/d3d11.dll -Algorithm SHA256).Hash.ToLowerInvariant()
+          $hm=(Get-FileHash payload/win81_nis_dx11_x64.dll -Algorithm SHA256).Hash.ToLowerInvariant()
+          $hi=(Get-FileHash payload/win81_nis.ini -Algorithm SHA256).Hash.ToLowerInvariant()
+          $hv=(Get-FileHash payload/win81_nis_version.txt -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($h -ne $runtime){throw "runtime drift $h"}
+          if($hm -ne $runtime){throw "mirror runtime drift $hm"}
+          if($hi -ne $ini){throw "INI drift $hi"}
+          if($hv -ne $ver){throw "version drift $hv"}
+          Write-Host 'GW16I_SATGAT1_PAYLOAD_IDENTITY=PASS'
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Validate UNIVERSAL1 repository contracts
+
+      - name: Validate inherited runtime contracts
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
@@ -58,31 +67,44 @@ jobs:
             & python $t
             if($LASTEXITCODE -ne 0){ throw "$t failed with code $LASTEXITCODE" }
           }
-          $h=(Get-FileHash payload/d3d11.dll -Algorithm SHA256).Hash.ToLowerInvariant()
-          $hm=(Get-FileHash payload/win81_nis_dx11_x64.dll -Algorithm SHA256).Hash.ToLowerInvariant()
-          if($h -ne 'e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429'){throw "runtime drift $h"}
-          if($hm -ne $h){throw "mirror runtime drift $hm"}
-          Write-Host 'UNIVERSAL1_STATIC=PASS'
+          Write-Host 'GW16I_INHERITED_CONTRACTS=PASS'
+
+      - name: Validate SATGAT1 production structure and documentation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $ini=Get-Content payload/win81_nis.ini -Raw
+          if($ini -notmatch '(?m)^Diagnostics=0\s*$'){throw 'template Diagnostics default is not 0'}
+          if($ini -match '(?m)^Diagnostics=1\s*$'){throw 'template unexpectedly enables Diagnostics=1'}
+          $install=Get-Content diag/install.ps1 -Raw
+          if($install -notmatch [regex]::Escape("SatGat-Win64-Shipping.exe")){throw 'SatGat exact profile missing'}
+          foreach($p in @(
+            'diag/click_input/01-ENABLE_CLICK_DIAGNOSTICS.bat',
+            'diag/click_input/02-COLLECT_AND_RESTORE_CLICK_DIAGNOSTICS.bat',
+            'diag/click_input/03-RESTORE_DIAGNOSTICS_INI_ONLY.bat',
+            'diag/click_input/diag/enable_diag.ps1',
+            'diag/click_input/diag/collect_restore.ps1',
+            'diag/click_input/diag/restore_only.ps1',
+            'diag/GW16I_SLATEABS1_FIELD_FINDING.txt',
+            'diag/GW16I_SATGAT1_MULTIGAME_FIELD_VALIDATION.txt'
+          )){ if(-not(Test-Path $p)){throw "missing $p"} }
+          $readme=Get-Content README.md -Raw
+          foreach($needle in @('Frame-generation modes, recorder profiles and shortcuts','SatGat','Inquisitor','CTRL+F6','CTRL+F8','CTRL+F9')){
+            if($readme -notmatch [regex]::Escape($needle)){throw "README missing $needle"}
+          }
+          Write-Host 'SATGAT1_PRODUCTION_STRUCTURE=PASS'
 
   multigame:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Verify integrity-locked payload bytes
+      - name: Exercise exact SatGat profile, Inquisitor generic path, near-match isolation and x86 rejection
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          $hini=(Get-FileHash payload/win81_nis.ini -Algorithm SHA256).Hash.ToLowerInvariant()
-          $hver=(Get-FileHash payload/win81_nis_version.txt -Algorithm SHA256).Hash.ToLowerInvariant()
-          if($hini -ne 'dea8a93e97d3ad1b438973822d67ca9ac12477b5774933eea135ab71776c5648'){throw "INI payload checkout drift $hini"}
-          if($hver -ne 'bf31c0593b5fec78c533ba6f994866bc8d4921139bff4d602fde292c6a376f15'){throw "version payload checkout drift $hver"}
-          Write-Host 'PAYLOAD_CHECKOUT_INTEGRITY=PASS'
-      - name: Exercise two unrelated x64 executable names and reject x86
-        shell: pwsh
-        run: |
-          $ErrorActionPreference='Stop'
+          $runtime='bc291f0f91013df7a28630ffef44983856fce6eb71d79aca597ab292012165e0'
           $ps="$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
-          $tmp=Join-Path $env:RUNNER_TEMP 'PTAR_UNIVERSAL1_MULTI'
+          $tmp=Join-Path $env:RUNNER_TEMP 'PTAR_GW16I_SATGAT1_MULTI'
           if(Test-Path $tmp){Remove-Item $tmp -Recurse -Force}
           New-Item -ItemType Directory -Path $tmp | Out-Null
 
@@ -98,18 +120,21 @@ jobs:
             }
             if($rc -ne 0){throw "install failed for $exe rc=$rc"}
           }
-          function Assert-Installed([string]$dir,[string]$name){
+
+          function Assert-Installed([string]$dir,[string]$name,[int]$diagnostics){
             $dll=Join-Path $dir 'd3d11.dll'
             $ini=Join-Path $dir 'win81_nis.ini'
             if(-not(Test-Path $dll)){throw "d3d11.dll absent in $dir"}
             if(-not(Test-Path $ini)){throw "win81_nis.ini absent in $dir"}
             $h=(Get-FileHash $dll -Algorithm SHA256).Hash.ToLowerInvariant()
-            if($h -ne 'e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429'){throw "runtime hash drift $h"}
+            if($h -ne $runtime){throw "runtime hash drift $h"}
             $lines=Get-Content $ini
             if($lines -notcontains ("TargetExe="+$name)){throw "TargetExe mismatch, expected $name"}
+            if($lines -notcontains ("Diagnostics="+$diagnostics)){throw "Diagnostics mismatch for $name expected $diagnostics"}
             & $ps -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\diag\verify.ps1
             if($LASTEXITCODE -ne 0){throw "verify failed for $name rc=$LASTEXITCODE"}
           }
+
           function Invoke-Rollback([string]$dir,[string]$exe){
             & $ps -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\diag\rollback_test.ps1
             if($LASTEXITCODE -ne 0){throw "rollback failed rc=$LASTEXITCODE"}
@@ -119,21 +144,20 @@ jobs:
             }
           }
 
-          $a=Join-Path $tmp 'Game_A'
-          New-Item -ItemType Directory -Path $a | Out-Null
-          $aExe=Join-Path $a 'StarGazer.exe'
-          Copy-Item "$env:SystemRoot\System32\notepad.exe" $aExe
-          Invoke-Install $aExe
-          Assert-Installed $a 'StarGazer.exe'
-          Invoke-Rollback $a $aExe
+          function Run-Case([string]$folder,[string]$name,[int]$diagnostics,[switch]$ViaEnv){
+            $d=Join-Path $tmp $folder
+            New-Item -ItemType Directory -Path $d | Out-Null
+            $e=Join-Path $d $name
+            Copy-Item "$env:SystemRoot\System32\notepad.exe" $e
+            Invoke-Install $e -ViaEnv:$ViaEnv
+            Assert-Installed $d $name $diagnostics
+            Invoke-Rollback $d $e
+          }
 
-          $b=Join-Path $tmp 'Game_B'
-          New-Item -ItemType Directory -Path $b | Out-Null
-          $bExe=Join-Path $b 'TotallyDifferentGame.exe'
-          Copy-Item "$env:SystemRoot\System32\notepad.exe" $bExe
-          Invoke-Install $bExe -ViaEnv
-          Assert-Installed $b 'TotallyDifferentGame.exe'
-          Invoke-Rollback $b $bExe
+          Run-Case 'SatGat' 'SatGat-Win64-Shipping.exe' 1
+          Run-Case 'Inquisitor' 'Warhammer.exe' 0
+          Run-Case 'NearMatch' 'SatGat-Test-Win64-Shipping.exe' 0
+          Run-Case 'Generic' 'TotallyDifferentGame.exe' 0 -ViaEnv
 
           $c=Join-Path $tmp 'Game_32'
           New-Item -ItemType Directory -Path $c | Out-Null
@@ -145,6 +169,4 @@ jobs:
           if(Test-Path (Join-Path $c 'd3d11.dll')){throw 'runtime copied despite x86 rejection'}
 
           $global:LASTEXITCODE=0
-          Write-Host 'UNIVERSAL1_MULTIGAME_WINDOWS=PASS'
-
-# Post-promotion verification trigger: UNIVERSAL1 package promoted and staging cleaned.
+          Write-Host 'GW16I_SATGAT1_MULTIGAME_WINDOWS=PASS'
