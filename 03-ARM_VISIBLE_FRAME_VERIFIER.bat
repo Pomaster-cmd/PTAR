@@ -19,7 +19,7 @@ set "HELPER=%~dp0diag\set_vblank_diagnostics.ps1"
 set "SHAHELPER=%~dp0diag\PTAR_SHA256.ps1"
 set "RUNNER=%~dp0diag\visible_pacing\run_single_engine_verifier.ps1"
 set "SOURCE=%~dp0diag\visible_pacing\PTARVisiblePacingVerifier.cs"
-set "EXPECTED_RUNTIME=e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429"
+set "EXPECTED_RUNTIME=bc291f0f91013df7a28630ffef44983856fce6eb71d79aca597ab292012165e0"
 set "TARGET_FILE=%~dp0win81_nis_install_target.txt"
 set "EXE_FILE=%~dp0win81_nis_install_exe.txt"
 if not exist "%TARGET_FILE%" (

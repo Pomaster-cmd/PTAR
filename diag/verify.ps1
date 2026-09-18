@@ -1,9 +1,9 @@
 $ErrorActionPreference='Stop'
 $PackRoot=Split-Path -Parent $PSScriptRoot
 $S=Join-Path $PackRoot '_PTAR_UNINSTALL\state'
-$ExpectedRuntime='e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429'
+$ExpectedRuntime='bc291f0f91013df7a28630ffef44983856fce6eb71d79aca597ab292012165e0'
 $ExpectedIniTemplate='dea8a93e97d3ad1b438973822d67ca9ac12477b5774933eea135ab71776c5648'
-$ExpectedVersion='bf31c0593b5fec78c533ba6f994866bc8d4921139bff4d602fde292c6a376f15'
+$ExpectedVersion='5eb6553059f675ba1a05f556b06f74dbd07b2fb11e1f1bc91be738057b92c0d2'
 function Sha([string]$p){if(Test-Path -LiteralPath $p -PathType Leaf){return (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant()}return $null}
 $l=Join-Path $S 'LATEST_STATE.txt'
 if(-not(Test-Path -LiteralPath $l -PathType Leaf)){Write-Host '[FAIL] Etat installation absent';exit 2}
@@ -24,24 +24,27 @@ $gameIni=Join-Path $g 'win81_nis.ini'
 if((Sha $payloadIni)-ne $ExpectedIniTemplate){$bad=1;Write-Host '[FAIL] Payload INI template hash mismatch'}
 elseif(-not(Test-Path -LiteralPath $gameIni -PathType Leaf)){$bad=1;Write-Host '[FAIL] win81_nis.ini absent'}
 else{
+ $ExpectedDiagnostics=$(if($targetName -ieq 'SatGat-Win64-Shipping.exe'){1}else{0})
  $base=[IO.File]::ReadAllLines($payloadIni)
  $live=[IO.File]::ReadAllLines($gameIni)
  $baseNorm=New-Object System.Collections.Generic.List[string]
  $liveNorm=New-Object System.Collections.Generic.List[string]
- $baseTarget=0;$liveTarget=0;$liveMarkerCount=0;$liveMarker=-1
+ $baseTarget=0;$liveTarget=0;$liveMarkerCount=0;$liveMarker=-1;$liveDiagCount=0;$liveDiag=-1
  foreach($line in $base){
   if($line -match '^[ \t]*TargetExe[ \t]*='){$baseTarget++;$baseNorm.Add('TargetExe='+$targetName)}
+  elseif($line -match '^[ \t]*Diagnostics[ \t]*='){$baseNorm.Add('Diagnostics=<TARGET_PROFILE>')}
   elseif($line -match '^[ \t]*VBlankDiagnostics[ \t]*='){$baseNorm.Add('VBlankDiagnostics=<SUPPORTED_TOGGLE>')}
   else{$baseNorm.Add($line)}
  }
  foreach($line in $live){
   if($line -match '^[ \t]*TargetExe[ \t]*=[ \t]*(.+?)[ \t]*$'){$liveTarget++;$liveNorm.Add('TargetExe='+$matches[1])}
+  elseif($line -match '^[ \t]*Diagnostics[ \t]*=[ \t]*([01])[ \t]*$'){$liveDiagCount++;$liveDiag=[int]$matches[1];$liveNorm.Add('Diagnostics=<TARGET_PROFILE>')}
   elseif($line -match '^[ \t]*VBlankDiagnostics[ \t]*=[ \t]*([01])[ \t]*$'){$liveMarkerCount++;$liveMarker=[int]$matches[1];$liveNorm.Add('VBlankDiagnostics=<SUPPORTED_TOGGLE>')}
   elseif($line -match '^[ \t]*VBlankDiagnostics[ \t]*='){$liveMarkerCount++;$liveNorm.Add($line)}
   else{$liveNorm.Add($line)}
  }
  $a=[string]::Join("`n",$baseNorm.ToArray());$b=[string]::Join("`n",$liveNorm.ToArray())
- if($baseTarget -eq 1 -and $liveTarget -eq 1 -and $liveMarkerCount -eq 1 -and ($liveMarker -eq 0 -or $liveMarker -eq 1) -and $a -ceq $b){Write-Host ('[PASS] win81_nis.ini dynamic target + marker toggle supported')}else{$bad=1;Write-Host '[FAIL] win81_nis.ini diff non autorisee'}
+ if($baseTarget -eq 1 -and $liveTarget -eq 1 -and $liveDiagCount -eq 1 -and $liveDiag -eq $ExpectedDiagnostics -and $liveMarkerCount -eq 1 -and ($liveMarker -eq 0 -or $liveMarker -eq 1) -and $a -ceq $b){Write-Host ('[PASS] win81_nis.ini dynamic target + SatGat profile + marker toggle supported')}else{$bad=1;Write-Host ('[FAIL] win81_nis.ini diff non autorisee / Diagnostics attendu='+$ExpectedDiagnostics+' obtenu='+$liveDiag)}
 }
 $t=Get-Content -LiteralPath $gameIni -ErrorAction SilentlyContinue
 foreach($k in @((('TargetExe=' + $targetName)),'Enabled=1','UniversalSpatialPresenter=1','PresenterExclusive=0','Overlay=1','FrameGeneration=0','FrameGenerationPresentSync=1','FrameGenerationTargetFPS=60')){

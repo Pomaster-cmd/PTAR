@@ -3,13 +3,13 @@ from pathlib import Path
 import hashlib,re,sys,json
 ROOT=Path(sys.argv[1] if len(sys.argv)>1 else Path(__file__).resolve().parents[1]).resolve()
 D=ROOT/'diag'; PAY=ROOT/'payload'; U=ROOT/'_PTAR_UNINSTALL'
-RT='e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429'
+RT='bc291f0f91013df7a28630ffef44983856fce6eb71d79aca597ab292012165e0'
 checks=[]
 def ck(n,c,d=''):
     checks.append((n,bool(c),str(d))); print(('[PASS] ' if c else '[FAIL] ')+n+((' :: '+str(d)) if d else ''))
 def sha(p): return hashlib.sha256(Path(p).read_bytes()).hexdigest()
 def txt(rel): return (ROOT/rel).read_text(errors='replace')
-ck('runtime exact HUDREC1 retained',sha(PAY/'d3d11.dll')==RT,sha(PAY/'d3d11.dll'))
+ck('runtime exact GW16I SLATEABS1 retained',sha(PAY/'d3d11.dll')==RT,sha(PAY/'d3d11.dll'))
 ck('runtime mirror exact',sha(PAY/'win81_nis_dx11_x64.dll')==RT)
 b=(PAY/'d3d11.dll').read_bytes()
 for s in [b'Warhammer.exe',b'Warhammer',b'Inquisitor',b'NeoCore']:
@@ -54,7 +54,7 @@ ck('QSV installer has no renderer-name heuristic','*-Win64-Shipping.exe' not in 
 readme=txt('README.md')
 ck('README declares game agnostic','game-agnostic' in readme.lower())
 ck('README documents explicit exe path','01-INSTALL_GW16.bat "C:\\full\\path\\Game.exe"' in readme)
-ck('README distinguishes validation title','only one historical hardware-validation title' in readme)
+ck('README documents GW16I SLATEABS1 field scope','SLATEABS1' in readme and 'SatGat' in readme and 'game-agnostic' in readme.lower())
 failed=[x for x in checks if not x[1]]
 print('UNIVERSAL_TARGETING_VALIDATION=%d/%d %s'%(len(checks)-len(failed),len(checks),'PASS' if not failed else 'FAIL'))
 if failed:

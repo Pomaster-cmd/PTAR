@@ -4,9 +4,9 @@ $PackRoot=Split-Path -Parent $PSScriptRoot
 $Payload=Join-Path $PackRoot 'payload'
 $StateRoot=Join-Path $PackRoot '_PTAR_UNINSTALL\state'
 $Log=Join-Path $PSScriptRoot 'PTAR_INSTALL_LAST.log'
-$ExpectedRuntime='e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429'
+$ExpectedRuntime='bc291f0f91013df7a28630ffef44983856fce6eb71d79aca597ab292012165e0'
 $ExpectedIniTemplate='dea8a93e97d3ad1b438973822d67ca9ac12477b5774933eea135ab71776c5648'
-$ExpectedVersion='bf31c0593b5fec78c533ba6f994866bc8d4921139bff4d602fde292c6a376f15'
+$ExpectedVersion='5eb6553059f675ba1a05f556b06f74dbd07b2fb11e1f1bc91be738057b92c0d2'
 $KnownPtar=@(
  '60f88d6175c3a42f2a082211503f391309d1381c897909d8dec86398a8c392df',
  '3d4d777c943ced0f475df1371d3a2f9eeb5eeb80c66e9fb217c4d91057f32453',
@@ -43,7 +43,9 @@ $KnownPtar=@(
  'c573b4c4ca102867ca67dbd16e1e6d36e3057f43d85b343fca94803000de0040',
  '613714f5ac70bc94867a3044dd067f4de18bb3ef65262c60f0febce2ca9d4c70',
  '864c0ca8f24f22f6a3cd4c21a0e213f431f5268e69b04e3860c52fe72600fc3c',
- 'e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429'
+ 'e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429',
+ '9d46d863d386a711c6e5c894ca11d3c8e519c67b39ce29a8c520f58e063c47f5',
+ 'bc291f0f91013df7a28630ffef44983856fce6eb71d79aca597ab292012165e0'
 )
 function Sha([string]$p){if(Test-Path -LiteralPath $p -PathType Leaf){return (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant()}return $null}
 function L([string]$s){$x='['+(Get-Date -Format 'HH:mm:ss')+'] '+$s;Write-Host $x;Add-Content -LiteralPath $Log -Value $x -Encoding UTF8}
@@ -163,11 +165,24 @@ for($x=0;$x -lt $iniLines.Length;$x++){
  if($iniLines[$x] -match '^[ \t]*TargetExe[ \t]*='){$iniLines[$x]='TargetExe='+$TargetExeName;$targetCount++}
 }
 if($targetCount -ne 1){F ('Template INI invalide : TargetExe count='+$targetCount) 11}
+# SATGAT1 compatibility profile: SLATEABS1 depends on the existing passive-input
+# hook being installed. Keep the immutable package template at Diagnostics=0 and
+# enable that hook only for the exact validated SatGat renderer executable.
+$SatGatInputProfile=($TargetExeName -ieq 'SatGat-Win64-Shipping.exe')
+$diagCount=0
+for($x=0;$x -lt $iniLines.Length;$x++){
+ if($iniLines[$x] -match '^[ \t]*Diagnostics[ \t]*='){
+  $iniLines[$x]=$(if($SatGatInputProfile){'Diagnostics=1'}else{'Diagnostics=0'})
+  $diagCount++
+ }
+}
+if($diagCount -ne 1){F ('Template INI invalide : Diagnostics count='+$diagCount) 11}
+if($SatGatInputProfile){L 'SATGAT_INPUT_PROFILE=SLATEABS1_ACTIVE1'}else{L 'SATGAT_INPUT_PROFILE=OFF'}
 $generatedIni=Join-Path $state 'generated_win81_nis.ini'
 [IO.File]::WriteAllLines($generatedIni,$iniLines,[Text.Encoding]::ASCII)
 $ExpectedInstalledIni=Sha $generatedIni
 
-$m=[ordered]@{schema=4;package='GW16H_UNIFIEDREC3_SAFEPOINT11_FUSEDDETAIL1_HUDREC1_UNIVERSAL1';game_root=$g;target_exe=$TargetExePath;target_exe_name=$TargetExeName;pack_root=$PackRoot;installed=@{};original=@{};known_ptar=$KnownPtar}
+$m=[ordered]@{schema=4;package='GW16I_SLATEABS1_SATGAT1_UNIVERSAL1';game_root=$g;target_exe=$TargetExePath;target_exe_name=$TargetExeName;pack_root=$PackRoot;installed=@{};original=@{};known_ptar=$KnownPtar}
 foreach($r in @(@('d3d11.dll',$a,$ExpectedRuntime),@('win81_nis_dx11_x64.dll',$c,$ExpectedRuntime),@('win81_nis.ini',$i,$ExpectedInstalledIni),@('win81_nis_version.txt',$v,$ExpectedVersion))){
  $n=$r[0];$p=$r[1];$installSha=$r[2];$e=Test-Path -LiteralPath $p -PathType Leaf
  $x=[ordered]@{exists=$e;sha=$null;backup=$null;ptar=$false}

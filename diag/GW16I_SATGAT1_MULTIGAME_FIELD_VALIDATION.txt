@@ -1,0 +1,8 @@
+PTAR GW16I / SLATEABS1 / SATGAT1 — MULTIGAME FIELD VALIDATION
+Date: 2026-09-18
+RUNTIME_SHA256=bc291f0f91013df7a28630ffef44983856fce6eb71d79aca597ab292012165e0
+FIELDTEST_PACKAGE_SHA256=7663d367114adae1d030e62f955783593fdf97ef55bcb8369581841b6997187b
+SATGAT=PASS — exact SatGat-Win64-Shipping.exe profile, Diagnostics=1, SLATEABS1 click/input behavior functional.
+INQUISITOR=PASS — generic targeting path, Diagnostics=0, PTAR functional on real hardware.
+SCOPE=User-confirmed real-hardware operation on the two named x64 Direct3D 11 titles. This does not claim universal compatibility with every D3D11 title.
+RUNTIME_BYTES_CHANGED_BY_THIS_RECORD=NO

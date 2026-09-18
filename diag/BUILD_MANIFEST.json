@@ -1,11 +1,11 @@
 {
-  "package": "PTAR_GW16H_UNIFIEDREC3_SAFEPOINT11_FUSEDDETAIL1_HUDREC1_UNIVERSAL1",
-  "package_filename": "PTAR_GW16H_UNIFIEDREC3_SAFEPOINT11_FUSEDDETAIL1_HUDREC1_UNIVERSAL1.zip",
-  "build_date": "2026-09-16",
+  "package": "PTAR_GW16I_SLATEABS1_SATGAT1_UNIVERSAL1",
+  "package_filename": "PTAR_GW16I_SLATEABS1_SATGAT1_UNIVERSAL1_FINAL_2026-09-17.zip",
+  "build_date": "2026-09-17",
   "runtime": {
     "base": "GW12 LOADSHEDSOFT1",
     "base_sha256": "50cf02fee971e615f0dba26a7614e27b833486a993cf569fe5369a0fa5b41f59",
-    "sha256": "e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429",
+    "sha256": "bc291f0f91013df7a28630ffef44983856fce6eb71d79aca597ab292012165e0",
     "auto_wrapper_rva": "0x34FFC80",
     "auto_mode_rva": "0x34FFF20",
     "auto_fallback_rva": "0x34FFF00",
@@ -216,7 +216,29 @@
       ]
     },
     "targeting": "DYNAMIC_INSTALL_SELECTION",
-    "target_exe_template": "__PTAR_TARGET_EXE__"
+    "target_exe_template": "__PTAR_TARGET_EXE__",
+    "nativeinput_layered1": {
+      "source_sha256": "e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429",
+      "stage_sha256": "9d46d863d386a711c6e5c894ca11d3c8e519c67b39ce29a8c520f58e063c47f5",
+      "presenter_policy": "WS_EX_LAYERED alpha255 + transparent + noactivate; native game input ownership preserved",
+      "input_relay": "NONE",
+      "attach_thread_input": false
+    },
+    "slateabs1": {
+      "source_sha256": "9d46d863d386a711c6e5c894ca11d3c8e519c67b39ce29a8c520f58e063c47f5",
+      "final_sha256": "bc291f0f91013df7a28630ffef44983856fce6eb71d79aca597ab292012165e0",
+      "fix": "inverse reduced coordinate at existing ClientToScreen absolute Slate boundary",
+      "canonical_game_wndproc_mapper_changed": false,
+      "frame_generation_algorithm_changed": false,
+      "real_field_result": "SatGat all tested menu button clicks functional",
+      "real_field_result_zip_sha256": "93082dbe3c3a5bab27a8e103e146895bb98038dc2ec69c4e81d67ca767b350ad"
+    },
+    "satgat1_profile": {
+      "target_exe": "SatGat-Win64-Shipping.exe",
+      "activation": "Diagnostics=1 only in generated installed INI for exact SatGat renderer name",
+      "other_games": "Diagnostics=0 unchanged",
+      "runtime_binary_changed_from_validated_slateabs1": false
+    }
   },
   "presentation_policy": {
     "fg_on": {
@@ -292,9 +314,9 @@
   },
   "installer_fix": {
     "scope": "HUDREC1 exact payload hashes; baseline SAFEPOINT11 retained as known upgrade source; marker toggle supported only in installed INI verifier",
-    "expected_runtime_sha256": "e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429",
+    "expected_runtime_sha256": "bc291f0f91013df7a28630ffef44983856fce6eb71d79aca597ab292012165e0",
     "expected_ini_sha256": "dea8a93e97d3ad1b438973822d67ca9ac12477b5774933eea135ab71776c5648",
-    "expected_version_sha256": "bf31c0593b5fec78c533ba6f994866bc8d4921139bff4d602fde292c6a376f15",
+    "expected_version_sha256": "5eb6553059f675ba1a05f556b06f74dbd07b2fb11e1f1bc91be738057b92c0d2",
     "known_ptar_includes_safepoint1": true,
     "known_ptar_includes_safepoint2": true,
     "known_ptar_includes_safepoint3": true,
@@ -332,7 +354,15 @@
     "safepoint8": "LAB_VALIDATED_TARGETED_TDETAIL4_VISUAL_GATE_PENDING",
     "safepoint11": "PROMOTED_HARDWARE_VALIDATED_BASELINE",
     "hudrec1": "FIELD_PASS_HUD_FPS_VIDEO_CONFIRMED",
-    "universal1": "LAB_VALIDATION_PENDING; cross-game field validation required"
+    "universal1": "LAB_VALIDATION_PENDING; cross-game field validation required",
+    "gw16i_satgat1_multigame_field": {
+      "date": "2026-09-18",
+      "runtime_sha256": "bc291f0f91013df7a28630ffef44983856fce6eb71d79aca597ab292012165e0",
+      "fieldtest_package_sha256": "7663d367114adae1d030e62f955783593fdf97ef55bcb8369581841b6997187b",
+      "satgat": "PASS exact-target Diagnostics=1 SLATEABS1 path",
+      "inquisitor": "PASS generic Diagnostics=0 path",
+      "scope": "two user-confirmed real-hardware x64 D3D11 titles; not a universal compatibility claim"
+    }
   },
   "safepoint2_finding": {
     "field_result": "PTAR_GW16H_RESULTS_20260906_093852.zip",
@@ -429,7 +459,7 @@
   "universal_targeting": {
     "version": "UNIVERSAL1",
     "runtime_binary_changed": false,
-    "runtime_sha256": "e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429",
+    "runtime_sha256": "bc291f0f91013df7a28630ffef44983856fce6eb71d79aca597ab292012165e0",
     "scope": "x64 Direct3D 11 compatible games",
     "selection": [
       "explicit -GameExe path",

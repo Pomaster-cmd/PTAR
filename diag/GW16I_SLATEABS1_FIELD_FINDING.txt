@@ -1,0 +1,21 @@
+PTAR GW16I / SLATEABS1 FIELD FINDING
+DATE=2026-09-17
+STATUS=FIELD_PASS_ALL_MENU_BUTTON_CLICKS_FUNCTIONAL
+FINAL_RUNTIME_SHA256=bc291f0f91013df7a28630ffef44983856fce6eb71d79aca597ab292012165e0
+REAL_RESULT_ZIP_SHA256=93082dbe3c3a5bab27a8e103e146895bb98038dc2ec69c4e81d67ca767b350ad
+
+ROOT_CAUSE
+- Win32 mouse delivery was intact: complete DOWN/UP pairs, balanced SetCapture/ReleaseCapture/WM_CAPTURECHANGED, game focus/foreground retained, presenter mouse buttons zero.
+- With 1280x720 internal rendering and 1920x1080 native presentation, coordinates reaching the Slate absolute screen-coordinate path remained in the reduced 2/3 domain.
+- Generic click-to-continue screens still worked because they only needed a mouse-button event, while Slate/UMG menu buttons required coherent hit-test coordinates through release.
+
+FIX
+- Preserve NATIVEINPUT_LAYERED1 native input ownership.
+- Preserve canonical game WndProc and canonical PTAR mouse mapper byte-for-byte.
+- Invert the reduced coordinate only at the existing ClientToScreen wrapper boundary used by the absolute Slate path.
+- No PostMessage/SendMessage relay, no AttachThreadInput.
+
+FIELD_RESULT
+- User confirmed every tested menu button click executes normally with SLATEABS1.
+- Diagnostic trace confirms ClientToScreen output returns to the native presentation coordinate domain.
+- SOURCE spatial reconstruction and frame-generation algorithm regions are unchanged by this fix.

@@ -1,6 +1,6 @@
 ## Universal game targeting — UNIVERSAL1
 
-The current runtime DLL is game-agnostic: the exact HUDREC1 binary `e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429` contains no `Warhammer`, `Inquisitor` or `NeoCore` literal. `TargetExe` is selected at installation time and written into the installed INI.
+The current runtime DLL is game-agnostic: the exact GW16I / SLATEABS1 binary `bc291f0f91013df7a28630ffef44983856fce6eb71d79aca597ab292012165e0` contains no `Warhammer`, `Inquisitor` or `NeoCore` literal. `TargetExe` is selected at installation time and written into the installed INI.
 
 Supported targeting workflow:
 
@@ -21,7 +21,20 @@ The current production binary is x64 D3D11. Games using another graphics API or 
 
 PTAR combines the PTAR-NG MoE spatial reconstruction path with an asynchronous frame-generation pipeline using NVIDIA NVENC motion-estimation capabilities and a custom Direct3D 11 presentation path. The project targets measurable, reproducible graphics improvements on legacy Windows/GPU configurations, with external visible-frame validation and non-destructive install/rollback tooling.
 
-> **Current runtime:** **SAFEPOINT11 / FUSEDDETAIL1 / HUDREC1 UNIVERSAL1** — game-agnostic x64 Direct3D 11 targeting. HUDREC1 runtime bytes remain `e81e4c6239462bc7a93c3fd7d7abb4bd96e09db1f013eb48a46f40341ffa6429`.
+> **Current runtime:** **GW16I / SAFEPOINT11 / FUSEDDETAIL1 / HUDREC1 / NATIVEINPUT_LAYERED1 / SLATEABS1 / UNIVERSAL1** — game-agnostic x64 Direct3D 11 targeting. Final runtime SHA-256: `bc291f0f91013df7a28630ffef44983856fce6eb71d79aca597ab292012165e0`.
+
+## GW16I / SLATEABS1 — native mouse and Slate coordinate fix
+
+GW16I adds the hardware-validated SLATEABS1 input-coordinate correction on top of the preserved SAFEPOINT11 / FUSEDDETAIL1 / HUDREC1 runtime. The fix keeps native Win32 mouse ownership, the canonical game WndProc and the existing PTAR mouse mapper intact. It corrects the absolute `ClientToScreen` boundary used by Unreal Slate when the internal render domain differs from the native presentation domain (for example 1280x720 reconstructed to 1920x1080).
+
+The real Windows 8.1 SatGat field gate on 2026-09-17 confirmed that menu buttons that previously reacted visually but did not execute now activate normally. Frame generation, FUSEDDETAIL1, recorder/QSV behavior and the reconstruction algorithm are unchanged by this input fix. The SLATEABS1 input hook is activated automatically only when the selected renderer executable is exactly `SatGat-Win64-Shipping.exe`; every other game keeps the normal `Diagnostics=0` production path. Diagnostic tools remain under `diag/click_input`.
+
+## Multigame hardware validation — SatGat + Inquisitor
+
+On 2026-09-18, the exact SATGAT1 final package was confirmed functional on real hardware with both **SatGat** and **Inquisitor**. SatGat exercises the exact-target compatibility profile, which generates `Diagnostics=1` so the validated SLATEABS1 `ClientToScreen` coordinate path is active. Inquisitor uses the normal generic production path with `Diagnostics=0`.
+
+This validates the separation between the game-agnostic GW16I runtime and its per-title activation policy on these two tested x64 Direct3D 11 titles. It is evidence for those tested titles, not a claim that every D3D11 game is automatically compatible.
+
 
 ## Current baseline — SAFEPOINT11 / FUSEDDETAIL1
 
@@ -77,7 +90,7 @@ This package keeps the validated **SAFEPOINT11 / FUSEDDETAIL1** frame-generation
 - With `Overlay=1`, the recorded image is therefore intended to include the PTAR HUD, including the **FPS** value.
 - The FG algorithm, FUSEDDETAIL1 shader, quality profiles, NVENC ME policy, QSV recorder conversion path and presentation cadence are not otherwise changed.
 
-The HUD recording change is lab/static validated in this package. The final hardware gate is one short GTX 960M session with two ~5 s recordings: Clip A with FG OFF (the modified route) and Clip B with FG ON (the preserved route), both confirming that HUD/FPS is visible in the encoded MP4.
+HUDREC1 has also completed its real-hardware gate on the Windows 8.1 / GTX 960M reference machine: recordings with FG OFF and FG ON both retained the PTAR HUD/FPS in the encoded MP4. GW16I/SLATEABS1 does not alter the validated recorder routes.
 
 ### FG cadence marker (blinking squares)
 
