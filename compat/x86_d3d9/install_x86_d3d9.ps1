@@ -33,15 +33,23 @@ if(-not(Test-Path -LiteralPath $src -PathType Leaf)){throw "Package d3d9.dll mis
 
 $dst=Join-Path $target 'd3d9.dll'
 $backup=Join-Path $target 'd3d9.dll.ptar_original'
-if(Test-Path -LiteralPath $dst -PathType Leaf){
-    if(-not(Test-Path -LiteralPath $backup -PathType Leaf)){
-        Copy-Item -LiteralPath $dst -Destination $backup -Force
-    } else {
-        throw "Existing d3d9.dll and backup already present. Refusing destructive overwrite."
+$srcFull=[IO.Path]::GetFullPath($src)
+$dstFull=[IO.Path]::GetFullPath($dst)
+$inPlace=[string]::Equals($srcFull,$dstFull,[StringComparison]::OrdinalIgnoreCase)
+
+if(-not $inPlace){
+    if(Test-Path -LiteralPath $dst -PathType Leaf){
+        if(-not(Test-Path -LiteralPath $backup -PathType Leaf)){
+            Copy-Item -LiteralPath $dst -Destination $backup -Force
+        } else {
+            throw "Existing d3d9.dll and backup already present. Refusing destructive overwrite."
+        }
     }
+    Copy-Item -LiteralPath $src -Destination $dst -Force
+} else {
+    Write-Host "PTAR_X86_D3D9_INPLACE_PACKAGE=YES"
 }
 
-Copy-Item -LiteralPath $src -Destination $dst -Force
 $hash=(Get-FileHash -LiteralPath $dst -Algorithm SHA256).Hash.ToLowerInvariant()
 $state=Join-Path $target 'PTAR_X86_D3D9_INSTALL_STATE.txt'
 @(
@@ -49,7 +57,8 @@ $state=Join-Path $target 'PTAR_X86_D3D9_INSTALL_STATE.txt'
     'GAME_EXE='+$GameExe,
     'TARGET_DIR='+$target,
     'INSTALLED_SHA256='+$hash,
-    'BACKUP_PATH='+$(if(Test-Path -LiteralPath $backup){$backup}else{''}),
+    'BACKUP_PATH='+$(if((-not $inPlace) -and (Test-Path -LiteralPath $backup)){$backup}else{''}),
+    'INPLACE_PACKAGE='+$(if($inPlace){'1'}else{'0'}),
     'VARIANT=PTAR_X86_D3D9_SPATIAL1'
 ) | Set-Content -LiteralPath $state -Encoding ASCII
 
