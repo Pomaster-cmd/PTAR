@@ -60,11 +60,16 @@ jobs:
           $ErrorActionPreference='Stop'
           dumpbin /headers artifact\d3d9.dll | Tee-Object build_x86\HEADERS.txt
           dumpbin /exports artifact\d3d9.dll | Tee-Object build_x86\EXPORTS.txt
+          dumpbin /dependents artifact\d3d9.dll | Tee-Object build_x86\DEPENDENTS.txt
           $h=Get-Content build_x86\HEADERS.txt -Raw
           $e=Get-Content build_x86\EXPORTS.txt -Raw
+          $d=Get-Content build_x86\DEPENDENTS.txt -Raw
           if($h -notmatch '14C machine \(x86\)'){throw 'PE is not x86/I386'}
           foreach($n in @('Direct3DCreate9','Direct3DCreate9Ex','D3DPERF_BeginEvent','D3DPERF_EndEvent')){
             if($e -notmatch [regex]::Escape($n)){throw "missing export $n"}
+          }
+          foreach($bad in @('VCRUNTIME','MSVCP','UCRTBASE','API-MS-WIN-CRT')){
+            if($d -match $bad){throw "forbidden dynamic runtime dependency $bad"}
           }
           $sha=(Get-FileHash artifact\d3d9.dll -Algorithm SHA256).Hash.ToLowerInvariant()
           @(
@@ -73,8 +78,8 @@ jobs:
             'API=D3D9',
             'SPATIAL=PTAR_NG_MOE_V01_PS3_PORT',
             'FG=NOT_INCLUDED_IN_SPATIAL1',
-            'DLL_SHA256='+$sha,
-            'SOURCE_COMMIT='+$env:GITHUB_SHA
+            ('DLL_SHA256='+$sha),
+            ('SOURCE_COMMIT='+$env:GITHUB_SHA)
           ) | Set-Content artifact\PTAR_X86_D3D9_VERSION.txt -Encoding ASCII
           Write-Host 'X86_PE_GATE=PASS'
           Write-Host "DLL_SHA256=$sha"
@@ -98,3 +103,4 @@ jobs:
             PTAR_X86_D3D9_SPATIAL1_CONVICTION_TEST.zip
             build_x86/HEADERS.txt
             build_x86/EXPORTS.txt
+            build_x86/DEPENDENTS.txt
