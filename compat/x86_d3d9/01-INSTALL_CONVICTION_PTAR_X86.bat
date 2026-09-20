@@ -14,5 +14,5 @@ if not defined GAME (
   exit /b 2
 )
 
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%HERE%install_x86_d3d9.ps1" -GameExe "%GAME%" -PackageRoot "%HERE%"
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%HERE%install_x86_d3d9.ps1" -GameExe "%GAME%"
 exit /b %ERRORLEVEL%
