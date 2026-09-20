@@ -103,7 +103,7 @@ jobs:
           & (Join-Path $pack 'install_x86_d3d9.ps1') -GameExe $exe
           if(-not(Test-Path (Join-Path $game 'd3d9.dll'))){throw 'separate-package install did not copy d3d9.dll'}
           $state=Get-Content (Join-Path $game 'PTAR_X86_D3D9_INSTALL_STATE.txt') -Raw
-          if($state -notmatch '(?m)^INPLACE_PACKAGE=0$'){throw 'separate-package state mismatch'}
+          if($state -notmatch '(?m)^INPLACE_PACKAGE=0\r?$'){throw 'separate-package state mismatch'}
           if((Get-FileHash (Join-Path $game 'd3d9.dll') -Algorithm SHA256).Hash -ne (Get-FileHash (Join-Path $pack 'd3d9.dll') -Algorithm SHA256).Hash){throw 'separate-package DLL mismatch'}
           & (Join-Path $pack 'uninstall_x86_d3d9.ps1') -GameExe $exe
           if(Test-Path (Join-Path $game 'd3d9.dll')){throw 'separate-package uninstall left d3d9.dll'}
@@ -117,7 +117,7 @@ jobs:
           Copy-Item "$env:SystemRoot\SysWOW64\notepad.exe" $iex
           & (Join-Path $inplace 'install_x86_d3d9.ps1') -GameExe $iex
           $istate=Get-Content (Join-Path $inplace 'PTAR_X86_D3D9_INSTALL_STATE.txt') -Raw
-          if($istate -notmatch '(?m)^INPLACE_PACKAGE=1$'){throw 'in-place state mismatch'}
+          if($istate -notmatch '(?m)^INPLACE_PACKAGE=1\r?$'){throw 'in-place state mismatch'}
           if(Test-Path (Join-Path $inplace 'd3d9.dll.ptar_original')){throw 'in-place install created false backup'}
           & (Join-Path $inplace 'uninstall_x86_d3d9.ps1') -GameExe $iex
           if(Test-Path (Join-Path $inplace 'd3d9.dll')){throw 'in-place uninstall left d3d9.dll'}
