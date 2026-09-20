@@ -1,0 +1,96 @@
+name: SOURCE x86 D3D9 SPATIAL1
+
+on:
+  push:
+    branches: [SOURCE]
+    paths:
+      - 'compat/x86_d3d9/**'
+      - '.github/workflows/source-x86-d3d9-spatial1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      - name: Locate FXC and compile PTAR MoE ps_3_0
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force build_x86 | Out-Null
+          $roots=@("$env:ProgramFiles(x86)\Windows Kits\10\bin","$env:ProgramFiles(x86)\Windows Kits\8.1\bin")
+          $fxc=$null
+          foreach($root in $roots){
+            if(Test-Path $root){
+              $fxc=Get-ChildItem $root -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '\\x86\\fxc\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1
+              if($fxc){break}
+            }
+          }
+          if(-not $fxc){throw 'fxc.exe x86 not found'}
+          & $fxc.FullName /nologo /T ps_3_0 /E main /O3 /Fh build_x86\ptar_ps_bytecode.h /Vn g_ptarPs compat\x86_d3d9\ptar_moe_d3d9_ps.hlsl
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          if(-not(Test-Path build_x86\ptar_ps_bytecode.h)){throw 'shader header missing'}
+          Write-Host "FXC=$($fxc.FullName)"
+
+      - name: Build 32-bit D3D9 proxy
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force artifact | Out-Null
+          & cl.exe /nologo /LD /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I build_x86 compat\x86_d3d9\ptar_d3d9_proxy.cpp /link /DEF:compat\x86_d3d9\d3d9_proxy.def /OUT:artifact\d3d9.dll /SUBSYSTEM:WINDOWS,6.03
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          if(-not(Test-Path artifact\d3d9.dll)){throw 'd3d9.dll missing'}
+
+      - name: Static PE and export gate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dumpbin /headers artifact\d3d9.dll | Tee-Object build_x86\HEADERS.txt
+          dumpbin /exports artifact\d3d9.dll | Tee-Object build_x86\EXPORTS.txt
+          $h=Get-Content build_x86\HEADERS.txt -Raw
+          $e=Get-Content build_x86\EXPORTS.txt -Raw
+          if($h -notmatch '14C machine \(x86\)'){throw 'PE is not x86/I386'}
+          foreach($n in @('Direct3DCreate9','Direct3DCreate9Ex','D3DPERF_BeginEvent','D3DPERF_EndEvent')){
+            if($e -notmatch [regex]::Escape($n)){throw "missing export $n"}
+          }
+          $sha=(Get-FileHash artifact\d3d9.dll -Algorithm SHA256).Hash.ToLowerInvariant()
+          @(
+            'PTAR_VARIANT=PTAR_X86_D3D9_SPATIAL1',
+            'PE_MACHINE=I386_0x014C',
+            'API=D3D9',
+            'SPATIAL=PTAR_NG_MOE_V01_PS3_PORT',
+            'FG=NOT_INCLUDED_IN_SPATIAL1',
+            'DLL_SHA256='+$sha,
+            'SOURCE_COMMIT='+$env:GITHUB_SHA
+          ) | Set-Content artifact\PTAR_X86_D3D9_VERSION.txt -Encoding ASCII
+          Write-Host 'X86_PE_GATE=PASS'
+          Write-Host "DLL_SHA256=$sha"
+
+      - name: Package test installer
+        shell: pwsh
+        run: |
+          Copy-Item compat\x86_d3d9\01-INSTALL_CONVICTION_PTAR_X86.bat artifact\
+          Copy-Item compat\x86_d3d9\02-UNINSTALL_CONVICTION_PTAR_X86.bat artifact\
+          Copy-Item compat\x86_d3d9\install_x86_d3d9.ps1 artifact\
+          Copy-Item compat\x86_d3d9\uninstall_x86_d3d9.ps1 artifact\
+          Copy-Item compat\x86_d3d9\README_TEST.txt artifact\
+          Compress-Archive -Path artifact\* -DestinationPath PTAR_X86_D3D9_SPATIAL1_CONVICTION_TEST.zip -CompressionLevel Optimal
+          $z=(Get-FileHash PTAR_X86_D3D9_SPATIAL1_CONVICTION_TEST.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "PACKAGE_SHA256=$z"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-X86-D3D9-SPATIAL1-CONVICTION
+          path: |
+            PTAR_X86_D3D9_SPATIAL1_CONVICTION_TEST.zip
+            build_x86/HEADERS.txt
+            build_x86/EXPORTS.txt
