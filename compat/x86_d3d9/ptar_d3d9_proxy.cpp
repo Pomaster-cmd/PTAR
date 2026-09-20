@@ -1,7 +1,25 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#define Direct3DCreate9 PTAR_D3D9_HEADER_Direct3DCreate9
+#define Direct3DCreate9Ex PTAR_D3D9_HEADER_Direct3DCreate9Ex
+#define D3DPERF_BeginEvent PTAR_D3D9_HEADER_D3DPERF_BeginEvent
+#define D3DPERF_EndEvent PTAR_D3D9_HEADER_D3DPERF_EndEvent
+#define D3DPERF_GetStatus PTAR_D3D9_HEADER_D3DPERF_GetStatus
+#define D3DPERF_QueryRepeatFrame PTAR_D3D9_HEADER_D3DPERF_QueryRepeatFrame
+#define D3DPERF_SetMarker PTAR_D3D9_HEADER_D3DPERF_SetMarker
+#define D3DPERF_SetOptions PTAR_D3D9_HEADER_D3DPERF_SetOptions
+#define D3DPERF_SetRegion PTAR_D3D9_HEADER_D3DPERF_SetRegion
 #include <d3d9.h>
+#undef Direct3DCreate9
+#undef Direct3DCreate9Ex
+#undef D3DPERF_BeginEvent
+#undef D3DPERF_EndEvent
+#undef D3DPERF_GetStatus
+#undef D3DPERF_QueryRepeatFrame
+#undef D3DPERF_SetMarker
+#undef D3DPERF_SetOptions
+#undef D3DPERF_SetRegion
 #include <cstdio>
 #include <cstdarg>
 #include <cstring>
@@ -145,10 +163,10 @@ static HRESULT InitializePTARResources(
     g_ptar.originalAutoDepth=originalAutoDepth;
     g_ptar.depthFormat=originalDepthFormat;
 
+    D3DSURFACE_DESC desc={};
     HRESULT hr=g_realGetBackBuffer(dev,0,0,D3DBACKBUFFER_TYPE_MONO,&g_ptar.realBackBuffer);
     if(FAILED(hr) || !g_ptar.realBackBuffer) goto fail;
 
-    D3DSURFACE_DESC desc={};
     hr=g_ptar.realBackBuffer->GetDesc(&desc);
     if(FAILED(hr)) goto fail;
     g_ptar.outputFormat=desc.Format;
