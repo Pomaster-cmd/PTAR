@@ -38,10 +38,12 @@ jobs:
             }
           }
           if(-not $fxc){throw 'fxc.exe not found'}
-          & $fxc.FullName /nologo /T ps_3_0 /E main /O3 /Fh build_x86\ptar_ps_bytecode.h /Vn g_ptarPs compat\x86_d3d9\ptar_moe_d3d9_ps.hlsl
+          $fxcPath=if($fxc.Path){$fxc.Path}else{$fxc.FullName}
+          if(-not $fxcPath){throw 'fxc.exe path resolution failed'}
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 /Fh build_x86\ptar_ps_bytecode.h /Vn g_ptarPs compat\x86_d3d9\ptar_moe_d3d9_ps.hlsl
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
           if(-not(Test-Path build_x86\ptar_ps_bytecode.h)){throw 'shader header missing'}
-          Write-Host "FXC=$($fxc.FullName)"
+          Write-Host "FXC=$fxcPath"
 
       - name: Build 32-bit D3D9 proxy
         shell: pwsh
