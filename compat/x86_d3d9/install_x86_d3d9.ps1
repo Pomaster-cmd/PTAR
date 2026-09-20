@@ -52,14 +52,22 @@ if(-not $inPlace){
 
 $hash=(Get-FileHash -LiteralPath $dst -Algorithm SHA256).Hash.ToLowerInvariant()
 $state=Join-Path $target 'PTAR_X86_D3D9_INSTALL_STATE.txt'
+$backupPath=''
+if((-not $inPlace) -and (Test-Path -LiteralPath $backup)){
+    $backupPath=$backup
+}
+$inPlaceValue='0'
+if($inPlace){
+    $inPlaceValue='1'
+}
 @(
-    'SCHEMA=1',
-    'GAME_EXE='+$GameExe,
-    'TARGET_DIR='+$target,
-    'INSTALLED_SHA256='+$hash,
-    'BACKUP_PATH='+$(if((-not $inPlace) -and (Test-Path -LiteralPath $backup)){$backup}else{''}),
-    'INPLACE_PACKAGE='+$(if($inPlace){'1'}else{'0'}),
-    'VARIANT=PTAR_X86_D3D9_SPATIAL1'
+    "SCHEMA=1"
+    "GAME_EXE=$GameExe"
+    "TARGET_DIR=$target"
+    "INSTALLED_SHA256=$hash"
+    "BACKUP_PATH=$backupPath"
+    "INPLACE_PACKAGE=$inPlaceValue"
+    "VARIANT=PTAR_X86_D3D9_SPATIAL1"
 ) | Set-Content -LiteralPath $state -Encoding ASCII
 
 Write-Host "PTAR_X86_D3D9_INSTALL=PASS"
