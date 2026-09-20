@@ -24,10 +24,17 @@ render target at 1280x720 and runs PTAR-NG MoE before Present.
 
 Install
 -------
+You may extract the package either:
+  - in a separate folder, or
+  - directly next to conviction_game.exe.
+
 Run:
   01-INSTALL_CONVICTION_PTAR_X86.bat
 
 Or drag conviction_game.exe onto that BAT.
+
+The installer derives its package directory internally and supports paths with
+spaces/apostrophes and the in-place layout without copying d3d9.dll onto itself.
 
 Safety
 ------
