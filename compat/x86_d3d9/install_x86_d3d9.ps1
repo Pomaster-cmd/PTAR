@@ -1,8 +1,13 @@
 param(
     [Parameter(Mandatory=$true)][string]$GameExe,
-    [string]$PackageRoot = (Split-Path -Parent $MyInvocation.MyCommand.Path)
+    [string]$PackageRoot
 )
 $ErrorActionPreference='Stop'
+
+if([string]::IsNullOrWhiteSpace($PackageRoot)){
+    $PackageRoot=Split-Path -LiteralPath $PSCommandPath -Parent
+}
+$PackageRoot=[IO.Path]::GetFullPath($PackageRoot)
 
 function Get-PeMachine([string]$Path){
     $fs=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite)
