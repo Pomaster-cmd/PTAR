@@ -84,6 +84,84 @@ jobs:
           Write-Host 'X86_PE_GATE=PASS'
           Write-Host "DLL_SHA256=$sha"
 
+      - name: Installer path and in-place smoke tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $smoke=Join-Path $PWD '_smoke'
+          if(Test-Path $smoke){Remove-Item $smoke -Recurse -Force}
+          New-Item -ItemType Directory $smoke | Out-Null
+
+          # Case 1: package in a separate directory containing spaces/apostrophe.
+          $pack=Join-Path $smoke "Pack O'Hara"
+          $game=Join-Path $smoke "Game Space"
+          New-Item -ItemType Directory $pack,$game | Out-Null
+          Copy-Item artifact\d3d9.dll $pack\d3d9.dll
+          Copy-Item compat\x86_d3d9\install_x86_d3d9.ps1 $pack\install_x86_d3d9.ps1
+          Copy-Item compat\x86_d3d9\uninstall_x86_d3d9.ps1 $pack\uninstall_x86_d3d9.ps1
+          $exe=Join-Path $game 'conviction_game.exe'
+          Copy-Item "$env:SystemRoot\SysWOW64\notepad.exe" $exe
+          & (Join-Path $pack 'install_x86_d3d9.ps1') -GameExe $exe
+          if($LASTEXITCODE -ne 0){throw 'separate-package install failed'}
+          $state=Get-Content (Join-Path $game 'PTAR_X86_D3D9_INSTALL_STATE.txt') -Raw
+          if($state -notmatch '(?m)^INPLACE_PACKAGE=0          Copy-Item compat\x86_d3d9\01-INSTALL_CONVICTION_PTAR_X86.bat artifact\
+          Copy-Item compat\x86_d3d9\02-UNINSTALL_CONVICTION_PTAR_X86.bat artifact\
+          Copy-Item compat\x86_d3d9\install_x86_d3d9.ps1 artifact\
+          Copy-Item compat\x86_d3d9\uninstall_x86_d3d9.ps1 artifact\
+          Copy-Item compat\x86_d3d9\README_TEST.txt artifact\
+          Compress-Archive -Path artifact\* -DestinationPath PTAR_X86_D3D9_SPATIAL1_CONVICTION_TEST.zip -CompressionLevel Optimal
+          $z=(Get-FileHash PTAR_X86_D3D9_SPATIAL1_CONVICTION_TEST.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "PACKAGE_SHA256=$z"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-X86-D3D9-SPATIAL1-CONVICTION
+          path: |
+            PTAR_X86_D3D9_SPATIAL1_CONVICTION_TEST.zip
+            build_x86/HEADERS.txt
+            build_x86/EXPORTS.txt
+            build_x86/DEPENDENTS.txt
+){throw 'separate-package state mismatch'}
+          if((Get-FileHash (Join-Path $game 'd3d9.dll') -Algorithm SHA256).Hash -ne (Get-FileHash (Join-Path $pack 'd3d9.dll') -Algorithm SHA256).Hash){throw 'separate-package DLL mismatch'}
+          & (Join-Path $pack 'uninstall_x86_d3d9.ps1') -GameExe $exe
+          if(Test-Path (Join-Path $game 'd3d9.dll')){throw 'separate-package uninstall left d3d9.dll'}
+
+          # Case 2: ZIP extracted directly next to conviction_game.exe.
+          $inplace=Join-Path $smoke 'In Place Conviction'
+          New-Item -ItemType Directory $inplace | Out-Null
+          Copy-Item artifact\d3d9.dll $inplace\d3d9.dll
+          Copy-Item compat\x86_d3d9\install_x86_d3d9.ps1 $inplace\install_x86_d3d9.ps1
+          Copy-Item compat\x86_d3d9\uninstall_x86_d3d9.ps1 $inplace\uninstall_x86_d3d9.ps1
+          $iex=Join-Path $inplace 'conviction_game.exe'
+          Copy-Item "$env:SystemRoot\SysWOW64\notepad.exe" $iex
+          & (Join-Path $inplace 'install_x86_d3d9.ps1') -GameExe $iex
+          if($LASTEXITCODE -ne 0){throw 'in-place install failed'}
+          $istate=Get-Content (Join-Path $inplace 'PTAR_X86_D3D9_INSTALL_STATE.txt') -Raw
+          if($istate -notmatch '(?m)^INPLACE_PACKAGE=1          Copy-Item compat\x86_d3d9\01-INSTALL_CONVICTION_PTAR_X86.bat artifact\
+          Copy-Item compat\x86_d3d9\02-UNINSTALL_CONVICTION_PTAR_X86.bat artifact\
+          Copy-Item compat\x86_d3d9\install_x86_d3d9.ps1 artifact\
+          Copy-Item compat\x86_d3d9\uninstall_x86_d3d9.ps1 artifact\
+          Copy-Item compat\x86_d3d9\README_TEST.txt artifact\
+          Compress-Archive -Path artifact\* -DestinationPath PTAR_X86_D3D9_SPATIAL1_CONVICTION_TEST.zip -CompressionLevel Optimal
+          $z=(Get-FileHash PTAR_X86_D3D9_SPATIAL1_CONVICTION_TEST.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "PACKAGE_SHA256=$z"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-X86-D3D9-SPATIAL1-CONVICTION
+          path: |
+            PTAR_X86_D3D9_SPATIAL1_CONVICTION_TEST.zip
+            build_x86/HEADERS.txt
+            build_x86/EXPORTS.txt
+            build_x86/DEPENDENTS.txt
+){throw 'in-place state mismatch'}
+          if(Test-Path (Join-Path $inplace 'd3d9.dll.ptar_original')){throw 'in-place install created false backup'}
+          & (Join-Path $inplace 'uninstall_x86_d3d9.ps1') -GameExe $iex
+          if(Test-Path (Join-Path $inplace 'd3d9.dll')){throw 'in-place uninstall left d3d9.dll'}
+          if(-not(Test-Path $iex)){throw 'in-place uninstall removed game EXE'}
+          Write-Host 'INSTALLER_PATH_SMOKE=PASS'
+          Write-Host 'INSTALLER_INPLACE_SMOKE=PASS'
+
       - name: Package test installer
         shell: pwsh
         run: |
