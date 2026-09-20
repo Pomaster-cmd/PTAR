@@ -27,15 +27,17 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           New-Item -ItemType Directory -Force build_x86 | Out-Null
-          $roots=@("$env:ProgramFiles(x86)\Windows Kits\10\bin","$env:ProgramFiles(x86)\Windows Kits\8.1\bin")
-          $fxc=$null
-          foreach($root in $roots){
-            if(Test-Path $root){
-              $fxc=Get-ChildItem $root -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '\\x86\\fxc\.exe$' } | Sort-Object FullName -Descending | Select-Object -First 1
-              if($fxc){break}
+          $fxc=Get-Command fxc.exe -ErrorAction SilentlyContinue
+          if(-not $fxc){
+            $roots=@("$env:ProgramFiles(x86)\Windows Kits\10\bin","$env:ProgramFiles(x86)\Windows Kits\8.1\bin")
+            foreach($root in $roots){
+              if(Test-Path $root){
+                $fxc=Get-ChildItem $root -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1
+                if($fxc){break}
+              }
             }
           }
-          if(-not $fxc){throw 'fxc.exe x86 not found'}
+          if(-not $fxc){throw 'fxc.exe not found'}
           & $fxc.FullName /nologo /T ps_3_0 /E main /O3 /Fh build_x86\ptar_ps_bytecode.h /Vn g_ptarPs compat\x86_d3d9\ptar_moe_d3d9_ps.hlsl
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
           if(-not(Test-Path build_x86\ptar_ps_bytecode.h)){throw 'shader header missing'}
