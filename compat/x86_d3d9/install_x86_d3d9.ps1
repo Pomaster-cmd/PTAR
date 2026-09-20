@@ -5,7 +5,7 @@ param(
 $ErrorActionPreference='Stop'
 
 if([string]::IsNullOrWhiteSpace($PackageRoot)){
-    $PackageRoot=Split-Path -LiteralPath $PSCommandPath -Parent
+    $PackageRoot=$PSScriptRoot
 }
 $PackageRoot=[IO.Path]::GetFullPath($PackageRoot)
 
