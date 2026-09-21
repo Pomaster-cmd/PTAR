@@ -51,6 +51,7 @@ static void PtHudUpdateInput()
         if(ctrl)
         {
             g_ptarHudFgEnabled=!g_ptarHudFgEnabled;
+            PtFgPacerReset();
             PtDiagLogA(
                 "FRAMEGEN_CTRL_F6 fg=%s",
                 g_ptarHudFgEnabled?"ON":"OFF");
@@ -99,6 +100,9 @@ static double PtHudRealFps()
 
 static double PtHudDisplayFps(bool fgProducing)
 {
+    const double measured=PtFgPacerVisibleFps();
+    if(measured>0.0)
+        return measured;
     return g_ptarHudFps*(fgProducing?2.0:1.0);
 }
 
@@ -232,7 +236,7 @@ static void PtHudDraw(
     const int scale=2;
     const int lineStep=17;
 
-    D3DRECT bg={8,8,620,142};
+    D3DRECT bg={8,8,700,160};
     dev->Clear(
         1,&bg,D3DCLEAR_TARGET,
         D3DCOLOR_XRGB(8,8,8),
@@ -242,7 +246,7 @@ static void PtHudDraw(
 
     PtHudDrawLine(
         dev,x,y,scale,
-        "PTAR X86 D3D9 SPATIAL2",
+        "PTAR X86 D3D9 FG1",
         D3DCOLOR_XRGB(240,240,240));
 
     _snprintf_s(
@@ -273,7 +277,7 @@ static void PtHudDraw(
 
     _snprintf_s(
         line,sizeof(line),_TRUNCATE,
-        "FG: %s  ME: /4>/2",
+        "FG: %s  ME: /4>/2  TARGET: 60",
         g_ptarHudFgEnabled?"ON":"OFF");
     PtHudDrawLine(
         dev,x,y+lineStep*4,scale,line,
@@ -281,13 +285,23 @@ static void PtHudDraw(
             D3DCOLOR_XRGB(90,235,255):
             D3DCOLOR_XRGB(190,190,190));
 
+    _snprintf_s(
+        line,sizeof(line),_TRUNCATE,
+        "REAL: %lu  GEN: %lu  LATE SKIP: %lu",
+        PtFgPacerRealCount(),
+        PtFgPacerGeneratedCount(),
+        PtFgPacerLateSkipCount());
     PtHudDrawLine(
-        dev,x,y+lineStep*5,scale,
+        dev,x,y+lineStep*5,scale,line,
+        D3DCOLOR_XRGB(210,210,210));
+
+    PtHudDrawLine(
+        dev,x,y+lineStep*6,scale,
         "F6 A/B  CTRL+F6 FG  F8 HUD",
         D3DCOLOR_XRGB(180,220,255));
 
     PtHudDrawLine(
-        dev,x,y+lineStep*6,scale,
+        dev,x,y+lineStep*7,scale,
         fgProducing?"CADENCE: REAL+GENERATED":"CADENCE: REAL ONLY",
         D3DCOLOR_XRGB(210,210,210));
 }
