@@ -118,6 +118,19 @@ jobs:
           if($fg -notmatch 'FG_MOTION_NONZERO_PIXELS=[1-9][0-9]*'){throw 'FG motion evidence missing'}
           Write-Host 'D3D9_FG_GPU_PIPELINE=PASS'
 
+      - name: Validate generic D3D9 FG QPC pacing
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I compat\x86_d3d9 compat\x86_d3d9\d3d9_fg_pacer_smoke.cpp /link /OUT:artifact\d3d9_fg_pacer_smoke.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          & artifact\d3d9_fg_pacer_smoke.exe | Tee-Object build_x86\D3D9_FG_PACER_SMOKE.txt
+          if($LASTEXITCODE -ne 0){throw "D3D9 FG pacer smoke failed rc=$LASTEXITCODE"}
+          $p=Get-Content build_x86\D3D9_FG_PACER_SMOKE.txt -Raw
+          if($p -notmatch 'D3D9_FG_PACER_SMOKE=PASS'){throw 'FG pacer PASS marker missing'}
+          if($p -notmatch 'FG_PACER_LATE_GENERATE=0'){throw 'FG late-skip gate failed'}
+          Write-Host 'D3D9_FG_QPC_PACING=PASS'
+
       - name: Reproduce Direct3DCreate9 object lifetime sequence
         shell: pwsh
         run: |
@@ -224,3 +237,4 @@ jobs:
             build_x86/DEPENDENTS.txt
             build_x86/D3D9_OBJECT_LIFETIME_SMOKE.txt
             build_x86/D3D9_FG_GPU_PIPELINE_SMOKE.txt
+            build_x86/D3D9_FG_PACER_SMOKE.txt
