@@ -461,50 +461,75 @@ struct QuadVertex
     float u,v;
 };
 
-static HRESULT RenderPTARToRealBackBuffer(IDirect3DDevice9* dev)
+static HRESULT DrawFullscreenPass(
+    IDirect3DDevice9* dev,
+    IDirect3DSurface9* target,
+    UINT targetW,
+    UINT targetH,
+    IDirect3DPixelShader9* shader,
+    IDirect3DTexture9* texture0,
+    IDirect3DTexture9* texture1,
+    IDirect3DTexture9* texture2,
+    const float* constant0)
 {
-    if(!g_ptar.active || !g_ptar.sourceTexture || !g_ptar.realBackBuffer ||
-       !g_ptar.shader || !g_ptar.bilinearShader || !g_ptar.stateBlock)
-        return S_FALSE;
+    if(!dev || !target || !targetW || !targetH || !shader || !texture0)
+        return D3DERR_INVALIDCALL;
 
-    HRESULT hr=g_ptar.stateBlock->Capture();
+    // Always unbind shader resources before selecting a new render target so a
+    // history texture can safely become the destination of a later pass.
+    dev->SetTexture(0,0);
+    dev->SetTexture(1,0);
+    dev->SetTexture(2,0);
+
+    HRESULT hr=g_realSetRenderTarget(dev,0,target);
     if(FAILED(hr)) return hr;
 
-    hr=g_realSetRenderTarget(dev,0,g_ptar.realBackBuffer);
+    hr=dev->SetDepthStencilSurface(0);
     if(FAILED(hr)) return hr;
-    dev->SetDepthStencilSurface(0);
 
     D3DVIEWPORT9 vp={};
-    vp.X=0; vp.Y=0; vp.Width=g_ptar.outputW; vp.Height=g_ptar.outputH;
-    vp.MinZ=0.0f; vp.MaxZ=1.0f;
-    dev->SetViewport(&vp);
+    vp.X=0;
+    vp.Y=0;
+    vp.Width=targetW;
+    vp.Height=targetH;
+    vp.MinZ=0.0f;
+    vp.MaxZ=1.0f;
+    hr=dev->SetViewport(&vp);
+    if(FAILED(hr)) return hr;
 
     dev->SetRenderState(D3DRS_ZENABLE,FALSE);
     dev->SetRenderState(D3DRS_ZWRITEENABLE,FALSE);
     dev->SetRenderState(D3DRS_ALPHABLENDENABLE,FALSE);
     dev->SetRenderState(D3DRS_CULLMODE,D3DCULL_NONE);
     dev->SetRenderState(D3DRS_SCISSORTESTENABLE,FALSE);
-    dev->SetRenderState(D3DRS_COLORWRITEENABLE,
-        D3DCOLORWRITEENABLE_RED|D3DCOLORWRITEENABLE_GREEN|
-        D3DCOLORWRITEENABLE_BLUE|D3DCOLORWRITEENABLE_ALPHA);
+    dev->SetRenderState(
+        D3DRS_COLORWRITEENABLE,
+        D3DCOLORWRITEENABLE_RED|
+        D3DCOLORWRITEENABLE_GREEN|
+        D3DCOLORWRITEENABLE_BLUE|
+        D3DCOLORWRITEENABLE_ALPHA);
 
-    dev->SetSamplerState(0,D3DSAMP_MINFILTER,D3DTEXF_LINEAR);
-    dev->SetSamplerState(0,D3DSAMP_MAGFILTER,D3DTEXF_LINEAR);
-    dev->SetSamplerState(0,D3DSAMP_MIPFILTER,D3DTEXF_NONE);
-    dev->SetSamplerState(0,D3DSAMP_ADDRESSU,D3DTADDRESS_CLAMP);
-    dev->SetSamplerState(0,D3DSAMP_ADDRESSV,D3DTADDRESS_CLAMP);
+    for(DWORD sampler=0;sampler<3;++sampler)
+    {
+        dev->SetSamplerState(sampler,D3DSAMP_MINFILTER,D3DTEXF_LINEAR);
+        dev->SetSamplerState(sampler,D3DSAMP_MAGFILTER,D3DTEXF_LINEAR);
+        dev->SetSamplerState(sampler,D3DSAMP_MIPFILTER,D3DTEXF_NONE);
+        dev->SetSamplerState(sampler,D3DSAMP_ADDRESSU,D3DTADDRESS_CLAMP);
+        dev->SetSamplerState(sampler,D3DSAMP_ADDRESSV,D3DTADDRESS_CLAMP);
+    }
 
-    float sizes[4]={
-        (float)g_ptar.sourceW,(float)g_ptar.sourceH,
-        (float)g_ptar.outputW,(float)g_ptar.outputH};
-    dev->SetPixelShaderConstantF(0,sizes,1);
-    dev->SetPixelShader(PtHudUseMoe()?g_ptar.shader:g_ptar.bilinearShader);
+    if(constant0)
+        dev->SetPixelShaderConstantF(0,constant0,1);
+
+    dev->SetPixelShader(shader);
     dev->SetVertexShader(0);
     dev->SetFVF(D3DFVF_XYZRHW|D3DFVF_TEX1);
-    dev->SetTexture(0,g_ptar.sourceTexture);
+    dev->SetTexture(0,texture0);
+    dev->SetTexture(1,texture1);
+    dev->SetTexture(2,texture2);
 
-    const float w=(float)g_ptar.outputW;
-    const float h=(float)g_ptar.outputH;
+    const float w=(float)targetW;
+    const float h=(float)targetH;
     QuadVertex q[4]={
         {-0.5f,-0.5f,0.0f,1.0f,0.0f,0.0f},
         {w-0.5f,-0.5f,0.0f,1.0f,1.0f,0.0f},
@@ -512,13 +537,152 @@ static HRESULT RenderPTARToRealBackBuffer(IDirect3DDevice9* dev)
         {w-0.5f,h-0.5f,0.0f,1.0f,1.0f,1.0f}
     };
 
-    hr=dev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP,2,q,sizeof(QuadVertex));
+    hr=dev->DrawPrimitiveUP(
+        D3DPT_TRIANGLESTRIP,2,q,sizeof(QuadVertex));
+
     dev->SetTexture(0,0);
+    dev->SetTexture(1,0);
+    dev->SetTexture(2,0);
     return hr;
 }
 
+static HRESULT RenderSpatialToCurrent(IDirect3DDevice9* dev)
+{
+    float sizes[4]={
+        (float)g_ptar.sourceW,
+        (float)g_ptar.sourceH,
+        (float)g_ptar.outputW,
+        (float)g_ptar.outputH};
+
+    return DrawFullscreenPass(
+        dev,
+        g_ptar.currentRealSurface,
+        g_ptar.outputW,
+        g_ptar.outputH,
+        PtHudUseMoe()?g_ptar.shader:g_ptar.bilinearShader,
+        g_ptar.sourceTexture,
+        0,
+        0,
+        sizes);
+}
+
+static HRESULT RenderFGMotionAndIntermediate(IDirect3DDevice9* dev)
+{
+    if(!g_ptar.previousRealValid)
+        return S_FALSE;
+
+    float output[4]={
+        (float)g_ptar.outputW,
+        (float)g_ptar.outputH,
+        1.0f/(float)g_ptar.outputW,
+        1.0f/(float)g_ptar.outputH};
+
+    PtDiagStage("FG_ME_COARSE");
+    HRESULT hr=DrawFullscreenPass(
+        dev,
+        g_ptar.motionCoarseSurface,
+        g_ptar.motionCoarseW,
+        g_ptar.motionCoarseH,
+        g_ptar.fgMeCoarseShader,
+        g_ptar.previousRealTexture,
+        g_ptar.currentRealTexture,
+        0,
+        output);
+    if(FAILED(hr))
+    {
+        PtDiagLogA("FG_ME_COARSE_FAIL hr=0x%08lX",(unsigned long)hr);
+        return hr;
+    }
+
+    PtDiagStage("FG_ME_REFINE");
+    hr=DrawFullscreenPass(
+        dev,
+        g_ptar.motionFineSurface,
+        g_ptar.motionFineW,
+        g_ptar.motionFineH,
+        g_ptar.fgMeRefineShader,
+        g_ptar.previousRealTexture,
+        g_ptar.currentRealTexture,
+        g_ptar.motionCoarseTexture,
+        output);
+    if(FAILED(hr))
+    {
+        PtDiagLogA("FG_ME_REFINE_FAIL hr=0x%08lX",(unsigned long)hr);
+        return hr;
+    }
+
+    PtDiagStage("FG_INTERPOLATE");
+    hr=DrawFullscreenPass(
+        dev,
+        g_ptar.generatedSurface,
+        g_ptar.outputW,
+        g_ptar.outputH,
+        g_ptar.fgInterpolateShader,
+        g_ptar.previousRealTexture,
+        g_ptar.currentRealTexture,
+        g_ptar.motionFineTexture,
+        output);
+    if(FAILED(hr))
+        PtDiagLogA("FG_INTERPOLATE_FAIL hr=0x%08lX",(unsigned long)hr);
+
+    return hr;
+}
+
+static HRESULT RenderTextureToBackBuffer(
+    IDirect3DDevice9* dev,
+    IDirect3DTexture9* texture)
+{
+    return DrawFullscreenPass(
+        dev,
+        g_ptar.realBackBuffer,
+        g_ptar.outputW,
+        g_ptar.outputH,
+        g_ptar.bilinearShader,
+        texture,
+        0,
+        0,
+        0);
+}
+
+static void RotateRealHistory()
+{
+    IDirect3DTexture9* texture=g_ptar.previousRealTexture;
+    g_ptar.previousRealTexture=g_ptar.currentRealTexture;
+    g_ptar.currentRealTexture=texture;
+
+    IDirect3DSurface9* surface=g_ptar.previousRealSurface;
+    g_ptar.previousRealSurface=g_ptar.currentRealSurface;
+    g_ptar.currentRealSurface=surface;
+
+    g_ptar.previousRealValid=true;
+}
+
+static HRESULT PresentPTARTexture(
+    IDirect3DDevice9* dev,
+    IDirect3DTexture9* texture,
+    HWND hwnd,
+    const RGNDATA* dirty,
+    bool fgProducing)
+{
+    HRESULT hr=RenderTextureToBackBuffer(dev,texture);
+    if(FAILED(hr))
+        return hr;
+
+    PtHudDraw(
+        dev,
+        g_ptar.sourceW,g_ptar.sourceH,
+        g_ptar.outputW,g_ptar.outputH,
+        fgProducing);
+
+    return g_realPresent(dev,0,0,hwnd,dirty);
+}
+
 static HRESULT STDMETHODCALLTYPE HookPresent(
-    IDirect3DDevice9* self,const RECT* src,const RECT* dst,HWND hwnd,const RGNDATA* dirty)
+    IDirect3DDevice9* self,
+    const RECT* src,
+    const RECT* dst,
+    HWND hwnd,
+    const RGNDATA* dirty)
 {
     if(!g_ptar.active || self!=g_ptar.device || g_ptar.inPresent)
         return g_realPresent(self,src,dst,hwnd,dirty);
@@ -526,18 +690,68 @@ static HRESULT STDMETHODCALLTYPE HookPresent(
     g_ptar.inPresent=true;
     PtHudFrameTick();
 
-    HRESULT drawHr=RenderPTARToRealBackBuffer(self);
-    if(FAILED(drawHr))
-        Log(L"PTAR_DRAW_FAIL hr=0x%08X",(unsigned)drawHr);
+    HRESULT result=S_OK;
+    HRESULT captureHr=g_ptar.stateBlock?
+        g_ptar.stateBlock->Capture():E_FAIL;
 
-    if(SUCCEEDED(drawHr))
-        PtHudDraw(
-            self,
-            g_ptar.sourceW,g_ptar.sourceH,
-            g_ptar.outputW,g_ptar.outputH);
+    if(FAILED(captureHr))
+    {
+        PtDiagLogA(
+            "PRESENT_STATE_CAPTURE_FAIL hr=0x%08lX",
+            (unsigned long)captureHr);
+        result=g_realPresent(self,src,dst,hwnd,dirty);
+        g_ptar.inPresent=false;
+        return result;
+    }
 
-    HRESULT presentHr=g_realPresent(self,0,0,hwnd,dirty);
+    PtDiagStage("SPATIAL_CURRENT_REAL");
+    HRESULT spatialHr=RenderSpatialToCurrent(self);
+    if(FAILED(spatialHr))
+    {
+        PtDiagLogA(
+            "SPATIAL_CURRENT_REAL_FAIL hr=0x%08lX",
+            (unsigned long)spatialHr);
+        result=g_realPresent(self,src,dst,hwnd,dirty);
+        goto restore_game_state;
+    }
 
+    {
+        bool fgProducing=false;
+
+        if(PtHudFgEnabled() && g_ptar.previousRealValid)
+        {
+            HRESULT fgHr=RenderFGMotionAndIntermediate(self);
+            if(SUCCEEDED(fgHr))
+            {
+                fgProducing=true;
+                PtDiagStage("FG_PRESENT_GENERATED");
+                HRESULT generatedPresent=PresentPTARTexture(
+                    self,g_ptar.generatedTexture,hwnd,dirty,true);
+                if(FAILED(generatedPresent))
+                {
+                    PtDiagLogA(
+                        "FG_PRESENT_GENERATED_FAIL hr=0x%08lX",
+                        (unsigned long)generatedPresent);
+                    fgProducing=false;
+                }
+            }
+            else
+            {
+                PtDiagLogA(
+                    "FG_PIPELINE_FALLBACK_REAL hr=0x%08lX",
+                    (unsigned long)fgHr);
+            }
+        }
+
+        PtDiagStage("PRESENT_REAL");
+        result=PresentPTARTexture(
+            self,g_ptar.currentRealTexture,hwnd,dirty,fgProducing);
+
+        if(SUCCEEDED(result))
+            RotateRealHistory();
+    }
+
+restore_game_state:
     if(g_ptar.stateBlock)
         g_ptar.stateBlock->Apply();
     if(g_ptar.sourceSurface)
@@ -545,8 +759,9 @@ static HRESULT STDMETHODCALLTYPE HookPresent(
     self->SetDepthStencilSurface(g_ptar.virtualDepth);
     SetVirtualViewport(self);
 
+    PtDiagStage("PRESENT_RETURN_TO_GAME");
     g_ptar.inPresent=false;
-    return presentHr;
+    return result;
 }
 
 static HRESULT STDMETHODCALLTYPE HookReset(IDirect3DDevice9* self,D3DPRESENT_PARAMETERS* pp)
