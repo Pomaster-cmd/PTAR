@@ -32,9 +32,9 @@
 #include "ptar_diag.h"
 #include "ptar_fg_pacer.h"
 #include "ptar_resolution_policy.h"
+#include "ptar_async_presenter.h"
 #include "ptar_hud.h"
 #include "ptar_gw16i_hud_d3d9.h"
-#include "ptar_async_presenter.h"
 
 static HMODULE g_self=0;
 static HMODULE g_realD3D9=0;
