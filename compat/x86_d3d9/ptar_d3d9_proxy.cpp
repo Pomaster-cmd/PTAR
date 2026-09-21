@@ -79,6 +79,10 @@ static PFN_GetDisplayMode g_realGetDisplayMode=0;
 static PFN_BeginScene g_realBeginScene=0;
 static PFN_EndScene g_realEndScene=0;
 
+static UINT g_ptarAdapter=D3DADAPTER_DEFAULT;
+static D3DDEVTYPE g_ptarDeviceType=D3DDEVTYPE_HAL;
+static HWND g_ptarFocusWindow=0;
+
 static volatile LONG g_ptarGameSceneGateHeld=0;
 static DWORD g_ptarGameSceneThread=0;
 
@@ -277,11 +281,18 @@ static void PreparePTARPresentationParameters(
     actual->MultiSampleQuality=0;
     actual->EnableAutoDepthStencil=FALSE;
 
-    // PTAR owns presentation timing. Keeping the game's INTERVAL_ONE here
-    // makes every real/generated Present consume a VBlank and halves source
-    // throughput when FG is enabled. Use IMMEDIATE on the underlying D3D9
-    // swapchain and pace output from the async presenter instead.
+    // Mirror the production D3D11 ownership split: the game/source device is
+    // not the visible presenter. Keep its swapchain windowed + IMMEDIATE so it
+    // can never take the exclusive/VBlank ownership that belongs to the
+    // isolated presenter. The game still sees its original parameters through
+    // the proxy contract.
+    actual->Windowed=TRUE;
+    actual->BackBufferFormat=D3DFMT_UNKNOWN;
+    actual->FullScreen_RefreshRateInHz=0;
+    actual->SwapEffect=D3DSWAPEFFECT_DISCARD;
     actual->PresentationInterval=D3DPRESENT_INTERVAL_IMMEDIATE;
+    if(!actual->hDeviceWindow)
+        actual->hDeviceWindow=g_ptarFocusWindow;
 }
 
 static HRESULT QueryRealBackBufferGeometry(
@@ -500,25 +511,31 @@ static HRESULT InitializePTARResources(
     PtDiagLogA("INIT_CreateStateBlock hr=0x%08lX ptr=%p",(unsigned long)hr,g_ptar.stateBlock);
     if(FAILED(hr) || !g_ptar.stateBlock) goto fail;
 
-    PtDiagStage("Initialize_AsyncPresenter");
+    PtDiagStage("Initialize_IsolatedPresenter");
     {
-        HRESULT presenterHr=PtAsyncPresenterInitialize(
+        HRESULT presenterHr=PtIsoPresenterInitialize(
             dev,
-            g_ptar.realBackBuffer,
+            (PTARIsoPFN_Direct3DCreate9Ex)g_sysDirect3DCreate9Ex,
+            g_self,
+            g_ptarAdapter,
+            g_ptarDeviceType,
+            g_ptarFocusWindow,
+            sourceW,sourceH,
             outputW,outputH,
             desc.Format,
-            (PTAR_PFN_PRESENT)g_realPresent,
-            (double)g_ptar.outputRefreshHz);
-
-        PtDiagLogA(
-            "INIT_AsyncPresenter hr=0x%08lX active=%d target_hz=%u",
-            (unsigned long)presenterHr,
-            PtAsyncPresenterIsActive()?1:0,
+            spatialActive,
             g_ptar.outputRefreshHz);
 
-        // Fail-open: PTAR spatial reconstruction remains usable if async
-        // presentation cannot be initialized. FG will stay REAL-only on the
-        // direct fallback rather than halving the game's source throughput.
+        PtDiagLogA(
+            "INIT_IsolatedPresenter hr=0x%08lX active=%d "
+            "transport=CPU_READBACK target_hz=%u",
+            (unsigned long)presenterHr,
+            PtIsoPresenterIsActive()?1:0,
+            g_ptar.outputRefreshHz);
+
+        // Fail-open: spatial PTAR remains usable even if the isolated display
+        // path cannot start. FG remains disabled on the direct fallback rather
+        // than reintroducing synchronous GENERATED Presents on the game thread.
     }
 
     PtDiagStage("Initialize_BindVirtualTargets");
@@ -533,11 +550,12 @@ static HRESULT InitializePTARResources(
     if(FAILED(hr)) goto fail;
 
     PtFgPacerReset();
+    PtRealGovernorReset(false);
     g_ptar.active=true;
-    Log(L"PTAR_ACTIVE src=%ux%u out=%ux%u spatial=%s shader=MoE_v01_D3D9_PS3 samples=8 hud=CTRL_F11 fg=CTRL_F6 me=/4>/2 async=%s targetVisible=%u",
+    Log(L"PTAR_ACTIVE src=%ux%u out=%ux%u spatial=%s shader=MoE_v01_D3D9_PS3 samples=8 hud=CTRL_F11 fg=CTRL_F6 presenter=%s transport=CPU_READBACK targetVisible=%u",
         sourceW,sourceH,outputW,outputH,
         spatialActive?L"PTAR_X1.5":L"NATIVE_1X1",
-        PtAsyncPresenterIsActive()?L"ON":L"OFF",
+        PtIsoPresenterIsActive()?L"ISOLATED":L"DIRECT_FALLBACK",
         g_ptar.outputRefreshHz);
     return S_OK;
 
@@ -1216,29 +1234,25 @@ static HRESULT STDMETHODCALLTYPE HookPresent(
     if(!g_ptar.active || self!=g_ptar.device || g_ptar.inPresent)
         return g_realPresent(self,src,dst,hwnd,dirty);
 
-    // Serialize PTAR end-of-frame work against the async scanout thread. The
-    // game scene gate is normally released by EndScene before Present.
-    PtAsyncEnterDevice();
-
     g_ptar.inPresent=true;
     PtHudFrameTick();
-    const unsigned long sequence=++g_ptar.sourceSequence;
 
+    const unsigned long sequence=++g_ptar.sourceSequence;
     HRESULT result=S_OK;
+
     HRESULT captureHr=g_ptar.stateBlock?
         g_ptar.stateBlock->Capture():E_FAIL;
 
     if(FAILED(captureHr))
     {
         PtDiagLogA(
-            "PRESENT_STATE_CAPTURE_FAIL hr=0x%08lX",
+            "PRESENT_STATE_CAPTURE_FAIL hr=0x%08lX fallback=DIRECT",
             (unsigned long)captureHr);
 
-        // Underlying swapchain is IMMEDIATE, so even fallback cannot impose a
-        // VBlank-sized stall on the producer.
         result=g_realPresent(self,src,dst,hwnd,dirty);
+        PtFgPacerRecordVisible(false);
         g_ptar.inPresent=false;
-        PtAsyncLeaveDevice();
+        PtRealGovernorWaitAfterSourceFrame(false);
         return result;
     }
 
@@ -1248,93 +1262,39 @@ static HRESULT STDMETHODCALLTYPE HookPresent(
             "NATIVE_1X1_CURRENT_REAL");
 
     HRESULT spatialHr=RenderSpatialToCurrent(self);
+
     if(FAILED(spatialHr))
     {
         PtDiagLogA(
-            "SPATIAL_CURRENT_REAL_FAIL hr=0x%08lX",
+            "SPATIAL_CURRENT_REAL_FAIL hr=0x%08lX fallback=DIRECT",
             (unsigned long)spatialHr);
+
         result=g_realPresent(self,src,dst,hwnd,dirty);
+        PtFgPacerRecordVisible(false);
         goto restore_game_state;
     }
 
+    if(PtIsoPresenterIsActive())
     {
-        bool fgQueued=false;
-        const bool generateThisFrame=
-            PtShouldGenerateThisSourceFrame();
+        PtDiagStage("ISOLATED_SUBMIT_REAL");
 
-        if(generateThisFrame)
+        HRESULT submitHr=PtIsoSubmitReal(
+            g_ptar.currentRealSurface,
+            sequence);
+
+        if(SUCCEEDED(submitHr))
         {
-            HRESULT fgHr=RenderFGMotionAndIntermediate(self);
-            if(SUCCEEDED(fgHr))
-            {
-                PtDiagStage("FG_QUEUE_GENERATED");
-                HRESULT queueGen=QueuePTARFrame(
-                    self,
-                    g_ptar.generatedSurface,
-                    hwnd,
-                    true,
-                    true,
-                    sequence);
-
-                if(SUCCEEDED(queueGen))
-                {
-                    fgQueued=true;
-                }
-                else
-                {
-                    PtDiagLogA(
-                        "FG_QUEUE_GENERATED_FAIL seq=%lu hr=0x%08lX",
-                        sequence,
-                        (unsigned long)queueGen);
-                }
-            }
-            else
-            {
-                PtDiagLogA(
-                    "FG_PIPELINE_FALLBACK_REAL hr=0x%08lX",
-                    (unsigned long)fgHr);
-            }
-        }
-
-        if(PtAsyncPresenterIsActive())
-        {
-            PtDiagStage("QUEUE_REAL");
-            HRESULT queueReal=QueuePTARFrame(
-                self,
-                g_ptar.currentRealSurface,
-                hwnd,
-                false,
-                fgQueued,
-                sequence);
-
-            if(FAILED(queueReal))
-            {
-                PtDiagLogA(
-                    "ASYNC_QUEUE_REAL_FAIL seq=%lu hr=0x%08lX fallback=DIRECT",
-                    sequence,
-                    (unsigned long)queueReal);
-
-                result=PresentPTARFrameDirectFallback(
-                    self,
-                    g_ptar.currentRealSurface,
-                    hwnd,
-                    false,
-                    false);
-            }
-            else
-            {
-                // The game's Present contract is satisfied by successful
-                // mailbox submission. Physical Present happens asynchronously.
-                result=S_OK;
-            }
+            // The source frame is handed off. Physical Sync1 Present and all
+            // GENERATED work now happen exclusively on the presenter device.
+            result=S_OK;
         }
         else
         {
-            // Async presenter initialization is fail-open. Keep PTAR spatial
-            // active and preserve source throughput; FG is not generated on
-            // this path because it cannot be cadence-correct without mailbox
-            // presentation.
-            PtDiagStage("PRESENT_REAL_DIRECT_FALLBACK");
+            PtDiagLogA(
+                "ISOLATED_SUBMIT_REAL_FAIL seq=%lu hr=0x%08lX fallback=DIRECT",
+                sequence,
+                (unsigned long)submitHr);
+
             result=PresentPTARFrameDirectFallback(
                 self,
                 g_ptar.currentRealSurface,
@@ -1342,24 +1302,42 @@ static HRESULT STDMETHODCALLTYPE HookPresent(
                 false,
                 false);
         }
-
-        // Temporal history follows produced REAL source frames, not scanout.
-        // The presenter is allowed to coalesce stale REALs without corrupting
-        // ME history or slowing the game.
-        RotateRealHistory();
+    }
+    else
+    {
+        // F10 / presenter-init fail-open path. Never run FG synchronously.
+        PtDiagStage("PRESENT_REAL_DIRECT_FALLBACK");
+        result=PresentPTARFrameDirectFallback(
+            self,
+            g_ptar.currentRealSurface,
+            hwnd,
+            false,
+            false);
     }
 
 restore_game_state:
     if(g_ptar.stateBlock)
         g_ptar.stateBlock->Apply();
+
     if(g_ptar.sourceSurface)
-        g_realSetRenderTarget(self,0,g_ptar.sourceSurface);
-    self->SetDepthStencilSurface(g_ptar.virtualDepth);
+        g_realSetRenderTarget(
+            self,0,g_ptar.sourceSurface);
+
+    self->SetDepthStencilSurface(
+        g_ptar.virtualDepth);
+
     SetVirtualViewport(self);
 
     PtDiagStage("PRESENT_RETURN_TO_GAME");
     g_ptar.inPresent=false;
-    PtAsyncLeaveDevice();
+
+    // Exact production governor semantics:
+    //   presenter+FG ON -> target60 policy -> up to 30 REAL/s;
+    //   FG OFF / direct fallback -> target120 policy -> up to 60 REAL/s.
+    PtRealGovernorWaitAfterSourceFrame(
+        PtHudFgEnabled() &&
+        PtIsoPresenterIsActive());
+
     return result;
 }
 
@@ -1419,6 +1397,9 @@ static HRESULT STDMETHODCALLTYPE HookReset(
         return D3DERR_INVALIDCALL;
 
     const D3DPRESENT_PARAMETERS original=*pp;
+
+    if(original.hDeviceWindow)
+        g_ptarFocusWindow=original.hDeviceWindow;
 
     PtResolutionLoadConfig(g_self);
     PTARResolutionPlan plan={};
@@ -1613,6 +1594,12 @@ static HRESULT STDMETHODCALLTYPE HookCreateDevice(
     *out=0;
 
     const D3DPRESENT_PARAMETERS original=*pp;
+
+    g_ptarAdapter=adapter;
+    g_ptarDeviceType=type;
+    g_ptarFocusWindow=
+        focus?focus:original.hDeviceWindow;
+
     PtDiagLogA(
         "CREATEDEVICE_PP w=%u h=%u fmt=%u count=%u ms=%u msq=%lu swap=%u hwnd=%p windowed=%ld "
         "autodepth=%ld depthfmt=%u refresh=%u interval=0x%08lX",
