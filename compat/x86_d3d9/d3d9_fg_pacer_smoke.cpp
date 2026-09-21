@@ -97,7 +97,7 @@ int main()
     // Simulate a source/driver stall that would previously have caused a
     // cascade of late-midpoint rejects. PRODPORT1 must accept GENERATED and
     // resynchronise the local grid instead of incrementing LATE_SKIP.
-    const unsigned long resyncBefore=PtFgPacerResyncCount();
+    const unsigned long resyncBefore=g_ptarFgPacer.resyncs;
     Sleep(45);
 
     LARGE_INTEGER beforeStallG={0},afterStallG={0};
@@ -106,7 +106,7 @@ int main()
     QueryPerformanceCounter(&afterStallG);
 
     const double stallWait=Ms(afterStallG.QuadPart-beforeStallG.QuadPart,freq);
-    const unsigned long resyncAfter=PtFgPacerResyncCount();
+    const unsigned long resyncAfter=g_ptarFgPacer.resyncs;
 
     std::printf("FG_PACER_STALL_GENERATE=%d\n",stallGenerate?1:0);
     std::printf("FG_PACER_STALL_WAIT_MS=%.3f\n",stallWait);
