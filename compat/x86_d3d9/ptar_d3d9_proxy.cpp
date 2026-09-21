@@ -33,6 +33,7 @@
 #include "ptar_fg_pacer.h"
 #include "ptar_fg_governor.h"
 #include "ptar_resolution_policy.h"
+#include "ptar_async_presenter.h" // transitional fallback until isolated bridge is selected
 
 // F10 lives in the HUD input contract but controls the isolated presenter.
 // Forward declarations break the intentional header dependency cycle:
