@@ -113,12 +113,55 @@ jobs:
           Copy-Item artifact\d3d9.dll $inplace\d3d9.dll
           Copy-Item compat\x86_d3d9\install_x86_d3d9.ps1 $inplace\install_x86_d3d9.ps1
           Copy-Item compat\x86_d3d9\uninstall_x86_d3d9.ps1 $inplace\uninstall_x86_d3d9.ps1
+          Copy-Item compat\x86_d3d9\collect_x86_d3d9_diag.ps1 $inplace\collect_x86_d3d9_diag.ps1
           $iex=Join-Path $inplace 'conviction_game.exe'
           Copy-Item "$env:SystemRoot\SysWOW64\notepad.exe" $iex
           & (Join-Path $inplace 'install_x86_d3d9.ps1') -GameExe $iex
           $istate=Get-Content (Join-Path $inplace 'PTAR_X86_D3D9_INSTALL_STATE.txt') -Raw
-          if($istate -notmatch '(?m)^INPLACE_PACKAGE=1\r?$'){throw 'in-place state mismatch'}
+          if($istate -notmatch '(?m)^INPLACE_PACKAGE=1\r?          if(Test-Path (Join-Path $inplace 'd3d9.dll')){throw 'in-place uninstall left d3d9.dll'}
+          if(-not(Test-Path $iex)){throw 'in-place uninstall removed game EXE'}
+          Write-Host 'INSTALLER_PATH_SMOKE=PASS'
+          Write-Host 'INSTALLER_INPLACE_SMOKE=PASS'
+
+      - name: Package test installer
+        shell: pwsh
+        run: |
+          Copy-Item compat\x86_d3d9\01-INSTALL_CONVICTION_PTAR_X86.bat artifact\
+          Copy-Item compat\x86_d3d9\02-UNINSTALL_CONVICTION_PTAR_X86.bat artifact\
+          Copy-Item compat\x86_d3d9\install_x86_d3d9.ps1 artifact\
+          Copy-Item compat\x86_d3d9\uninstall_x86_d3d9.ps1 artifact\
+          Copy-Item compat\x86_d3d9\03-COLLECT_CRASH_DIAGNOSTICS.bat artifact\
+          Copy-Item compat\x86_d3d9\collect_x86_d3d9_diag.ps1 artifact\
+          Copy-Item compat\x86_d3d9\README_TEST.txt artifact\
+          Compress-Archive -Path artifact\* -DestinationPath PTAR_X86_D3D9_SPATIAL1_CONVICTION_TEST.zip -CompressionLevel Optimal
+          $z=(Get-FileHash PTAR_X86_D3D9_SPATIAL1_CONVICTION_TEST.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "PACKAGE_SHA256=$z"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-X86-D3D9-SPATIAL1-CONVICTION
+          path: |
+            PTAR_X86_D3D9_SPATIAL1_CONVICTION_TEST.zip
+            build_x86/HEADERS.txt
+            build_x86/EXPORTS.txt
+            build_x86/DEPENDENTS.txt
+){throw 'in-place state mismatch'}
           if(Test-Path (Join-Path $inplace 'd3d9.dll.ptar_original')){throw 'in-place install created false backup'}
+
+          "synthetic crash log" | Set-Content (Join-Path $inplace 'PTAR_X86_D3D9.log') -Encoding ASCII
+          & (Join-Path $inplace 'collect_x86_d3d9_diag.ps1') -GameExe $iex
+          $diag=Get-ChildItem $inplace -Filter 'PTAR_X86_D3D9_DIAG_*.zip' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if(-not $diag){throw 'diagnostic collector produced no ZIP'}
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $za=[IO.Compression.ZipFile]::OpenRead($diag.FullName)
+          try{
+            $names=@($za.Entries | ForEach-Object {$_.FullName})
+            foreach($required in @('SUMMARY.txt','PTAR_X86_D3D9.log','PTAR_X86_D3D9_INSTALL_STATE.txt')){
+              if($names -notcontains $required){throw "diagnostic ZIP missing $required"}
+            }
+          } finally {$za.Dispose()}
+          Write-Host 'CRASH_DIAGNOSTIC_COLLECTOR_SMOKE=PASS'
+
           & (Join-Path $inplace 'uninstall_x86_d3d9.ps1') -GameExe $iex
           if(Test-Path (Join-Path $inplace 'd3d9.dll')){throw 'in-place uninstall left d3d9.dll'}
           if(-not(Test-Path $iex)){throw 'in-place uninstall removed game EXE'}
