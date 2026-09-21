@@ -8,7 +8,13 @@ static bool g_ptarHudVisible=true;
 static bool g_ptarHudUseMoe=true;
 static bool g_ptarHudFgEnabled=false;
 static bool g_ptarHudPrevF6=false;
+static bool g_ptarHudPrevF7=false;
 static bool g_ptarHudPrevF8=false;
+static bool g_ptarHudPrevF9=false;
+static bool g_ptarHudPrevF10=false;
+static bool g_ptarHudPrevF11=false;
+static bool g_ptarHudPrevF12=false;
+static int g_ptarHudFgProfile=2;
 static LARGE_INTEGER g_ptarHudFreq={0};
 static LARGE_INTEGER g_ptarHudLast={0};
 static double g_ptarHudFps=0.0;
@@ -43,9 +49,16 @@ static void PtHudUpdateFps()
 static void PtHudUpdateInput()
 {
     const bool f6=(GetAsyncKeyState(VK_F6)&0x8000)!=0;
+    const bool f7=(GetAsyncKeyState(VK_F7)&0x8000)!=0;
     const bool f8=(GetAsyncKeyState(VK_F8)&0x8000)!=0;
+    const bool f9=(GetAsyncKeyState(VK_F9)&0x8000)!=0;
+    const bool f10=(GetAsyncKeyState(VK_F10)&0x8000)!=0;
+    const bool f11=(GetAsyncKeyState(VK_F11)&0x8000)!=0;
+    const bool f12=(GetAsyncKeyState(VK_F12)&0x8000)!=0;
     const bool ctrl=(GetAsyncKeyState(VK_CONTROL)&0x8000)!=0;
 
+    // Keep the production GW16I shortcut contract. Chords are isolated from
+    // their plain-key actions exactly as in the reference runtime.
     if(f6 && !g_ptarHudPrevF6)
     {
         if(ctrl)
@@ -53,28 +66,89 @@ static void PtHudUpdateInput()
             g_ptarHudFgEnabled=!g_ptarHudFgEnabled;
             PtFgPacerReset();
             PtDiagLogA(
-                "FRAMEGEN_CTRL_F6 fg=%s",
+                "HOTKEY CTRL+F6 FrameGeneration=%s",
                 g_ptarHudFgEnabled?"ON":"OFF");
         }
         else
         {
             g_ptarHudUseMoe=!g_ptarHudUseMoe;
             PtDiagLogA(
-                "HUDCOMPARE_F6 mode=%s",
+                "HOTKEY F6 ManualFilter=%s",
                 g_ptarHudUseMoe?"PTAR_MOE":"BILINEAR_REF");
         }
     }
 
+    if(f7 && !g_ptarHudPrevF7 && !ctrl)
+        PtDiagLogA("HOTKEY F7 Benchmark requested");
+
     if(f8 && !g_ptarHudPrevF8)
+    {
+        if(ctrl)
+        {
+            if(g_ptarHudFgEnabled)
+            {
+                // Match production same-ME-tier live selection. The D3D9
+                // production port currently uses the /2 high-quality tier,
+                // therefore live cycling is QUALITY <-> CONSERVATIVE.
+                g_ptarHudFgProfile=(g_ptarHudFgProfile==2)?3:2;
+            }
+            else
+            {
+                g_ptarHudFgProfile=(g_ptarHudFgProfile+1)&3;
+            }
+
+            PtDiagLogA(
+                "HOTKEY CTRL+F8 FGProfile=%d fg=%s",
+                g_ptarHudFgProfile,
+                g_ptarHudFgEnabled?"ON":"OFF");
+        }
+        else
+        {
+            // Plain F8 is Status in the production contract. It must never
+            // toggle HUD visibility; CTRL+F11 owns that function.
+            g_ptarHudVisible=true;
+            PtDiagLogA(
+                "HOTKEY F8 Status mode=%s fg=%s profile=%d",
+                g_ptarHudUseMoe?"PTAR_MOE":"BILINEAR_REF",
+                g_ptarHudFgEnabled?"ON":"OFF",
+                g_ptarHudFgProfile);
+        }
+    }
+
+    if(f9 && !g_ptarHudPrevF9)
+    {
+        if(ctrl)
+            PtDiagLogA("HOTKEY CTRL+F9 VideoRecord requested");
+        else
+            PtDiagLogA("HOTKEY F9 Capture requested");
+    }
+
+    if(f10 && !g_ptarHudPrevF10 && !ctrl)
+        PtDiagLogA("HOTKEY F10 TogglePresenter requested");
+
+    if(f11 && !g_ptarHudPrevF11 && ctrl)
     {
         g_ptarHudVisible=!g_ptarHudVisible;
         PtDiagLogA(
-            "HUDCOMPARE_F8 hud=%s",
+            "HOTKEY CTRL+F11 ToggleHUD=%s",
             g_ptarHudVisible?"ON":"OFF");
     }
 
+    if(f12 && !g_ptarHudPrevF12 && !ctrl)
+    {
+        g_ptarHudUseMoe=!g_ptarHudUseMoe;
+        PtDiagLogA(
+            "HOTKEY F12 FilterNext=%s",
+            g_ptarHudUseMoe?"PTAR_MOE":"BILINEAR_REF");
+    }
+
     g_ptarHudPrevF6=f6;
+    g_ptarHudPrevF7=f7;
     g_ptarHudPrevF8=f8;
+    g_ptarHudPrevF9=f9;
+    g_ptarHudPrevF10=f10;
+    g_ptarHudPrevF11=f11;
+    g_ptarHudPrevF12=f12;
 }
 
 static void PtHudFrameTick()
@@ -246,7 +320,7 @@ static void PtHudDraw(
 
     PtHudDrawLine(
         dev,x,y,scale,
-        "PTAR X86 D3D9 FG1",
+        "PTAR X86 D3D9 PRODPORT",
         D3DCOLOR_XRGB(240,240,240));
 
     _snprintf_s(
@@ -277,8 +351,9 @@ static void PtHudDraw(
 
     _snprintf_s(
         line,sizeof(line),_TRUNCATE,
-        "FG: %s  ME: /4>/2  TARGET: 60",
-        g_ptarHudFgEnabled?"ON":"OFF");
+        "FG: %s  PROFILE: %d  TARGET: 60",
+        g_ptarHudFgEnabled?"ON":"OFF",
+        g_ptarHudFgProfile);
     PtHudDrawLine(
         dev,x,y+lineStep*4,scale,line,
         g_ptarHudFgEnabled?
@@ -297,11 +372,13 @@ static void PtHudDraw(
 
     PtHudDrawLine(
         dev,x,y+lineStep*6,scale,
-        "F6 A/B  CTRL+F6 FG  F8 HUD",
+        "F6 FILTER  CTRL+F6 FG  CTRL+F8 PROFILE",
         D3DCOLOR_XRGB(180,220,255));
 
     PtHudDrawLine(
         dev,x,y+lineStep*7,scale,
-        fgProducing?"CADENCE: REAL+GENERATED":"CADENCE: REAL ONLY",
+        g_ptarHudVisible?
+            (fgProducing?"F8 STATUS  CTRL+F11 HUD  F12 NEXT":"F8 STATUS  CTRL+F11 HUD  F12 NEXT"):
+            "CTRL+F11 HUD",
         D3DCOLOR_XRGB(210,210,210));
 }
