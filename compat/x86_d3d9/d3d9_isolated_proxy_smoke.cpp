@@ -20,7 +20,7 @@ static HWND CreateSmokeWindow()
     HWND hwnd=CreateWindowExW(
         0,cls,L"PTAR isolated proxy smoke",
         WS_OVERLAPPEDWINDOW,
-        0,0,800,600,
+        0,0,1280,720,
         0,0,inst,0);
 
     if(hwnd)
@@ -105,8 +105,10 @@ int main()
         return 5;
 
     D3DPRESENT_PARAMETERS pp={};
-    pp.BackBufferWidth=640;
-    pp.BackBufferHeight=480;
+    // Start at output resolution so this gate measures presenter isolation,
+    // not the cost of the spatial reconstruction shader on the CI GPU.
+    pp.BackBufferWidth=1920;
+    pp.BackBufferHeight=1080;
     pp.BackBufferFormat=D3DFMT_UNKNOWN;
     pp.BackBufferCount=1;
     pp.MultiSampleType=D3DMULTISAMPLE_NONE;
@@ -154,8 +156,8 @@ int main()
 
     // Reset is also a lifecycle gate: it must stop the old presenter before
     // resetting DEFAULT-pool producer resources, then recreate it cleanly.
-    pp.BackBufferWidth=800;
-    pp.BackBufferHeight=600;
+    pp.BackBufferWidth=1280;
+    pp.BackBufferHeight=720;
     hr=dev->Reset(&pp);
 
     std::printf(
@@ -179,8 +181,8 @@ int main()
 
     // Trigger one more Reset so the runtime writes the presenter stop counters
     // while the process is still alive and the CI can inspect them.
-    pp.BackBufferWidth=640;
-    pp.BackBufferHeight=480;
+    pp.BackBufferWidth=1920;
+    pp.BackBufferHeight=1080;
     hr=dev->Reset(&pp);
     std::printf(
         "ISOLATED_PROXY_FINAL_RESET hr=0x%08lX\n",
@@ -194,9 +196,11 @@ int main()
     d3d->Release();
     FreeLibrary(proxy);
 
-    // 20 source frames are intentionally governed at <=60 REAL/s, so roughly
-    // 333 ms is expected. A >750 ms result is evidence that physical Sync1
-    // presentation has leaked back into the game/source path.
+    // At native 1920x1080 the spatial stage is bypassed, so this timing
+    // isolates source handoff + governor from reconstruction shader cost.
+    // 20 source frames are governed at <=60 REAL/s (~333 ms expected).
+    // >750 ms indicates physical presenter/VBlank coupling or an unexpectedly
+    // expensive bridge, not spatial reconstruction.
     if(ms>750.0)
     {
         std::printf(
