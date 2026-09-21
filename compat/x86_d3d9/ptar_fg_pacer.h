@@ -3,25 +3,22 @@
 #include <windows.h>
 #include "ptar_runtime_metrics.h"
 
-// D3D9 FG production-port pacer.
+// D3D9 FG visible-rate/counter state.
 //
-// The previous FG1 pacer treated the previous REAL presentation as an absolute
-// 60-Hz clock and rejected GENERATED when shader ME finished after that
-// historical midpoint. Field evidence showed that this creates skip storms:
-// the current frame pair cannot exist until CURRENT has been rendered, so the
-// historical midpoint is frequently already in the past.
+// Presentation pacing no longer runs on the game's HookPresent thread. The
+// async mailbox presenter owns the output clock, so this module deliberately
+// contains no producer waits. It only records actually submitted visible
+// REAL/GENERATED Presents for HUD/log telemetry.
 //
-// PRODPORT1 instead preserves the production present-order invariant:
-// GENERATED then REAL, with an even local display interval. The current pair is
-// anchored when it is ready. We never busy-wait for an already missed
-// historical midpoint and never let one late frame poison following pairs.
+// PrepareGenerated/PrepareReal are retained as no-wait compatibility helpers
+// for older tests/callers. They must never sleep, yield to a deadline or lower
+// REAL source throughput.
 
 struct PTFGPacerState
 {
     LARGE_INTEGER frequency;
     LONGLONG lastRealQpc;
     LONGLONG lastVisibleQpc;
-    LONGLONG nextVisibleQpc;
     PTARRollingRate visibleRate;
     unsigned long realPresents;
     unsigned long generatedPresents;
@@ -44,7 +41,7 @@ static void PtFgPacerInit()
 
     g_ptarFgPacer.initialized=true;
     PtDiagLogA(
-        "FG_PACER_INIT qpc_freq=%lld policy=PRODPORT1_EVEN_LOCAL_GRID",
+        "FG_PACER_INIT qpc_freq=%lld policy=ASYNC_VISIBLE_METRICS_NO_PRODUCER_WAIT",
         (long long)g_ptarFgPacer.frequency.QuadPart);
 }
 
@@ -53,21 +50,14 @@ static void PtFgPacerReset()
     PtFgPacerInit();
     g_ptarFgPacer.lastRealQpc=0;
     g_ptarFgPacer.lastVisibleQpc=0;
-    g_ptarFgPacer.nextVisibleQpc=0;
     PtRollingRateReset(&g_ptarFgPacer.visibleRate);
     g_ptarFgPacer.realPresents=0;
     g_ptarFgPacer.generatedPresents=0;
     g_ptarFgPacer.generatedLateSkips=0;
     g_ptarFgPacer.resyncs=0;
     g_ptarFgPacer.waitYields=0;
-    PtDiagLogA("FG_PACER_RESET policy=PRODPORT1");
-}
-
-static LONGLONG PtFgPacerPeriodTicks()
-{
-    PtFgPacerInit();
-    LONGLONG ticks=g_ptarFgPacer.frequency.QuadPart/60;
-    return ticks>0?ticks:1;
+    PtDiagLogA(
+        "FG_PACER_RESET policy=ASYNC_VISIBLE_METRICS_NO_PRODUCER_WAIT");
 }
 
 static LONGLONG PtFgPacerNow()
@@ -77,92 +67,15 @@ static LONGLONG PtFgPacerNow()
     return now.QuadPart;
 }
 
-static void PtFgPacerWaitUntil(LONGLONG target)
-{
-    if(target<=0)
-        return;
-
-    const LONGLONG freq=g_ptarFgPacer.frequency.QuadPart;
-    const LONGLONG coarseThreshold=freq/500; // ~2 ms
-
-    for(;;)
-    {
-        const LONGLONG now=PtFgPacerNow();
-        const LONGLONG remain=target-now;
-        if(remain<=0)
-            break;
-
-        if(remain>coarseThreshold)
-            Sleep(0);
-        else
-            SwitchToThread();
-
-        ++g_ptarFgPacer.waitYields;
-    }
-}
-
-static void PtFgPacerResyncIfStale(LONGLONG now)
-{
-    const LONGLONG period=PtFgPacerPeriodTicks();
-
-    if(g_ptarFgPacer.nextVisibleQpc<=0)
-    {
-        g_ptarFgPacer.nextVisibleQpc=now;
-        return;
-    }
-
-    // If the local grid is more than one visible interval behind, catch up in
-    // one operation. Do not replay stale deadlines or create a skip cascade.
-    if(now>g_ptarFgPacer.nextVisibleQpc+period)
-    {
-        ++g_ptarFgPacer.resyncs;
-        PtDiagLogA(
-            "FG_PACER_RESYNC late_ticks=%lld resyncs=%lu",
-            (long long)(now-g_ptarFgPacer.nextVisibleQpc),
-            g_ptarFgPacer.resyncs);
-        g_ptarFgPacer.nextVisibleQpc=now;
-    }
-}
-
 inline bool PtFgPacerPrepareGenerated()
 {
     PtFgPacerInit();
-
-    const LONGLONG now=PtFgPacerNow();
-    PtFgPacerResyncIfStale(now);
-
-    // GENERATED is already available here. Schedule it on the current/next
-    // local visible slot instead of comparing it with a midpoint that elapsed
-    // while CURRENT + ME were being produced.
-    if(g_ptarFgPacer.nextVisibleQpc<now)
-        g_ptarFgPacer.nextVisibleQpc=now;
-
-    PtFgPacerWaitUntil(g_ptarFgPacer.nextVisibleQpc);
     return true;
 }
 
-inline void PtFgPacerPrepareReal(bool fgPair)
+inline void PtFgPacerPrepareReal(bool)
 {
     PtFgPacerInit();
-
-    if(!fgPair)
-    {
-        g_ptarFgPacer.nextVisibleQpc=0;
-        return;
-    }
-
-    const LONGLONG period=PtFgPacerPeriodTicks();
-    const LONGLONG now=PtFgPacerNow();
-
-    if(g_ptarFgPacer.nextVisibleQpc<=0)
-        g_ptarFgPacer.nextVisibleQpc=now;
-
-    // GENERATED has just occupied one visible slot. REAL follows exactly one
-    // nominal visible period later. Present itself may block to VBlank; stale
-    // grids are resynchronised on the next pair rather than accumulated.
-    g_ptarFgPacer.nextVisibleQpc+=period;
-    PtFgPacerResyncIfStale(now);
-    PtFgPacerWaitUntil(g_ptarFgPacer.nextVisibleQpc);
 }
 
 static void PtFgPacerRecordVisible(bool generated)
@@ -176,26 +89,18 @@ static void PtFgPacerRecordVisible(bool generated)
     if(generated)
     {
         ++g_ptarFgPacer.generatedPresents;
-        // Advance to the REAL slot only in PrepareReal(), after the generated
-        // Present actually succeeded.
     }
     else
     {
         ++g_ptarFgPacer.realPresents;
         g_ptarFgPacer.lastRealQpc=now;
-
-        // Complete the pair: reserve the next GENERATED slot one period after
-        // REAL. A slow game/Present will be caught by ResyncIfStale.
-        if(g_ptarFgPacer.nextVisibleQpc>0)
-            g_ptarFgPacer.nextVisibleQpc+=PtFgPacerPeriodTicks();
     }
 }
 
 static double PtFgPacerVisibleFps()
 {
-    // Deliberately wall-clock based. This is the visible throughput over the
-    // recent QPC window, so hitches and pacing gaps reduce the displayed FPS
-    // instead of being hidden by an instantaneous-FPS EMA.
+    // Wall-clock visible throughput. Hitches and missing output ticks lower
+    // the reported rate instead of being hidden by an instantaneous-FPS EMA.
     return PtRollingRateValue(&g_ptarFgPacer.visibleRate);
 }
 
@@ -211,8 +116,5 @@ static unsigned long PtFgPacerRealCount()
 
 static unsigned long PtFgPacerLateSkipCount()
 {
-    // Kept for HUD/ABI continuity. PRODPORT1 replaces historical late skips
-    // with local-grid resynchronisation, so this remains zero by design.
     return g_ptarFgPacer.generatedLateSkips;
 }
-
