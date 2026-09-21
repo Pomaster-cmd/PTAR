@@ -443,7 +443,7 @@ static int PtIsoFindOldestReadyLocked()
     return found;
 }
 
-static void PtIsoFreeSlotLocked(int index)
+inline void PtIsoFreeSlotLocked(int index)
 {
     if(index<0 || index>=6)
         return;
@@ -798,7 +798,7 @@ static HRESULT PtIsoCreatePresenterDevice(
     return S_OK;
 }
 
-static HRESULT PtIsoPresenterInitialize(
+inline HRESULT PtIsoPresenterInitialize(
     IDirect3DDevice9Ex* producer,
     PTARIsoPFN_Direct3DCreate9Ex create9Ex,
     HMODULE selfModule,
@@ -1136,7 +1136,7 @@ static int PtIsoAcquireProducerSlot()
     return freeSlot;
 }
 
-static HRESULT PtIsoSubmitReal(
+inline HRESULT PtIsoSubmitReal(
     IDirect3DSurface9* sourceSurface,
     unsigned long sequence)
 {
@@ -1202,22 +1202,22 @@ static HRESULT PtIsoSubmitReal(
     return S_OK;
 }
 
-static unsigned long PtIsoPresentedReal()
+inline unsigned long PtIsoPresentedReal()
 {
     return g_ptarIso.presentedReal;
 }
 
-static unsigned long PtIsoPresentedGenerated()
+inline unsigned long PtIsoPresentedGenerated()
 {
     return g_ptarIso.presentedGenerated;
 }
 
-static unsigned long PtIsoMailboxDrops()
+inline unsigned long PtIsoMailboxDrops()
 {
     return g_ptarIso.mailboxDrops;
 }
 
-static unsigned long PtIsoLoadShedCount()
+inline unsigned long PtIsoLoadShedCount()
 {
     return g_ptarIso.loadShedRealOnly;
 }
