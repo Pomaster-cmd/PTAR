@@ -487,10 +487,18 @@ jobs:
           Push-Location artifact
           try{
             & .\d3d9_isolated_proxy_smoke.exe | Tee-Object ..\build_x86\D3D9_ISOLATED_PROXY_SMOKE.txt
-            if($LASTEXITCODE -ne 0){throw "isolated proxy smoke failed rc=$LASTEXITCODE"}
+            $proxyRc=$LASTEXITCODE
           } finally {
             Pop-Location
           }
+
+          if(Test-Path artifact\PTAR_X86_D3D9.log){
+            Write-Host '--- ISOLATED RUNTIME LOG TAIL ---'
+            Get-Content artifact\PTAR_X86_D3D9.log -Tail 160
+            Write-Host '--- END ISOLATED RUNTIME LOG TAIL ---'
+          }
+
+          if($proxyRc -ne 0){throw "isolated proxy smoke failed rc=$proxyRc"}
 
           $sm=Get-Content build_x86\D3D9_ISOLATED_PROXY_SMOKE.txt -Raw
           if($sm -notmatch 'D3D9_ISOLATED_PROXY_SMOKE=PASS'){throw 'isolated proxy PASS marker missing'}
