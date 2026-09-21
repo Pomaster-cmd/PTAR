@@ -73,7 +73,7 @@ jobs:
           }
           $sha=(Get-FileHash artifact\d3d9.dll -Algorithm SHA256).Hash.ToLowerInvariant()
           @(
-            'PTAR_VARIANT=PTAR_X86_D3D9_SPATIAL1_CRASHLOG1',
+            'PTAR_VARIANT=PTAR_X86_D3D9_SPATIAL1_VTABLEFIX1_CRASHLOG1',
             'PE_MACHINE=I386_0x014C',
             'API=D3D9',
             'SPATIAL=PTAR_NG_MOE_V01_PS3_PORT',
@@ -164,9 +164,11 @@ jobs:
           Write-Host 'INSTALLER_PATH_SMOKE=PASS'
           Write-Host 'INSTALLER_INPLACE_SMOKE=PASS'
 
-      - name: Package diagnostic test build
+      - name: Package VTABLEFIX1 diagnostic test build
         shell: pwsh
         run: |
+          Remove-Item artifact\d3d9_object_lifetime_smoke.exe -Force -ErrorAction SilentlyContinue
+          Remove-Item artifact\PTAR_X86_D3D9.log -Force -ErrorAction SilentlyContinue
           Copy-Item compat\x86_d3d9\01-INSTALL_CONVICTION_PTAR_X86.bat artifact\
           Copy-Item compat\x86_d3d9\02-UNINSTALL_CONVICTION_PTAR_X86.bat artifact\
           Copy-Item compat\x86_d3d9\03-COLLECT_CRASH_DIAGNOSTICS.bat artifact\
@@ -174,15 +176,15 @@ jobs:
           Copy-Item compat\x86_d3d9\uninstall_x86_d3d9.ps1 artifact\
           Copy-Item compat\x86_d3d9\collect_x86_d3d9_diag.ps1 artifact\
           Copy-Item compat\x86_d3d9\README_TEST.txt artifact\
-          Compress-Archive -Path artifact\* -DestinationPath PTAR_X86_D3D9_SPATIAL1_CRASHLOG1_CONVICTION_TEST.zip -CompressionLevel Optimal
-          $z=(Get-FileHash PTAR_X86_D3D9_SPATIAL1_CRASHLOG1_CONVICTION_TEST.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          Compress-Archive -Path artifact\* -DestinationPath PTAR_X86_D3D9_SPATIAL1_VTABLEFIX1_CRASHLOG1_CONVICTION_TEST.zip -CompressionLevel Optimal
+          $z=(Get-FileHash PTAR_X86_D3D9_SPATIAL1_VTABLEFIX1_CRASHLOG1_CONVICTION_TEST.zip -Algorithm SHA256).Hash.ToLowerInvariant()
           Write-Host "PACKAGE_SHA256=$z"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PTAR-X86-D3D9-SPATIAL1-CRASHLOG1-CONVICTION
+          name: PTAR-X86-D3D9-SPATIAL1-VTABLEFIX1-CRASHLOG1-CONVICTION
           path: |
-            PTAR_X86_D3D9_SPATIAL1_CRASHLOG1_CONVICTION_TEST.zip
+            PTAR_X86_D3D9_SPATIAL1_VTABLEFIX1_CRASHLOG1_CONVICTION_TEST.zip
             build_x86/HEADERS.txt
             build_x86/EXPORTS.txt
             build_x86/DEPENDENTS.txt
