@@ -50,7 +50,7 @@ static unsigned int PtRealGovernorTarget(bool fgEnabled)
     return fgEnabled?30u:60u;
 }
 
-static void PtRealGovernorReset(bool fgEnabled)
+inline void PtRealGovernorReset(bool fgEnabled)
 {
     PtRealGovernorInit();
     g_ptarRealGovernor.targetRealHz=
@@ -85,7 +85,7 @@ static void PtRealGovernorSyncMode(bool fgEnabled)
     }
 }
 
-static void PtRealGovernorWaitAfterSourceFrame(bool fgEnabled)
+inline void PtRealGovernorWaitAfterSourceFrame(bool fgEnabled)
 {
     PtRealGovernorSyncMode(fgEnabled);
 
@@ -143,7 +143,7 @@ static void PtRealGovernorWaitAfterSourceFrame(bool fgEnabled)
     g_ptarRealGovernor.nextQpc+=period;
 }
 
-static unsigned int PtRealGovernorCurrentTarget()
+inline unsigned int PtRealGovernorCurrentTarget()
 {
     PtRealGovernorInit();
     return g_ptarRealGovernor.targetRealHz?
