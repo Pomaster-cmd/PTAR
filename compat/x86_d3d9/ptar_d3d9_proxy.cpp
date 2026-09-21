@@ -33,7 +33,6 @@
 #include "ptar_fg_pacer.h"
 #include "ptar_fg_governor.h"
 #include "ptar_resolution_policy.h"
-#include "ptar_async_presenter.h" // transitional fallback until isolated bridge is selected
 
 // F10 lives in the HUD input contract but controls the isolated presenter.
 // Forward declarations break the intentional header dependency cycle:
@@ -65,10 +64,6 @@ typedef HRESULT (STDMETHODCALLTYPE *PFN_SetRenderTarget)(
     IDirect3DDevice9*,DWORD,IDirect3DSurface9*);
 typedef HRESULT (STDMETHODCALLTYPE *PFN_GetDisplayMode)(
     IDirect3DDevice9*,UINT,D3DDISPLAYMODE*);
-typedef HRESULT (STDMETHODCALLTYPE *PFN_BeginScene)(
-    IDirect3DDevice9*);
-typedef HRESULT (STDMETHODCALLTYPE *PFN_EndScene)(
-    IDirect3DDevice9*);
 
 static PFN_CreateDevice g_realCreateDevice=0;
 static PFN_Reset g_realReset=0;
@@ -76,15 +71,10 @@ static PFN_Present g_realPresent=0;
 static PFN_GetBackBuffer g_realGetBackBuffer=0;
 static PFN_SetRenderTarget g_realSetRenderTarget=0;
 static PFN_GetDisplayMode g_realGetDisplayMode=0;
-static PFN_BeginScene g_realBeginScene=0;
-static PFN_EndScene g_realEndScene=0;
 
 static UINT g_ptarAdapter=D3DADAPTER_DEFAULT;
 static D3DDEVTYPE g_ptarDeviceType=D3DDEVTYPE_HAL;
 static HWND g_ptarFocusWindow=0;
-
-static volatile LONG g_ptarGameSceneGateHeld=0;
-static DWORD g_ptarGameSceneThread=0;
 
 struct PTARContext
 {
@@ -96,38 +86,21 @@ struct PTARContext
     IDirect3DPixelShader9* shader;
     IDirect3DPixelShader9* universalShader;
     IDirect3DPixelShader9* bilinearShader;
-    IDirect3DPixelShader9* fgMeCoarseShader;
-    IDirect3DPixelShader9* fgMeRefineShader;
-    IDirect3DPixelShader9* fgInterpolateShader;
-    IDirect3DTexture9* previousRealTexture;
-    IDirect3DSurface9* previousRealSurface;
     IDirect3DTexture9* currentRealTexture;
     IDirect3DSurface9* currentRealSurface;
-    IDirect3DTexture9* generatedTexture;
-    IDirect3DSurface9* generatedSurface;
-    IDirect3DTexture9* motionCoarseTexture;
-    IDirect3DSurface9* motionCoarseSurface;
-    IDirect3DTexture9* motionFineTexture;
-    IDirect3DSurface9* motionFineSurface;
     IDirect3DStateBlock9* stateBlock;
     UINT sourceW;
     UINT sourceH;
     UINT outputW;
     UINT outputH;
-    UINT motionCoarseW;
-    UINT motionCoarseH;
-    UINT motionFineW;
-    UINT motionFineH;
     D3DFORMAT outputFormat;
     D3DFORMAT depthFormat;
     BOOL originalAutoDepth;
     bool active;
     bool spatialActive;
     bool inPresent;
-    bool previousRealValid;
     UINT outputRefreshHz;
     unsigned long sourceSequence;
-    double fgGenerationBudget;
 };
 
 static PTARContext g_ptar={};
@@ -176,37 +149,19 @@ static void ReleasePTARResources()
 {
     g_ptar.active=false;
     g_ptar.spatialActive=false;
-    g_ptar.previousRealValid=false;
 
-    // The async presenter owns mailbox textures and an AddRef on the real
-    // backbuffer. Stop it before releasing any PTAR/default-pool resources or
-    // issuing Reset.
-    // During the presenter migration both implementations may exist in
-    // laboratory builds. Release whichever one owns default-pool resources
-    // before Reset; neither may survive across a device Reset.
-    PtAsyncPresenterReleaseResources();
+    // Presenter owns its own D3D9Ex device/thread and must stop before the
+    // producer default-pool resources are released or Reset.
     PtIsoPresenterRelease();
 
     if(g_ptar.stateBlock){g_ptar.stateBlock->Release();g_ptar.stateBlock=0;}
 
-    if(g_ptar.fgInterpolateShader){g_ptar.fgInterpolateShader->Release();g_ptar.fgInterpolateShader=0;}
-    if(g_ptar.fgMeRefineShader){g_ptar.fgMeRefineShader->Release();g_ptar.fgMeRefineShader=0;}
-    if(g_ptar.fgMeCoarseShader){g_ptar.fgMeCoarseShader->Release();g_ptar.fgMeCoarseShader=0;}
     if(g_ptar.bilinearShader){g_ptar.bilinearShader->Release();g_ptar.bilinearShader=0;}
     if(g_ptar.universalShader){g_ptar.universalShader->Release();g_ptar.universalShader=0;}
     if(g_ptar.shader){g_ptar.shader->Release();g_ptar.shader=0;}
 
-    if(g_ptar.motionFineSurface){g_ptar.motionFineSurface->Release();g_ptar.motionFineSurface=0;}
-    if(g_ptar.motionFineTexture){g_ptar.motionFineTexture->Release();g_ptar.motionFineTexture=0;}
-    if(g_ptar.motionCoarseSurface){g_ptar.motionCoarseSurface->Release();g_ptar.motionCoarseSurface=0;}
-    if(g_ptar.motionCoarseTexture){g_ptar.motionCoarseTexture->Release();g_ptar.motionCoarseTexture=0;}
-
-    if(g_ptar.generatedSurface){g_ptar.generatedSurface->Release();g_ptar.generatedSurface=0;}
-    if(g_ptar.generatedTexture){g_ptar.generatedTexture->Release();g_ptar.generatedTexture=0;}
     if(g_ptar.currentRealSurface){g_ptar.currentRealSurface->Release();g_ptar.currentRealSurface=0;}
     if(g_ptar.currentRealTexture){g_ptar.currentRealTexture->Release();g_ptar.currentRealTexture=0;}
-    if(g_ptar.previousRealSurface){g_ptar.previousRealSurface->Release();g_ptar.previousRealSurface=0;}
-    if(g_ptar.previousRealTexture){g_ptar.previousRealTexture->Release();g_ptar.previousRealTexture=0;}
 
     if(g_ptar.realBackBuffer){g_ptar.realBackBuffer->Release();g_ptar.realBackBuffer=0;}
     if(g_ptar.virtualDepth){g_ptar.virtualDepth->Release();g_ptar.virtualDepth=0;}
@@ -215,11 +170,8 @@ static void ReleasePTARResources()
 
     g_ptar.device=0;
     g_ptar.sourceW=g_ptar.sourceH=g_ptar.outputW=g_ptar.outputH=0;
-    g_ptar.motionCoarseW=g_ptar.motionCoarseH=0;
-    g_ptar.motionFineW=g_ptar.motionFineH=0;
     g_ptar.outputRefreshHz=0;
     g_ptar.sourceSequence=0;
-    g_ptar.fgGenerationBudget=0.0;
 }
 
 static HRESULT CreateRenderTexture(
@@ -451,59 +403,15 @@ static HRESULT InitializePTARResources(
     PtHudLoadConfig(g_self);
     PtDiagLogA("INIT_GW16I_HUD renderer=D3D9_CLEAR_RECTS shader_dependency=NONE");
 
-    PtDiagStage("Initialize_CreateFGShaders");
-    hr=dev->CreatePixelShader((const DWORD*)g_ptarFgMeCoarsePs,&g_ptar.fgMeCoarseShader);
-    PtDiagLogA("INIT_CreateFGMeCoarse hr=0x%08lX ptr=%p",(unsigned long)hr,g_ptar.fgMeCoarseShader);
-    if(FAILED(hr) || !g_ptar.fgMeCoarseShader) goto fail;
-
-    hr=dev->CreatePixelShader((const DWORD*)g_ptarFgMeRefinePs,&g_ptar.fgMeRefineShader);
-    PtDiagLogA("INIT_CreateFGMeRefine hr=0x%08lX ptr=%p",(unsigned long)hr,g_ptar.fgMeRefineShader);
-    if(FAILED(hr) || !g_ptar.fgMeRefineShader) goto fail;
-
-    hr=dev->CreatePixelShader((const DWORD*)g_ptarFgInterpolatePs,&g_ptar.fgInterpolateShader);
-    PtDiagLogA("INIT_CreateFGInterpolate hr=0x%08lX ptr=%p",(unsigned long)hr,g_ptar.fgInterpolateShader);
-    if(FAILED(hr) || !g_ptar.fgInterpolateShader) goto fail;
-
-    g_ptar.motionCoarseW=(outputW+3u)/4u;
-    g_ptar.motionCoarseH=(outputH+3u)/4u;
-    g_ptar.motionFineW=(outputW+1u)/2u;
-    g_ptar.motionFineH=(outputH+1u)/2u;
-
-    PtDiagStage("Initialize_CreateFGFrameTextures");
-    hr=CreateRenderTexture(
-        dev,outputW,outputH,desc.Format,
-        &g_ptar.previousRealTexture,&g_ptar.previousRealSurface);
-    PtDiagLogA("INIT_FG_PreviousReal hr=0x%08lX tex=%p surf=%p",
-        (unsigned long)hr,g_ptar.previousRealTexture,g_ptar.previousRealSurface);
-    if(FAILED(hr)) goto fail;
-
+    PtDiagStage("Initialize_CreateCurrentReal");
     hr=CreateRenderTexture(
         dev,outputW,outputH,desc.Format,
         &g_ptar.currentRealTexture,&g_ptar.currentRealSurface);
-    PtDiagLogA("INIT_FG_CurrentReal hr=0x%08lX tex=%p surf=%p",
-        (unsigned long)hr,g_ptar.currentRealTexture,g_ptar.currentRealSurface);
-    if(FAILED(hr)) goto fail;
-
-    hr=CreateRenderTexture(
-        dev,outputW,outputH,desc.Format,
-        &g_ptar.generatedTexture,&g_ptar.generatedSurface);
-    PtDiagLogA("INIT_FG_Generated hr=0x%08lX tex=%p surf=%p",
-        (unsigned long)hr,g_ptar.generatedTexture,g_ptar.generatedSurface);
-    if(FAILED(hr)) goto fail;
-
-    PtDiagStage("Initialize_CreateFGMotionTextures");
-    hr=CreateRenderTexture(
-        dev,g_ptar.motionCoarseW,g_ptar.motionCoarseH,desc.Format,
-        &g_ptar.motionCoarseTexture,&g_ptar.motionCoarseSurface);
-    PtDiagLogA("INIT_FG_MotionCoarse hr=0x%08lX %ux%u tex=%p",
-        (unsigned long)hr,g_ptar.motionCoarseW,g_ptar.motionCoarseH,g_ptar.motionCoarseTexture);
-    if(FAILED(hr)) goto fail;
-
-    hr=CreateRenderTexture(
-        dev,g_ptar.motionFineW,g_ptar.motionFineH,desc.Format,
-        &g_ptar.motionFineTexture,&g_ptar.motionFineSurface);
-    PtDiagLogA("INIT_FG_MotionFine hr=0x%08lX %ux%u tex=%p",
-        (unsigned long)hr,g_ptar.motionFineW,g_ptar.motionFineH,g_ptar.motionFineTexture);
+    PtDiagLogA(
+        "INIT_CurrentReal hr=0x%08lX tex=%p surf=%p",
+        (unsigned long)hr,
+        g_ptar.currentRealTexture,
+        g_ptar.currentRealSurface);
     if(FAILED(hr)) goto fail;
 
     PtDiagStage("Initialize_CreateStateBlock");
@@ -866,84 +774,6 @@ static HRESULT RenderSpatialToCurrent(IDirect3DDevice9* dev)
         sizes);
 }
 
-static HRESULT RenderFGMotionAndIntermediate(IDirect3DDevice9* dev)
-{
-    if(!g_ptar.previousRealValid)
-        return S_FALSE;
-
-    float output[4]={
-        (float)g_ptar.outputW,
-        (float)g_ptar.outputH,
-        1.0f/(float)g_ptar.outputW,
-        1.0f/(float)g_ptar.outputH};
-
-    PtDiagStage("FG_ME_COARSE");
-    HRESULT hr=DrawFullscreenPass(
-        dev,
-        g_ptar.motionCoarseSurface,
-        g_ptar.motionCoarseW,
-        g_ptar.motionCoarseH,
-        g_ptar.fgMeCoarseShader,
-        g_ptar.previousRealTexture,
-        g_ptar.currentRealTexture,
-        0,
-        output);
-    if(FAILED(hr))
-    {
-        PtDiagLogA("FG_ME_COARSE_FAIL hr=0x%08lX",(unsigned long)hr);
-        return hr;
-    }
-
-    PtDiagStage("FG_ME_REFINE");
-    hr=DrawFullscreenPass(
-        dev,
-        g_ptar.motionFineSurface,
-        g_ptar.motionFineW,
-        g_ptar.motionFineH,
-        g_ptar.fgMeRefineShader,
-        g_ptar.previousRealTexture,
-        g_ptar.currentRealTexture,
-        g_ptar.motionCoarseTexture,
-        output);
-    if(FAILED(hr))
-    {
-        PtDiagLogA("FG_ME_REFINE_FAIL hr=0x%08lX",(unsigned long)hr);
-        return hr;
-    }
-
-    PtDiagStage("FG_INTERPOLATE");
-    hr=DrawFullscreenPass(
-        dev,
-        g_ptar.generatedSurface,
-        g_ptar.outputW,
-        g_ptar.outputH,
-        g_ptar.fgInterpolateShader,
-        g_ptar.previousRealTexture,
-        g_ptar.currentRealTexture,
-        g_ptar.motionFineTexture,
-        output);
-    if(FAILED(hr))
-        PtDiagLogA("FG_INTERPOLATE_FAIL hr=0x%08lX",(unsigned long)hr);
-
-    return hr;
-}
-
-inline HRESULT RenderTextureToBackBuffer(
-    IDirect3DDevice9* dev,
-    IDirect3DTexture9* texture)
-{
-    return DrawFullscreenPass(
-        dev,
-        g_ptar.realBackBuffer,
-        g_ptar.outputW,
-        g_ptar.outputH,
-        g_ptar.bilinearShader,
-        texture,
-        0,
-        0,
-        0);
-}
-
 static unsigned long g_ptarHudFrameSequence=0;
 
 
@@ -1048,19 +878,6 @@ static HRESULT RenderGW16IProductionHud(
     return S_OK;
 }
 
-static void RotateRealHistory()
-{
-    IDirect3DTexture9* texture=g_ptar.previousRealTexture;
-    g_ptar.previousRealTexture=g_ptar.currentRealTexture;
-    g_ptar.currentRealTexture=texture;
-
-    IDirect3DSurface9* surface=g_ptar.previousRealSurface;
-    g_ptar.previousRealSurface=g_ptar.currentRealSurface;
-    g_ptar.currentRealSurface=surface;
-
-    g_ptar.previousRealValid=true;
-}
-
 static HRESULT ComposePTARFrameToSurface(
     IDirect3DDevice9* dev,
     IDirect3DSurface9* sourceSurface,
@@ -1118,54 +935,6 @@ static HRESULT ComposePTARFrameToSurface(
     return S_OK;
 }
 
-static HRESULT QueuePTARFrame(
-    IDirect3DDevice9* dev,
-    IDirect3DSurface9* sourceSurface,
-    HWND hwnd,
-    bool generatedFrame,
-    bool fgProducing,
-    unsigned long sequence)
-{
-    if(!PtAsyncPresenterIsActive())
-        return D3DERR_NOTAVAILABLE;
-
-    const int slot=PtAsyncPresenterAcquireSlot(
-        generatedFrame,sequence);
-    if(slot<0)
-    {
-        PtDiagLogA(
-            "ASYNC_QUEUE_DROP seq=%lu generated=%d",
-            sequence,
-            generatedFrame?1:0);
-        return S_FALSE;
-    }
-
-    IDirect3DSurface9* target=
-        PtAsyncPresenterSlotSurface(slot);
-    if(!target)
-    {
-        PtAsyncPresenterCancelSlot(slot);
-        return E_FAIL;
-    }
-
-    HRESULT hr=ComposePTARFrameToSurface(
-        dev,sourceSurface,target,
-        generatedFrame,fgProducing);
-    if(FAILED(hr))
-    {
-        PtAsyncPresenterCancelSlot(slot);
-        PtDiagLogA(
-            "ASYNC_QUEUE_COMPOSE_FAIL seq=%lu generated=%d hr=0x%08lX",
-            sequence,
-            generatedFrame?1:0,
-            (unsigned long)hr);
-        return hr;
-    }
-
-    PtAsyncPresenterCommitSlot(slot,hwnd);
-    return S_OK;
-}
-
 static HRESULT PresentPTARFrameDirectFallback(
     IDirect3DDevice9* dev,
     IDirect3DSurface9* sourceSurface,
@@ -1186,42 +955,6 @@ static HRESULT PresentPTARFrameDirectFallback(
     if(SUCCEEDED(hr))
         PtFgPacerRecordVisible(generatedFrame);
     return hr;
-}
-
-static bool PtShouldGenerateThisSourceFrame()
-{
-    if(!PtHudFgEnabled() ||
-       !g_ptar.previousRealValid ||
-       !PtAsyncPresenterIsActive())
-        return false;
-
-    const double target=
-        g_ptar.outputRefreshHz>=30u?
-            (double)g_ptar.outputRefreshHz:
-            60.0;
-
-    double sourceFps=PtHudRealFps();
-    if(sourceFps<5.0)
-        sourceFps=target*0.5;
-
-    // Generate only the number of intermediate frames for which the output
-    // clock has room. This keeps REAL source throughput primary:
-    //   30 REAL -> ~30 GENERATED -> 60 output
-    //   42 REAL -> ~18 GENERATED -> 60 output
-    //   50 REAL -> ~10 GENERATED -> 60 output
-    //   60 REAL -> 0 GENERATED (no physical headroom at 60 Hz)
-    double desired=target/sourceFps-1.0;
-    if(desired<0.0) desired=0.0;
-    if(desired>1.0) desired=1.0;
-
-    g_ptar.fgGenerationBudget+=desired;
-    if(g_ptar.fgGenerationBudget>=1.0)
-    {
-        g_ptar.fgGenerationBudget-=1.0;
-        return true;
-    }
-
-    return false;
 }
 
 static HRESULT STDMETHODCALLTYPE HookPresent(
@@ -1339,54 +1072,6 @@ restore_game_state:
         PtIsoPresenterIsActive());
 
     return result;
-}
-
-static HRESULT STDMETHODCALLTYPE HookBeginScene(
-    IDirect3DDevice9* self)
-{
-    const bool gate=
-        g_ptar.active &&
-        self==g_ptar.device &&
-        !g_ptar.inPresent;
-
-    if(gate)
-    {
-        PtAsyncEnterDevice();
-        g_ptarGameSceneThread=GetCurrentThreadId();
-        InterlockedExchange(&g_ptarGameSceneGateHeld,1);
-    }
-
-    HRESULT hr=g_realBeginScene?
-        g_realBeginScene(self):
-        D3DERR_INVALIDCALL;
-
-    if(FAILED(hr) && gate)
-    {
-        InterlockedExchange(&g_ptarGameSceneGateHeld,0);
-        g_ptarGameSceneThread=0;
-        PtAsyncLeaveDevice();
-    }
-
-    return hr;
-}
-
-static HRESULT STDMETHODCALLTYPE HookEndScene(
-    IDirect3DDevice9* self)
-{
-    HRESULT hr=g_realEndScene?
-        g_realEndScene(self):
-        D3DERR_INVALIDCALL;
-
-    if(InterlockedCompareExchange(
-           &g_ptarGameSceneGateHeld,1,1)!=0 &&
-       g_ptarGameSceneThread==GetCurrentThreadId())
-    {
-        InterlockedExchange(&g_ptarGameSceneGateHeld,0);
-        g_ptarGameSceneThread=0;
-        PtAsyncLeaveDevice();
-    }
-
-    return hr;
 }
 
 static HRESULT STDMETHODCALLTYPE HookReset(
@@ -1562,21 +1247,11 @@ static bool HookDevice(IDirect3DDevice9* dev)
         return false;
     if(old!=(void*)&HookSetRenderTarget) g_realSetRenderTarget=(PFN_SetRenderTarget)old;
 
-    old=0;
-    if(!PatchVtableSlot(dev,41,(void*)&HookBeginScene,&old,"Device.BeginScene"))
-        return false;
-    if(old!=(void*)&HookBeginScene) g_realBeginScene=(PFN_BeginScene)old;
-
-    old=0;
-    if(!PatchVtableSlot(dev,42,(void*)&HookEndScene,&old,"Device.EndScene"))
-        return false;
-    if(old!=(void*)&HookEndScene) g_realEndScene=(PFN_EndScene)old;
-
     PtDiagStage("HookDevice_DONE");
-    PtDiagLogA("HOOK_DEVICE_DONE vtable=%p present=%p reset=%p getbb=%p setrt=%p begin=%p end=%p",
+    PtDiagLogA(
+        "HOOK_DEVICE_DONE vtable=%p present=%p reset=%p getbb=%p setrt=%p",
         vt,(void*)g_realPresent,(void*)g_realReset,
-        (void*)g_realGetBackBuffer,(void*)g_realSetRenderTarget,
-        (void*)g_realBeginScene,(void*)g_realEndScene);
+        (void*)g_realGetBackBuffer,(void*)g_realSetRenderTarget);
     return true;
 }
 
@@ -1633,26 +1308,22 @@ static HRESULT STDMETHODCALLTYPE HookCreateDevice(
     D3DPRESENT_PARAMETERS actual={};
     PreparePTARPresentationParameters(original,plan,&actual);
 
-    // The async D3D9 presenter uses the same device from a dedicated thread.
-    // Force the runtime's documented multithreaded synchronization even when
-    // the game did not request it itself.
-    const DWORD ptarFlags=flags|D3DCREATE_MULTITHREADED;
-
     PtDiagLogA(
         "CREATEDEVICE_PLAN requested=%ux%u plannedDevice=%ux%u spatialRequested=%d "
-        "windowed=%ld game_flags=0x%08lX ptar_flags=0x%08lX "
-        "game_interval=0x%08lX actual_interval=0x%08lX",
+        "windowed=%ld game_flags=0x%08lX "
+        "game_interval=0x%08lX producer_interval=0x%08lX "
+        "producer_windowed=%ld",
         original.BackBufferWidth,original.BackBufferHeight,
         plan.deviceW,plan.deviceH,
         plan.spatialRequested?1:0,
         (long)original.Windowed,
         (unsigned long)flags,
-        (unsigned long)ptarFlags,
         (unsigned long)original.PresentationInterval,
-        (unsigned long)actual.PresentationInterval);
+        (unsigned long)actual.PresentationInterval,
+        (long)actual.Windowed);
 
     HRESULT hr=g_realCreateDevice(
-        self,adapter,type,focus,ptarFlags,&actual,out);
+        self,adapter,type,focus,flags,&actual,out);
     *pp=original;
 
     if((FAILED(hr) || !*out) && plan.spatialRequested)
@@ -1669,7 +1340,7 @@ static HRESULT STDMETHODCALLTYPE HookCreateDevice(
 
         *out=0;
         hr=g_realCreateDevice(
-            self,adapter,type,focus,ptarFlags,&actual,out);
+            self,adapter,type,focus,flags,&actual,out);
         *pp=original;
     }
 
@@ -1701,8 +1372,6 @@ static HRESULT STDMETHODCALLTYPE HookCreateDevice(
     g_realPresent=(PFN_Present)vt[17];
     g_realGetBackBuffer=(PFN_GetBackBuffer)vt[18];
     g_realSetRenderTarget=(PFN_SetRenderTarget)vt[37];
-    g_realBeginScene=(PFN_BeginScene)vt[41];
-    g_realEndScene=(PFN_EndScene)vt[42];
 
     UINT sourceW=0,sourceH=0,outputW=0,outputH=0;
     bool spatialActive=FinalizeCurrentResolutionPlan(
