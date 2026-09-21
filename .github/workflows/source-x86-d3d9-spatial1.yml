@@ -46,6 +46,10 @@ jobs:
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
           & $fxcPath /nologo /T ps_2_0 /E main /O3 /Fh build_x86\ptar_bilinear_ps_bytecode.h /Vn g_ptarBilinearPs compat\x86_d3d9\ptar_bilinear_ref_ps.hlsl
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 /Fh build_x86\ptar_gw16i_hud_ps_bytecode.h /Vn g_ptarGw16iHudPs compat\x86_d3d9\ptar_gw16i_hud_ps.hlsl
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 /Fh build_x86\ptar_gw16i_feedback_ps_bytecode.h /Vn g_ptarGw16iFeedbackPs compat\x86_d3d9\ptar_gw16i_feedback_ps.hlsl
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
           & $fxcPath /nologo /T ps_3_0 /E main /O3 /Fh build_x86\ptar_fg_me_coarse_ps_bytecode.h /Vn g_ptarFgMeCoarsePs compat\x86_d3d9\ptar_fg_me_coarse_ps.hlsl
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
           & $fxcPath /nologo /T ps_3_0 /E main /O3 /Fh build_x86\ptar_fg_me_refine_ps_bytecode.h /Vn g_ptarFgMeRefinePs compat\x86_d3d9\ptar_fg_me_refine_ps.hlsl
@@ -56,6 +60,8 @@ jobs:
             'build_x86\ptar_ps_bytecode.h',
             'build_x86\ptar_universal_ps_bytecode.h',
             'build_x86\ptar_bilinear_ps_bytecode.h',
+            'build_x86\ptar_gw16i_hud_ps_bytecode.h',
+            'build_x86\ptar_gw16i_feedback_ps_bytecode.h',
             'build_x86\ptar_fg_me_coarse_ps_bytecode.h',
             'build_x86\ptar_fg_me_refine_ps_bytecode.h',
             'build_x86\ptar_fg_interpolate_ps_bytecode.h'
@@ -100,7 +106,7 @@ jobs:
             'ASPECT_POLICY=PRESENTER_ASPECT_FIT',
             'NATIVE_1X1_FG=SUPPORTED',
             'RESOLUTION_RESET_PERSISTENCE=SUPPORTED',
-            'HUD=CTRL_F11_NATIVE_D3D9',
+            'HUD=GW16I_EMBEDDED_SHADER_PORT_D3D9',
             'MANUAL_FILTER=F6_MOE_VS_BILINEAR',
             'STATUS=F8_TEMPORARY_NOTICE_AND_RUNTIME_TELEMETRY',
             'FG_PROFILE=CTRL_F8',
@@ -150,23 +156,33 @@ jobs:
           if($u -notmatch 'UNIVERSAL_4X3_ASPECT_FIT'){throw 'aspect-fit GPU evidence missing'}
           Write-Host 'D3D9_UNIVERSAL_SPATIAL_GPU=PASS'
 
-      - name: Validate production HUD contract
+      - name: Validate exact GW16I HUD source contract
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          $hud=Get-Content compat\x86_d3d9\ptar_hud.h -Raw
+          $hud=Get-Content compat\x86_d3d9\ptar_gw16i_hud_ps.hlsl -Raw
+          $fb=Get-Content compat\x86_d3d9\ptar_gw16i_feedback_ps.hlsl -Raw
           foreach($token in @(
-            'WIN81 USR V0.41',
-            '"FPS    %.0f"',
-            '"RES.   %uX%u"',
-            '"FILTER %s"',
-            'COPY 1X1',
-            'BILINEAR',
-            'PTAR X15'
+            '87,73,78,56,49,32,85,83,82,32',
+            '70,80,83,32,32,32,32,32,32,32',
+            '82,69,83,46,32,32,32,32,32,32',
+            '70,73,76,84,69,82,32,32,32,32',
+            '67,79,80,89,32,49,88,49,32,32',
+            'float3(.01,.012,.018)',
+            'float3(.92,.96,1)'
           )){
-            if($hud -notmatch [regex]::Escape($token)){throw "production HUD token missing: $token"}
+            if($hud -notmatch [regex]::Escape($token)){throw "GW16I HUD source token missing: $token"}
           }
-          if($hud -match 'REAL FPS: %.1f  DISPLAY FPS: %.1f'){throw 'expanded debug HUD regression returned'}
+          foreach($token in @(
+            'PtHudFeedback(5',
+            'PtHudFeedback(8',
+            'PtHudFeedback(g_ptarHudFgEnabled?12:13',
+            'PtHudStateFeedback(g_ptarHudVisible?3:4)'
+          )){
+            $state=Get-Content compat\x86_d3d9\ptar_hud.h -Raw
+            if($state -notmatch [regex]::Escape($token)){throw "GW16I HUD state contract missing: $token"}
+          }
+          if($fb -notmatch 'float Line1' -or $fb -notmatch 'float DLine1'){throw 'GW16I feedback source incomplete'}
           Write-Host 'D3D9_GW16I_HUD_CONTRACT=PASS'
 
       - name: Validate wall-clock FPS metric
