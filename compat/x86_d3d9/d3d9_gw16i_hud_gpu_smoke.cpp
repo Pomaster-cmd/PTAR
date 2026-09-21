@@ -180,6 +180,14 @@ int main()
     dev->SetRenderTarget(0,rt);
     dev->Clear(0,0,D3DCLEAR_TARGET,D3DCOLOR_XRGB(0x11,0x22,0x33),1.0f,0);
 
+    // Reproduce a real-game inherited-state hazard. The GW16I shader port is
+    // rendered after the game's frame, so the overlay must not depend on the
+    // game leaving alpha-test/fill/clip state in defaults.
+    dev->SetRenderState(D3DRS_ALPHATESTENABLE,TRUE);
+    dev->SetRenderState(D3DRS_ALPHAFUNC,D3DCMP_NEVER);
+    dev->SetRenderState(D3DRS_FILLMODE,D3DFILL_WIREFRAME);
+    dev->SetRenderState(D3DRS_FOGENABLE,TRUE);
+
     float hudC[20]={0};
     hudC[2]=59.0f;
     hudC[3]=1.0f;
