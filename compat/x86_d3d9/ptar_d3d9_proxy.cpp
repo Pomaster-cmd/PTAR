@@ -176,7 +176,7 @@ static void ReleasePTARResources()
     // The async presenter owns mailbox textures and an AddRef on the real
     // backbuffer. Stop it before releasing any PTAR/default-pool resources or
     // issuing Reset.
-    PtAsyncPresenterReleaseResources();
+    PtIsoPresenterRelease();
 
     if(g_ptar.stateBlock){g_ptar.stateBlock->Release();g_ptar.stateBlock=0;}
 
