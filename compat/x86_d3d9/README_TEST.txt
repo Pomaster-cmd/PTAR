@@ -22,7 +22,7 @@ Included:
   - bilinear A/B reference at the same output resolution
   - native D3D9 HUD
   - source/output resolution display
-  - measured REAL and visible FPS
+  - wall-clock REAL and visible FPS (QPC rolling window; hitches lower the displayed value)
   - F6 ManualFilter
   - CTRL+F6 frame-generation toggle
   - F7 Benchmark shortcut contract
@@ -57,16 +57,29 @@ Hotkeys
   F6        ManualFilter (PTAR MoE <-> bilinear reference)
   CTRL+F6   Frame generation ON/OFF
   F7        Benchmark
-  F8        Status
+  F8        Status (temporary runtime notice, independent from permanent HUD)
   CTRL+F8   FG quality/profile control
-  F9        Capture
+  F9        Capture (post-overlay BMP from final D3D9 presenter backbuffer)
   CTRL+F9   VideoRecord
   F10       TogglePresenter
   CTRL+F11  HUD ON/OFF
   F12       FilterNext
 
-HUD
----
+HUD / status / capture
+----------------------
+Plain F8 follows the production Status contract: it shows a temporary runtime
+status notice without changing the permanent HUD state. Therefore F8 remains
+visible even when CTRL+F11 has hidden the permanent HUD.
+
+Plain F9 follows the production Capture contract: the request is consumed on
+the presenter path after PTAR/HUD/status rendering and before Present. The file
+is written beside the injected runtime as win81_nis_capture_N.bmp.
+
+The FPS fields no longer use an EMA of instantaneous 1/delta values. REAL and
+VISIBLE/DISPLAY rates use a recent wall-clock QPC window so pacing gaps and
+hitches reduce the reported rate. The runtime also writes one
+FPS_WALLCLOCK_SAMPLE line per second for log-side verification.
+
 The HUD displays:
   - PTAR backend identity
   - spatial mode
@@ -233,6 +246,8 @@ Before any new hardware request, CI must pass:
   - PRODPORT1 pacing test verifies GENERATED -> REAL slot ordering;
   - a simulated long stall is accepted through local-grid resynchronisation;
   - historical LATE_SKIP remains zero;
+  - wall-clock FPS regression proves a synthetic 200 ms hitch lowers the rate;
+  - F9 capture smoke creates and validates a 320x180 post-overlay BMP;
   - generic package is produced.
 
 Final product rule
