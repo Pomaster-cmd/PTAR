@@ -571,10 +571,15 @@ static HRESULT PtAsyncPresenterInitialize(
     return S_OK;
 }
 
+static bool PtAsyncPresenterAvailable()
+{
+    return g_ptarAsyncPresenter.thread!=0;
+}
+
 static bool PtAsyncPresenterIsActive()
 {
     return
-        g_ptarAsyncPresenter.thread!=0 &&
+        PtAsyncPresenterAvailable() &&
         InterlockedCompareExchange(
             &g_ptarAsyncPresenter.enabled,1,1)!=0;
 }
