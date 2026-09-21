@@ -203,7 +203,7 @@ static void PtDiagInit(HMODULE self)
         "============================================================\r\n");
 
     PtDiagLogA(
-        "DIAG_INIT build=PTAR_X86_D3D9_SPATIAL2_HUDCOMPARE1_VTABLEFIX2_CRASHLOG1 "
+        "DIAG_INIT build=PTAR_X86_D3D9_FG1_GENERIC_VTABLEFIX2_CRASHLOG1 "
         "pid=%lu self=%p",
         (unsigned long)GetCurrentProcessId(),self);
 
