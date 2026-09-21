@@ -476,6 +476,53 @@ jobs:
           Write-Host 'D3D9_VTABLE_PRESERVATION=PASS'
           Write-Host 'D3D9_DYNAMIC_RESOLUTION=PASS'
 
+      - name: Validate integrated isolated presenter through proxy
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 compat\x86_d3d9\d3d9_isolated_proxy_smoke.cpp /link user32.lib /OUT:artifact\d3d9_isolated_proxy_smoke.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+
+          Remove-Item artifact\PTAR_X86_D3D9.log -Force -ErrorAction SilentlyContinue
+          Push-Location artifact
+          try{
+            & .\d3d9_isolated_proxy_smoke.exe | Tee-Object ..\build_x86\D3D9_ISOLATED_PROXY_SMOKE.txt
+            if($LASTEXITCODE -ne 0){throw "isolated proxy smoke failed rc=$LASTEXITCODE"}
+          } finally {
+            Pop-Location
+          }
+
+          $sm=Get-Content build_x86\D3D9_ISOLATED_PROXY_SMOKE.txt -Raw
+          if($sm -notmatch 'D3D9_ISOLATED_PROXY_SMOKE=PASS'){throw 'isolated proxy PASS marker missing'}
+          if($sm -notmatch 'ISOLATED_PROXY_20_REAL_MS='){throw 'isolated source timing evidence missing'}
+          if($sm -notmatch 'ISOLATED_PROXY_RESET hr=0x00000000'){throw 'isolated presenter Reset lifecycle failed'}
+
+          if(-not(Test-Path artifact\PTAR_X86_D3D9.log)){
+            throw 'isolated proxy produced no PTAR runtime log'
+          }
+          $rt=Get-Content artifact\PTAR_X86_D3D9.log -Raw
+
+          foreach($required in @(
+            'ISOLATED_PRESENTER_READY transport=CPU_READBACK',
+            'ISOLATED_PRESENTER_THREAD_START transport=CPU_READBACK',
+            'ISOLATED_SUBMIT_REAL',
+            'ISOLATED_PRESENTER_THREAD_STOP'
+          )){
+            if($rt -notmatch [regex]::Escape($required)){
+              throw "isolated runtime evidence missing: $required"
+            }
+          }
+
+          if($rt -notmatch 'presented_real=[1-9][0-9]*'){
+            throw 'isolated presenter did not physically deliver a REAL frame'
+          }
+          if($rt -match 'INIT_AsyncPresenter' -or $rt -match 'FG_QUEUE_GENERATED'){
+            throw 'superseded same-device presenter path executed'
+          }
+
+          Copy-Item artifact\PTAR_X86_D3D9.log build_x86\D3D9_ISOLATED_PROXY_RUNTIME.log -Force
+          Write-Host 'D3D9_ISOLATED_PROXY_RUNTIME=PASS'
+
       - name: Installer path, in-place and diagnostic collector smoke tests
         shell: pwsh
         run: |
@@ -557,6 +604,7 @@ jobs:
           Remove-Item artifact\d3d9_ex_managed_pool_probe.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\d3d9_ex_factory_base_device_probe.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\d3d9_regular_readback_probe.exe -Force -ErrorAction SilentlyContinue
+          Remove-Item artifact\d3d9_isolated_proxy_smoke.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\PTAR_X86_D3D9.log -Force -ErrorAction SilentlyContinue
           Copy-Item compat\x86_d3d9\01-INSTALL_PTAR_X86_D3D9.bat artifact\
           Copy-Item compat\x86_d3d9\02-UNINSTALL_PTAR_X86_D3D9.bat artifact\
@@ -593,5 +641,7 @@ jobs:
             build_x86/D3D9_EX_FACTORY_BASE_DEVICE_PROBE.txt
             build_x86/D3D9_REGULAR_READBACK_PROBE.txt
             build_x86/D3D9_SEPARATE_DEVICE_PRESENTER_SMOKE.txt
+            build_x86/D3D9_ISOLATED_PROXY_SMOKE.txt
+            build_x86/D3D9_ISOLATED_PROXY_RUNTIME.log
             build_x86/D3D9_FG_GPU_PIPELINE_SMOKE.txt
             build_x86/D3D9_FG_PACER_SMOKE.txt
