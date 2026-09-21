@@ -24,7 +24,9 @@
 #include <cstdarg>
 #include <cstring>
 #include "ptar_ps_bytecode.h"
+#include "ptar_bilinear_ps_bytecode.h"
 #include "ptar_diag.h"
+#include "ptar_hud.h"
 
 static HMODULE g_self=0;
 static HMODULE g_realD3D9=0;
@@ -61,6 +63,7 @@ struct PTARContext
     IDirect3DSurface9* virtualDepth;
     IDirect3DSurface9* realBackBuffer;
     IDirect3DPixelShader9* shader;
+    IDirect3DPixelShader9* bilinearShader;
     IDirect3DStateBlock9* stateBlock;
     UINT sourceW;
     UINT sourceH;
@@ -119,6 +122,7 @@ static void ReleasePTARResources()
 {
     g_ptar.active=false;
     if(g_ptar.stateBlock){g_ptar.stateBlock->Release();g_ptar.stateBlock=0;}
+    if(g_ptar.bilinearShader){g_ptar.bilinearShader->Release();g_ptar.bilinearShader=0;}
     if(g_ptar.shader){g_ptar.shader->Release();g_ptar.shader=0;}
     if(g_ptar.realBackBuffer){g_ptar.realBackBuffer->Release();g_ptar.realBackBuffer=0;}
     if(g_ptar.virtualDepth){g_ptar.virtualDepth->Release();g_ptar.virtualDepth=0;}
@@ -199,6 +203,11 @@ static HRESULT InitializePTARResources(
     PtDiagLogA("INIT_CreatePixelShader hr=0x%08lX ptr=%p",(unsigned long)hr,g_ptar.shader);
     if(FAILED(hr) || !g_ptar.shader) goto fail;
 
+    PtDiagStage("Initialize_CreateBilinearShader");
+    hr=dev->CreatePixelShader((const DWORD*)g_ptarBilinearPs,&g_ptar.bilinearShader);
+    PtDiagLogA("INIT_CreateBilinearShader hr=0x%08lX ptr=%p",(unsigned long)hr,g_ptar.bilinearShader);
+    if(FAILED(hr) || !g_ptar.bilinearShader) goto fail;
+
     PtDiagStage("Initialize_CreateStateBlock");
     hr=dev->CreateStateBlock(D3DSBT_ALL,&g_ptar.stateBlock);
     PtDiagLogA("INIT_CreateStateBlock hr=0x%08lX ptr=%p",(unsigned long)hr,g_ptar.stateBlock);
@@ -216,7 +225,7 @@ static HRESULT InitializePTARResources(
     if(FAILED(hr)) goto fail;
 
     g_ptar.active=true;
-    Log(L"PTAR_ACTIVE src=%ux%u out=%ux%u shader=MoE_v01_D3D9_PS3 samples=8",
+    Log(L"PTAR_ACTIVE src=%ux%u out=%ux%u shader=MoE_v01_D3D9_PS3 samples=8 hud=ON compare=F6",
         sourceW,sourceH,outputW,outputH);
     return S_OK;
 
@@ -327,7 +336,7 @@ struct QuadVertex
 static HRESULT RenderPTARToRealBackBuffer(IDirect3DDevice9* dev)
 {
     if(!g_ptar.active || !g_ptar.sourceTexture || !g_ptar.realBackBuffer ||
-       !g_ptar.shader || !g_ptar.stateBlock)
+       !g_ptar.shader || !g_ptar.bilinearShader || !g_ptar.stateBlock)
         return S_FALSE;
 
     HRESULT hr=g_ptar.stateBlock->Capture();
@@ -361,7 +370,7 @@ static HRESULT RenderPTARToRealBackBuffer(IDirect3DDevice9* dev)
         (float)g_ptar.sourceW,(float)g_ptar.sourceH,
         (float)g_ptar.outputW,(float)g_ptar.outputH};
     dev->SetPixelShaderConstantF(0,sizes,1);
-    dev->SetPixelShader(g_ptar.shader);
+    dev->SetPixelShader(PtHudUseMoe()?g_ptar.shader:g_ptar.bilinearShader);
     dev->SetVertexShader(0);
     dev->SetFVF(D3DFVF_XYZRHW|D3DFVF_TEX1);
     dev->SetTexture(0,g_ptar.sourceTexture);
@@ -387,9 +396,17 @@ static HRESULT STDMETHODCALLTYPE HookPresent(
         return g_realPresent(self,src,dst,hwnd,dirty);
 
     g_ptar.inPresent=true;
+    PtHudFrameTick();
+
     HRESULT drawHr=RenderPTARToRealBackBuffer(self);
     if(FAILED(drawHr))
         Log(L"PTAR_DRAW_FAIL hr=0x%08X",(unsigned)drawHr);
+
+    if(SUCCEEDED(drawHr))
+        PtHudDraw(
+            self,
+            g_ptar.sourceW,g_ptar.sourceH,
+            g_ptar.outputW,g_ptar.outputH);
 
     HRESULT presentHr=g_realPresent(self,0,0,hwnd,dirty);
 
