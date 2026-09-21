@@ -24,6 +24,7 @@
 #include <cstdarg>
 #include <cstring>
 #include "ptar_ps_bytecode.h"
+#include "ptar_universal_ps_bytecode.h"
 #include "ptar_bilinear_ps_bytecode.h"
 #include "ptar_fg_me_coarse_ps_bytecode.h"
 #include "ptar_fg_me_refine_ps_bytecode.h"
@@ -68,6 +69,7 @@ struct PTARContext
     IDirect3DSurface9* virtualDepth;
     IDirect3DSurface9* realBackBuffer;
     IDirect3DPixelShader9* shader;
+    IDirect3DPixelShader9* universalShader;
     IDirect3DPixelShader9* bilinearShader;
     IDirect3DPixelShader9* fgMeCoarseShader;
     IDirect3DPixelShader9* fgMeRefineShader;
@@ -153,6 +155,7 @@ static void ReleasePTARResources()
     if(g_ptar.fgMeRefineShader){g_ptar.fgMeRefineShader->Release();g_ptar.fgMeRefineShader=0;}
     if(g_ptar.fgMeCoarseShader){g_ptar.fgMeCoarseShader->Release();g_ptar.fgMeCoarseShader=0;}
     if(g_ptar.bilinearShader){g_ptar.bilinearShader->Release();g_ptar.bilinearShader=0;}
+    if(g_ptar.universalShader){g_ptar.universalShader->Release();g_ptar.universalShader=0;}
     if(g_ptar.shader){g_ptar.shader->Release();g_ptar.shader=0;}
 
     if(g_ptar.motionFineSurface){g_ptar.motionFineSurface->Release();g_ptar.motionFineSurface=0;}
@@ -358,6 +361,11 @@ static HRESULT InitializePTARResources(
     hr=dev->CreatePixelShader((const DWORD*)g_ptarPs,&g_ptar.shader);
     PtDiagLogA("INIT_CreatePixelShader hr=0x%08lX ptr=%p",(unsigned long)hr,g_ptar.shader);
     if(FAILED(hr) || !g_ptar.shader) goto fail;
+
+    PtDiagStage("Initialize_CreateUniversalShader");
+    hr=dev->CreatePixelShader((const DWORD*)g_ptarUniversalPs,&g_ptar.universalShader);
+    PtDiagLogA("INIT_CreateUniversalShader hr=0x%08lX ptr=%p",(unsigned long)hr,g_ptar.universalShader);
+    if(FAILED(hr) || !g_ptar.universalShader) goto fail;
 
     PtDiagStage("Initialize_CreateBilinearShader");
     hr=dev->CreatePixelShader((const DWORD*)g_ptarBilinearPs,&g_ptar.bilinearShader);
