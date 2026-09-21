@@ -23,9 +23,16 @@ Included:
   - native D3D9 HUD
   - source/output resolution display
   - measured REAL and visible FPS
-  - F6 spatial A/B toggle
+  - F6 ManualFilter
   - CTRL+F6 frame-generation toggle
-  - F8 HUD toggle
+  - F7 Benchmark shortcut contract
+  - F8 Status
+  - CTRL+F8 FG quality/profile control
+  - F9 Capture shortcut contract
+  - CTRL+F9 VideoRecord shortcut contract
+  - F10 TogglePresenter shortcut contract
+  - CTRL+F11 HUD toggle
+  - F12 FilterNext
   - generic GPU frame generation:
       * previous/current reconstructed REAL history
       * coarse motion estimation at /4
@@ -47,9 +54,16 @@ Not included in this x86/D3D9 backend yet:
 
 Hotkeys
 -------
-  F6        PTAR MoE <-> bilinear reference
+  F6        ManualFilter (PTAR MoE <-> bilinear reference)
   CTRL+F6   Frame generation ON/OFF
-  F8        HUD ON/OFF
+  F7        Benchmark
+  F8        Status
+  CTRL+F8   FG quality/profile control
+  F9        Capture
+  CTRL+F9   VideoRecord
+  F10       TogglePresenter
+  CTRL+F11  HUD ON/OFF
+  F12       FilterNext
 
 HUD
 ---
