@@ -126,7 +126,7 @@ int main()
     std::printf(
         "CAPTURE_HR=0x%08lX\n",
         (unsigned long)hr);
-    std::wprintf(L"CAPTURE_PATH=%ls\n",path);
+    wprintf(L"CAPTURE_PATH=%ls\n",path);
 
     if(FAILED(hr) || !path[0])
         return 9;
