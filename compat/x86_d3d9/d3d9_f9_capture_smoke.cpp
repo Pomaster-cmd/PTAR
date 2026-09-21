@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <d3d9.h>
 #include <cstdio>
+#pragma warning(disable:4505)
 #include "ptar_capture.h"
 
 typedef IDirect3D9* (WINAPI *PFN_Direct3DCreate9)(UINT);
