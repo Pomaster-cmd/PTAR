@@ -6,6 +6,7 @@
 
 static bool g_ptarHudVisible=true;
 static bool g_ptarHudUseMoe=true;
+static bool g_ptarHudFgEnabled=false;
 static bool g_ptarHudPrevF6=false;
 static bool g_ptarHudPrevF8=false;
 static LARGE_INTEGER g_ptarHudFreq={0};
@@ -43,13 +44,24 @@ static void PtHudUpdateInput()
 {
     const bool f6=(GetAsyncKeyState(VK_F6)&0x8000)!=0;
     const bool f8=(GetAsyncKeyState(VK_F8)&0x8000)!=0;
+    const bool ctrl=(GetAsyncKeyState(VK_CONTROL)&0x8000)!=0;
 
     if(f6 && !g_ptarHudPrevF6)
     {
-        g_ptarHudUseMoe=!g_ptarHudUseMoe;
-        PtDiagLogA(
-            "HUDCOMPARE_F6 mode=%s",
-            g_ptarHudUseMoe?"PTAR_MOE":"BILINEAR_REF");
+        if(ctrl)
+        {
+            g_ptarHudFgEnabled=!g_ptarHudFgEnabled;
+            PtDiagLogA(
+                "FRAMEGEN_CTRL_F6 fg=%s",
+                g_ptarHudFgEnabled?"ON":"OFF");
+        }
+        else
+        {
+            g_ptarHudUseMoe=!g_ptarHudUseMoe;
+            PtDiagLogA(
+                "HUDCOMPARE_F6 mode=%s",
+                g_ptarHudUseMoe?"PTAR_MOE":"BILINEAR_REF");
+        }
     }
 
     if(f8 && !g_ptarHudPrevF8)
@@ -73,6 +85,21 @@ static void PtHudFrameTick()
 static bool PtHudUseMoe()
 {
     return g_ptarHudUseMoe;
+}
+
+static bool PtHudFgEnabled()
+{
+    return g_ptarHudFgEnabled;
+}
+
+static double PtHudRealFps()
+{
+    return g_ptarHudFps;
+}
+
+static double PtHudDisplayFps(bool fgProducing)
+{
+    return g_ptarHudFps*(fgProducing?2.0:1.0);
 }
 
 static const BYTE* PtHudGlyph(char c)
@@ -195,7 +222,8 @@ static void PtHudDraw(
     UINT sourceW,
     UINT sourceH,
     UINT outputW,
-    UINT outputH)
+    UINT outputH,
+    bool fgProducing)
 {
     if(!g_ptarHudVisible || !dev) return;
 
@@ -204,7 +232,7 @@ static void PtHudDraw(
     const int scale=2;
     const int lineStep=17;
 
-    D3DRECT bg={8,8,590,124};
+    D3DRECT bg={8,8,620,142};
     dev->Clear(
         1,&bg,D3DCLEAR_TARGET,
         D3DCOLOR_XRGB(8,8,8),
@@ -237,19 +265,29 @@ static void PtHudDraw(
 
     _snprintf_s(
         line,sizeof(line),_TRUNCATE,
-        "FPS: %.1f",
-        g_ptarHudFps);
+        "REAL FPS: %.1f  DISPLAY FPS: %.1f",
+        PtHudRealFps(),PtHudDisplayFps(fgProducing));
     PtHudDrawLine(
         dev,x,y+lineStep*3,scale,line,
         D3DCOLOR_XRGB(220,220,220));
 
+    _snprintf_s(
+        line,sizeof(line),_TRUNCATE,
+        "FG: %s  ME: /4>/2",
+        g_ptarHudFgEnabled?"ON":"OFF");
     PtHudDrawLine(
-        dev,x,y+lineStep*4,scale,
-        "F6 A/B  F8 HUD",
-        D3DCOLOR_XRGB(180,220,255));
+        dev,x,y+lineStep*4,scale,line,
+        g_ptarHudFgEnabled?
+            D3DCOLOR_XRGB(90,235,255):
+            D3DCOLOR_XRGB(190,190,190));
 
     PtHudDrawLine(
         dev,x,y+lineStep*5,scale,
-        "FG: NOT PORTED",
-        D3DCOLOR_XRGB(190,190,190));
+        "F6 A/B  CTRL+F6 FG  F8 HUD",
+        D3DCOLOR_XRGB(180,220,255));
+
+    PtHudDrawLine(
+        dev,x,y+lineStep*6,scale,
+        fgProducing?"CADENCE: REAL+GENERATED":"CADENCE: REAL ONLY",
+        D3DCOLOR_XRGB(210,210,210));
 }
