@@ -261,6 +261,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
+          $PSNativeCommandUseErrorActionPreference=$false
           & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 compat\x86_d3d9\d3d9_regular_to_ex_shared_smoke.cpp /link user32.lib /OUT:artifact\d3d9_regular_to_ex_shared_smoke.exe /SUBSYSTEM:CONSOLE,6.03
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
           & artifact\d3d9_regular_to_ex_shared_smoke.exe | Tee-Object build_x86\D3D9_REGULAR_TO_EX_SHARED_SMOKE.txt
@@ -281,6 +282,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
+          $PSNativeCommandUseErrorActionPreference=$false
           & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 compat\x86_d3d9\d3d9_swapchain_donotwait_smoke.cpp /link user32.lib /OUT:artifact\d3d9_swapchain_donotwait_smoke.exe /SUBSYSTEM:CONSOLE,6.03
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
           & artifact\d3d9_swapchain_donotwait_smoke.exe | Tee-Object build_x86\D3D9_SWAPCHAIN_DONOTWAIT_SMOKE.txt
@@ -294,6 +296,34 @@ jobs:
           } else {
             Write-Host "D3D9_SWAPCHAIN_DONOTWAIT=UNSUITABLE rc=$rc"
           }
+
+      - name: Probe D3D9Ex managed-pool compatibility
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 compat\x86_d3d9\d3d9_ex_managed_pool_probe.cpp /link user32.lib /OUT:artifact\d3d9_ex_managed_pool_probe.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          & artifact\d3d9_ex_managed_pool_probe.exe | Tee-Object build_x86\D3D9_EX_MANAGED_POOL_PROBE.txt
+          if($LASTEXITCODE -ne 0){throw "D3D9Ex managed-pool probe failed rc=$LASTEXITCODE"}
+          $mp=Get-Content build_x86\D3D9_EX_MANAGED_POOL_PROBE.txt -Raw
+          if($mp -notmatch 'D3D9EX_MANAGED_RESOURCES='){
+            throw 'D3D9Ex managed-pool capability marker missing'
+          }
+          Write-Host ($mp.Trim())
+
+      - name: Probe Ex-factory base CreateDevice compatibility
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 compat\x86_d3d9\d3d9_ex_factory_base_device_probe.cpp /link user32.lib /OUT:artifact\d3d9_ex_factory_base_device_probe.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          & artifact\d3d9_ex_factory_base_device_probe.exe | Tee-Object build_x86\D3D9_EX_FACTORY_BASE_DEVICE_PROBE.txt
+          if($LASTEXITCODE -ne 0){throw "Ex-factory base-device probe failed rc=$LASTEXITCODE"}
+          $eb=Get-Content build_x86\D3D9_EX_FACTORY_BASE_DEVICE_PROBE.txt -Raw
+          if($eb -notmatch 'EX_FACTORY_BASE_MANAGED=' -or $eb -notmatch 'EX_FACTORY_BASE_SHARED='){
+            throw 'Ex-factory base-device capability markers missing'
+          }
+          Write-Host ($eb.Trim())
 
       - name: Validate D3D11-model isolated D3D9Ex presenter architecture
         shell: pwsh
@@ -438,6 +468,8 @@ jobs:
           Remove-Item artifact\d3d9_separate_device_presenter_smoke.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\d3d9_regular_to_ex_shared_smoke.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\d3d9_swapchain_donotwait_smoke.exe -Force -ErrorAction SilentlyContinue
+          Remove-Item artifact\d3d9_ex_managed_pool_probe.exe -Force -ErrorAction SilentlyContinue
+          Remove-Item artifact\d3d9_ex_factory_base_device_probe.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\PTAR_X86_D3D9.log -Force -ErrorAction SilentlyContinue
           Copy-Item compat\x86_d3d9\01-INSTALL_PTAR_X86_D3D9.bat artifact\
           Copy-Item compat\x86_d3d9\02-UNINSTALL_PTAR_X86_D3D9.bat artifact\
@@ -470,6 +502,8 @@ jobs:
             build_x86/D3D9_F9_CAPTURE_SMOKE.txt
             build_x86/D3D9_REGULAR_TO_EX_SHARED_SMOKE.txt
             build_x86/D3D9_SWAPCHAIN_DONOTWAIT_SMOKE.txt
+            build_x86/D3D9_EX_MANAGED_POOL_PROBE.txt
+            build_x86/D3D9_EX_FACTORY_BASE_DEVICE_PROBE.txt
             build_x86/D3D9_SEPARATE_DEVICE_PRESENTER_SMOKE.txt
             build_x86/D3D9_FG_GPU_PIPELINE_SMOKE.txt
             build_x86/D3D9_FG_PACER_SMOKE.txt
