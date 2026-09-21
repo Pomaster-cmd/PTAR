@@ -20,7 +20,7 @@
 // - the presenter owns its own swapchain/device and blocks on Sync1 there;
 // - shared-resource producer completion uses D3DQUERYTYPE_EVENT + FLUSH.
 
-typedef HRESULT (WINAPI *PTARIsoPTARIsoPFN_Direct3DCreate9Ex)(
+typedef HRESULT (WINAPI *PTARIsoPFN_Direct3DCreate9Ex)(
     UINT,IDirect3D9Ex**);
 
 enum PTARIsoSlotState
