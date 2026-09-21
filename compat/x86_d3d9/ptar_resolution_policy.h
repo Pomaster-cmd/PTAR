@@ -25,8 +25,8 @@ static void PtResolutionLoadConfig(HMODULE selfModule)
     g_ptarResolutionPolicy.loaded=true;
 
     wchar_t dllPath[MAX_PATH]={0};
-    DWORD n=GetModuleFileNameW(selfModule,dllPath,_countof(dllPath));
-    if(!n || n>=_countof(dllPath))
+    DWORD n=GetModuleFileNameW(selfModule,dllPath,MAX_PATH);
+    if(!n || n>=MAX_PATH)
         return;
 
     wchar_t* slash=wcsrchr(dllPath,L'\\');
