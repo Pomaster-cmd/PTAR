@@ -1,4 +1,4 @@
-name: SOURCE x86 D3D9 SPATIAL2 HUDCOMPARE1
+name: SOURCE x86 D3D9 FG1
 
 on:
   push:
@@ -89,19 +89,34 @@ jobs:
           }
           $sha=(Get-FileHash artifact\d3d9.dll -Algorithm SHA256).Hash.ToLowerInvariant()
           @(
-            'PTAR_VARIANT=PTAR_X86_D3D9_SPATIAL2_HUDCOMPARE1_VTABLEFIX2_CRASHLOG1',
+            'PTAR_VARIANT=PTAR_X86_D3D9_FG1_VTABLEFIX2_CRASHLOG1',
             'PE_MACHINE=I386_0x014C',
             'API=D3D9',
             'SPATIAL=PTAR_NG_MOE_V01_PS3_PORT',
             'HUD=F8_NATIVE_D3D9',
             'AB_COMPARE=F6_MOE_VS_BILINEAR',
-            'FG=NOT_PORTED_IN_SPATIAL2',
+            'FG=CTRL_F6_GENERIC_ME_DIV4_DIV2_INTERPOLATE',
+            'FG_VISIBLE_TARGET_HZ=60',
+            'FG_LATE_POLICY=SKIP_GENERATED_KEEP_REAL',
             'CRASH_DIAGNOSTICS=EARLY_VEH_UNHANDLED_STAGE_REGISTERS',
             ('DLL_SHA256='+$sha),
             ('SOURCE_COMMIT='+$env:GITHUB_SHA)
           ) | Set-Content artifact\PTAR_X86_D3D9_VERSION.txt -Encoding ASCII
           Write-Host 'X86_PE_GATE=PASS'
           Write-Host "DLL_SHA256=$sha"
+
+      - name: Execute generic D3D9 FG GPU pipeline smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I build_x86 compat\x86_d3d9\d3d9_fg_gpu_pipeline_smoke.cpp /link user32.lib /OUT:artifact\d3d9_fg_gpu_pipeline_smoke.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          & artifact\d3d9_fg_gpu_pipeline_smoke.exe | Tee-Object build_x86\D3D9_FG_GPU_PIPELINE_SMOKE.txt
+          if($LASTEXITCODE -ne 0){throw "D3D9 FG GPU pipeline smoke failed rc=$LASTEXITCODE"}
+          $fg=Get-Content build_x86\D3D9_FG_GPU_PIPELINE_SMOKE.txt -Raw
+          if($fg -notmatch 'D3D9_FG_GPU_PIPELINE_SMOKE=PASS'){throw 'FG GPU PASS marker missing'}
+          if($fg -notmatch 'FG_MOTION_NONZERO_PIXELS=[1-9][0-9]*'){throw 'FG motion evidence missing'}
+          Write-Host 'D3D9_FG_GPU_PIPELINE=PASS'
 
       - name: Reproduce Direct3DCreate9 object lifetime sequence
         shell: pwsh
@@ -135,7 +150,7 @@ jobs:
           Copy-Item artifact\d3d9.dll $pack\d3d9.dll
           Copy-Item compat\x86_d3d9\install_x86_d3d9.ps1 $pack\install_x86_d3d9.ps1
           Copy-Item compat\x86_d3d9\uninstall_x86_d3d9.ps1 $pack\uninstall_x86_d3d9.ps1
-          $exe=Join-Path $game 'conviction_game.exe'
+          $exe=Join-Path $game 'ptar_test_x86.exe'
           Copy-Item "$env:SystemRoot\SysWOW64\notepad.exe" $exe
           & (Join-Path $pack 'install_x86_d3d9.ps1') -GameExe $exe
           if(-not(Test-Path (Join-Path $game 'd3d9.dll'))){throw 'separate-package install did not copy d3d9.dll'}
@@ -146,13 +161,13 @@ jobs:
           if(Test-Path (Join-Path $game 'd3d9.dll')){throw 'separate-package uninstall left d3d9.dll'}
 
           # Package extracted directly next to game EXE.
-          $inplace=Join-Path $smoke 'In Place Conviction'
+          $inplace=Join-Path $smoke 'In Place Generic'
           New-Item -ItemType Directory $inplace | Out-Null
           Copy-Item artifact\d3d9.dll $inplace\d3d9.dll
           Copy-Item compat\x86_d3d9\install_x86_d3d9.ps1 $inplace\install_x86_d3d9.ps1
           Copy-Item compat\x86_d3d9\uninstall_x86_d3d9.ps1 $inplace\uninstall_x86_d3d9.ps1
           Copy-Item compat\x86_d3d9\collect_x86_d3d9_diag.ps1 $inplace\collect_x86_d3d9_diag.ps1
-          $iex=Join-Path $inplace 'conviction_game.exe'
+          $iex=Join-Path $inplace 'ptar_test_x86.exe'
           Copy-Item "$env:SystemRoot\SysWOW64\notepad.exe" $iex
           & (Join-Path $inplace 'install_x86_d3d9.ps1') -GameExe $iex
           $istate=Get-Content (Join-Path $inplace 'PTAR_X86_D3D9_INSTALL_STATE.txt') -Raw
@@ -182,28 +197,30 @@ jobs:
           Write-Host 'INSTALLER_PATH_SMOKE=PASS'
           Write-Host 'INSTALLER_INPLACE_SMOKE=PASS'
 
-      - name: Package SPATIAL2 HUDCOMPARE1 diagnostic build
+      - name: Package generic x86 D3D9 FG1 test build
         shell: pwsh
         run: |
           Remove-Item artifact\d3d9_object_lifetime_smoke.exe -Force -ErrorAction SilentlyContinue
+          Remove-Item artifact\d3d9_fg_gpu_pipeline_smoke.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\PTAR_X86_D3D9.log -Force -ErrorAction SilentlyContinue
-          Copy-Item compat\x86_d3d9\01-INSTALL_CONVICTION_PTAR_X86.bat artifact\
-          Copy-Item compat\x86_d3d9\02-UNINSTALL_CONVICTION_PTAR_X86.bat artifact\
+          Copy-Item compat\x86_d3d9\01-INSTALL_PTAR_X86_D3D9.bat artifact\
+          Copy-Item compat\x86_d3d9\02-UNINSTALL_PTAR_X86_D3D9.bat artifact\
           Copy-Item compat\x86_d3d9\03-COLLECT_CRASH_DIAGNOSTICS.bat artifact\
           Copy-Item compat\x86_d3d9\install_x86_d3d9.ps1 artifact\
           Copy-Item compat\x86_d3d9\uninstall_x86_d3d9.ps1 artifact\
           Copy-Item compat\x86_d3d9\collect_x86_d3d9_diag.ps1 artifact\
           Copy-Item compat\x86_d3d9\README_TEST.txt artifact\
-          Compress-Archive -Path artifact\* -DestinationPath PTAR_X86_D3D9_SPATIAL2_HUDCOMPARE1_VTABLEFIX2_CRASHLOG1_CONVICTION_TEST.zip -CompressionLevel Optimal
-          $z=(Get-FileHash PTAR_X86_D3D9_SPATIAL2_HUDCOMPARE1_VTABLEFIX2_CRASHLOG1_CONVICTION_TEST.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          Compress-Archive -Path artifact\* -DestinationPath PTAR_X86_D3D9_FG1_GENERIC_TEST.zip -CompressionLevel Optimal
+          $z=(Get-FileHash PTAR_X86_D3D9_FG1_GENERIC_TEST.zip -Algorithm SHA256).Hash.ToLowerInvariant()
           Write-Host "PACKAGE_SHA256=$z"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PTAR-X86-D3D9-SPATIAL2-HUDCOMPARE1-VTABLEFIX2-CRASHLOG1-CONVICTION
+          name: PTAR-X86-D3D9-FG1-GENERIC
           path: |
-            PTAR_X86_D3D9_SPATIAL2_HUDCOMPARE1_VTABLEFIX2_CRASHLOG1_CONVICTION_TEST.zip
+            PTAR_X86_D3D9_FG1_GENERIC_TEST.zip
             build_x86/HEADERS.txt
             build_x86/EXPORTS.txt
             build_x86/DEPENDENTS.txt
             build_x86/D3D9_OBJECT_LIFETIME_SMOKE.txt
+            build_x86/D3D9_FG_GPU_PIPELINE_SMOKE.txt
