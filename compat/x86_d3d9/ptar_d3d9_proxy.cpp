@@ -1572,15 +1572,26 @@ static HRESULT STDMETHODCALLTYPE HookCreateDevice(
     D3DPRESENT_PARAMETERS actual={};
     PreparePTARPresentationParameters(original,plan,&actual);
 
+    // The async D3D9 presenter uses the same device from a dedicated thread.
+    // Force the runtime's documented multithreaded synchronization even when
+    // the game did not request it itself.
+    const DWORD ptarFlags=flags|D3DCREATE_MULTITHREADED;
+
     PtDiagLogA(
-        "CREATEDEVICE_PLAN requested=%ux%u plannedDevice=%ux%u spatialRequested=%d windowed=%ld",
+        "CREATEDEVICE_PLAN requested=%ux%u plannedDevice=%ux%u spatialRequested=%d "
+        "windowed=%ld game_flags=0x%08lX ptar_flags=0x%08lX "
+        "game_interval=0x%08lX actual_interval=0x%08lX",
         original.BackBufferWidth,original.BackBufferHeight,
         plan.deviceW,plan.deviceH,
         plan.spatialRequested?1:0,
-        (long)original.Windowed);
+        (long)original.Windowed,
+        (unsigned long)flags,
+        (unsigned long)ptarFlags,
+        (unsigned long)original.PresentationInterval,
+        (unsigned long)actual.PresentationInterval);
 
     HRESULT hr=g_realCreateDevice(
-        self,adapter,type,focus,flags,&actual,out);
+        self,adapter,type,focus,ptarFlags,&actual,out);
     *pp=original;
 
     if((FAILED(hr) || !*out) && plan.spatialRequested)
@@ -1597,7 +1608,7 @@ static HRESULT STDMETHODCALLTYPE HookCreateDevice(
 
         *out=0;
         hr=g_realCreateDevice(
-            self,adapter,type,focus,flags,&actual,out);
+            self,adapter,type,focus,ptarFlags,&actual,out);
         *pp=original;
     }
 
