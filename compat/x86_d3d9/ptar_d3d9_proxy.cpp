@@ -1179,8 +1179,13 @@ static HRESULT STDMETHODCALLTYPE HookPresent(
     if(!g_ptar.active || self!=g_ptar.device || g_ptar.inPresent)
         return g_realPresent(self,src,dst,hwnd,dirty);
 
+    // Serialize PTAR end-of-frame work against the async scanout thread. The
+    // game scene gate is normally released by EndScene before Present.
+    PtAsyncEnterDevice();
+
     g_ptar.inPresent=true;
     PtHudFrameTick();
+    const unsigned long sequence=++g_ptar.sourceSequence;
 
     HRESULT result=S_OK;
     HRESULT captureHr=g_ptar.stateBlock?
@@ -1191,12 +1196,20 @@ static HRESULT STDMETHODCALLTYPE HookPresent(
         PtDiagLogA(
             "PRESENT_STATE_CAPTURE_FAIL hr=0x%08lX",
             (unsigned long)captureHr);
+
+        // Underlying swapchain is IMMEDIATE, so even fallback cannot impose a
+        // VBlank-sized stall on the producer.
         result=g_realPresent(self,src,dst,hwnd,dirty);
         g_ptar.inPresent=false;
+        PtAsyncLeaveDevice();
         return result;
     }
 
-    PtDiagStage(g_ptar.spatialActive?"SPATIAL_CURRENT_REAL":"NATIVE_1X1_CURRENT_REAL");
+    PtDiagStage(
+        g_ptar.spatialActive?
+            "SPATIAL_CURRENT_REAL":
+            "NATIVE_1X1_CURRENT_REAL");
+
     HRESULT spatialHr=RenderSpatialToCurrent(self);
     if(FAILED(spatialHr))
     {
@@ -1208,35 +1221,34 @@ static HRESULT STDMETHODCALLTYPE HookPresent(
     }
 
     {
-        bool fgProducing=false;
-        bool fgPipelineReady=false;
-        const bool fgSession=
-            PtHudFgEnabled() && g_ptar.previousRealValid;
+        bool fgQueued=false;
+        const bool generateThisFrame=
+            PtShouldGenerateThisSourceFrame();
 
-        if(fgSession)
+        if(generateThisFrame)
         {
             HRESULT fgHr=RenderFGMotionAndIntermediate(self);
             if(SUCCEEDED(fgHr))
             {
-                fgPipelineReady=true;
+                PtDiagStage("FG_QUEUE_GENERATED");
+                HRESULT queueGen=QueuePTARFrame(
+                    self,
+                    g_ptar.generatedSurface,
+                    hwnd,
+                    true,
+                    true,
+                    sequence);
 
-                // Build FG first, then let the production-port local-grid
-                // pacer place GENERATED/REAL without historical skip storms.
-                if(PtFgPacerPrepareGenerated())
+                if(SUCCEEDED(queueGen))
                 {
-                    PtDiagStage("FG_PRESENT_GENERATED");
-                    HRESULT generatedPresent=PresentPTARTexture(
-                        self,g_ptar.generatedTexture,hwnd,dirty,true,true);
-                    if(SUCCEEDED(generatedPresent))
-                    {
-                        fgProducing=true;
-                    }
-                    else
-                    {
-                        PtDiagLogA(
-                            "FG_PRESENT_GENERATED_FAIL hr=0x%08lX",
-                            (unsigned long)generatedPresent);
-                    }
+                    fgQueued=true;
+                }
+                else
+                {
+                    PtDiagLogA(
+                        "FG_QUEUE_GENERATED_FAIL seq=%lu hr=0x%08lX",
+                        sequence,
+                        (unsigned long)queueGen);
                 }
             }
             else
@@ -1247,16 +1259,57 @@ static HRESULT STDMETHODCALLTYPE HookPresent(
             }
         }
 
-        // Preserve the production-port GENERATED -> REAL local cadence when
-        // the FG pipeline is healthy. If it fails, return to REAL-only.
-        PtFgPacerPrepareReal(fgSession && fgPipelineReady);
+        if(PtAsyncPresenterIsActive())
+        {
+            PtDiagStage("QUEUE_REAL");
+            HRESULT queueReal=QueuePTARFrame(
+                self,
+                g_ptar.currentRealSurface,
+                hwnd,
+                false,
+                fgQueued,
+                sequence);
 
-        PtDiagStage("PRESENT_REAL");
-        result=PresentPTARTexture(
-            self,g_ptar.currentRealTexture,hwnd,dirty,false,fgProducing);
+            if(FAILED(queueReal))
+            {
+                PtDiagLogA(
+                    "ASYNC_QUEUE_REAL_FAIL seq=%lu hr=0x%08lX fallback=DIRECT",
+                    sequence,
+                    (unsigned long)queueReal);
 
-        if(SUCCEEDED(result))
-            RotateRealHistory();
+                result=PresentPTARFrameDirectFallback(
+                    self,
+                    g_ptar.currentRealSurface,
+                    hwnd,
+                    false,
+                    false);
+            }
+            else
+            {
+                // The game's Present contract is satisfied by successful
+                // mailbox submission. Physical Present happens asynchronously.
+                result=S_OK;
+            }
+        }
+        else
+        {
+            // Async presenter initialization is fail-open. Keep PTAR spatial
+            // active and preserve source throughput; FG is not generated on
+            // this path because it cannot be cadence-correct without mailbox
+            // presentation.
+            PtDiagStage("PRESENT_REAL_DIRECT_FALLBACK");
+            result=PresentPTARFrameDirectFallback(
+                self,
+                g_ptar.currentRealSurface,
+                hwnd,
+                false,
+                false);
+        }
+
+        // Temporal history follows produced REAL source frames, not scanout.
+        // The presenter is allowed to coalesce stale REALs without corrupting
+        // ME history or slowing the game.
+        RotateRealHistory();
     }
 
 restore_game_state:
@@ -1269,6 +1322,7 @@ restore_game_state:
 
     PtDiagStage("PRESENT_RETURN_TO_GAME");
     g_ptar.inPresent=false;
+    PtAsyncLeaveDevice();
     return result;
 }
 
