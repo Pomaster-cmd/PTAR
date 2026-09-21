@@ -25,6 +25,9 @@
 #include <cstring>
 #include "ptar_ps_bytecode.h"
 #include "ptar_bilinear_ps_bytecode.h"
+#include "ptar_fg_me_coarse_ps_bytecode.h"
+#include "ptar_fg_me_refine_ps_bytecode.h"
+#include "ptar_fg_interpolate_ps_bytecode.h"
 #include "ptar_diag.h"
 #include "ptar_hud.h"
 
@@ -64,16 +67,34 @@ struct PTARContext
     IDirect3DSurface9* realBackBuffer;
     IDirect3DPixelShader9* shader;
     IDirect3DPixelShader9* bilinearShader;
+    IDirect3DPixelShader9* fgMeCoarseShader;
+    IDirect3DPixelShader9* fgMeRefineShader;
+    IDirect3DPixelShader9* fgInterpolateShader;
+    IDirect3DTexture9* previousRealTexture;
+    IDirect3DSurface9* previousRealSurface;
+    IDirect3DTexture9* currentRealTexture;
+    IDirect3DSurface9* currentRealSurface;
+    IDirect3DTexture9* generatedTexture;
+    IDirect3DSurface9* generatedSurface;
+    IDirect3DTexture9* motionCoarseTexture;
+    IDirect3DSurface9* motionCoarseSurface;
+    IDirect3DTexture9* motionFineTexture;
+    IDirect3DSurface9* motionFineSurface;
     IDirect3DStateBlock9* stateBlock;
     UINT sourceW;
     UINT sourceH;
     UINT outputW;
     UINT outputH;
+    UINT motionCoarseW;
+    UINT motionCoarseH;
+    UINT motionFineW;
+    UINT motionFineH;
     D3DFORMAT outputFormat;
     D3DFORMAT depthFormat;
     BOOL originalAutoDepth;
     bool active;
     bool inPresent;
+    bool previousRealValid;
 };
 
 static PTARContext g_ptar={};
