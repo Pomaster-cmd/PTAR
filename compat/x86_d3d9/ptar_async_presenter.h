@@ -342,8 +342,13 @@ static DWORD WINAPI PtAsyncPresenterThread(LPVOID)
 
         PTARAsyncSlot& slot=p.slots[slotIndex];
 
-        PtAsyncEnterDevice();
-
+        // D3DCREATE_MULTITHREADED provides runtime-level thread safety.
+        // Do not hold PTAR's producer gate across physical Present: on some
+        // D3D9 drivers Present can remain in the runtime for almost a VBlank
+        // even with INTERVAL_IMMEDIATE, and that would stall the game thread.
+        // If the game currently owns an active scene, D3D9 may reject
+        // StretchRect/Present with INVALIDCALL; treat that as a transient
+        // output-busy condition and retry on a later output tick.
         HRESULT copyHr=p.device->StretchRect(
             slot.surface,0,
             p.backBuffer,0,
@@ -354,7 +359,21 @@ static DWORD WINAPI PtAsyncPresenterThread(LPVOID)
             presentHr=p.realPresent(
                 p.device,0,0,p.latestHwnd,0);
 
-        PtAsyncLeaveDevice();
+        const bool transientBusy=
+            copyHr==D3DERR_WASSTILLDRAWING ||
+            presentHr==D3DERR_WASSTILLDRAWING ||
+            copyHr==D3DERR_INVALIDCALL ||
+            presentHr==D3DERR_INVALIDCALL;
+
+        if(transientBusy)
+        {
+            EnterCriticalSection(&p.queueLock);
+            slot.state=PTAR_SLOT_READY;
+            LeaveCriticalSection(&p.queueLock);
+
+            p.nextTickQpc=PtAsyncNow()+p.periodTicks;
+            continue;
+        }
 
         if(SUCCEEDED(presentHr))
         {
