@@ -486,6 +486,27 @@ static HRESULT InitializePTARResources(
     PtDiagLogA("INIT_CreateStateBlock hr=0x%08lX ptr=%p",(unsigned long)hr,g_ptar.stateBlock);
     if(FAILED(hr) || !g_ptar.stateBlock) goto fail;
 
+    PtDiagStage("Initialize_AsyncPresenter");
+    {
+        HRESULT presenterHr=PtAsyncPresenterInitialize(
+            dev,
+            g_ptar.realBackBuffer,
+            outputW,outputH,
+            desc.Format,
+            (PTAR_PFN_PRESENT)g_realPresent,
+            (double)g_ptar.outputRefreshHz);
+
+        PtDiagLogA(
+            "INIT_AsyncPresenter hr=0x%08lX active=%d target_hz=%u",
+            (unsigned long)presenterHr,
+            PtAsyncPresenterIsActive()?1:0,
+            g_ptar.outputRefreshHz);
+
+        // Fail-open: PTAR spatial reconstruction remains usable if async
+        // presentation cannot be initialized. FG will stay REAL-only on the
+        // direct fallback rather than halving the game's source throughput.
+    }
+
     PtDiagStage("Initialize_BindVirtualTargets");
     hr=dev->SetRenderTarget(0,g_ptar.sourceSurface);
     PtDiagLogA("INIT_SetRenderTarget hr=0x%08lX",(unsigned long)hr);
@@ -499,9 +520,11 @@ static HRESULT InitializePTARResources(
 
     PtFgPacerReset();
     g_ptar.active=true;
-    Log(L"PTAR_ACTIVE src=%ux%u out=%ux%u spatial=%s shader=MoE_v01_D3D9_PS3 samples=8 hud=CTRL_F11 fg=CTRL_F6 me=/4>/2 targetVisible=60",
+    Log(L"PTAR_ACTIVE src=%ux%u out=%ux%u spatial=%s shader=MoE_v01_D3D9_PS3 samples=8 hud=CTRL_F11 fg=CTRL_F6 me=/4>/2 async=%s targetVisible=%u",
         sourceW,sourceH,outputW,outputH,
-        spatialActive?L"PTAR_X1.5":L"NATIVE_1X1");
+        spatialActive?L"PTAR_X1.5":L"NATIVE_1X1",
+        PtAsyncPresenterIsActive()?L"ON":L"OFF",
+        g_ptar.outputRefreshHz);
     return S_OK;
 
 fail:
