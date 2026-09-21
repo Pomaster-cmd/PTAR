@@ -257,6 +257,20 @@ jobs:
           if($cap -notmatch 'CAPTURE_DIMENSIONS=320x180'){throw 'F9 capture dimensions gate failed'}
           Write-Host 'D3D9_F9_CAPTURE=PASS'
 
+      - name: Prove D3D9Ex PresentEx no-wait capability
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 compat\x86_d3d9\d3d9_presentex_nowait_smoke.cpp /link user32.lib /OUT:artifact\d3d9_presentex_nowait_smoke.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          & artifact\d3d9_presentex_nowait_smoke.exe | Tee-Object build_x86\D3D9_PRESENTEX_NOWAIT_SMOKE.txt
+          if($LASTEXITCODE -ne 0){throw "D3D9 PresentEx no-wait smoke failed rc=$LASTEXITCODE"}
+          $px=Get-Content build_x86\D3D9_PRESENTEX_NOWAIT_SMOKE.txt -Raw
+          if($px -notmatch 'D3D9_PRESENTEX_NOWAIT_SMOKE=PASS'){throw 'PresentEx no-wait PASS marker missing'}
+          if($px -notmatch 'PRESENTEX_AVAILABLE=1'){throw 'D3D9Ex unavailable'}
+          if($px -notmatch 'PRESENTEX_60_CALLS_MS='){throw 'PresentEx timing evidence missing'}
+          Write-Host 'D3D9_PRESENTEX_NOWAIT=PASS'
+
       - name: Validate nonblocking async D3D9 presenter
         shell: pwsh
         run: |
@@ -395,6 +409,7 @@ jobs:
           Remove-Item artifact\d3d9_wallclock_fps_smoke.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\d3d9_f9_capture_smoke.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\d3d9_async_presenter_smoke.exe -Force -ErrorAction SilentlyContinue
+          Remove-Item artifact\d3d9_presentex_nowait_smoke.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\PTAR_X86_D3D9.log -Force -ErrorAction SilentlyContinue
           Copy-Item compat\x86_d3d9\01-INSTALL_PTAR_X86_D3D9.bat artifact\
           Copy-Item compat\x86_d3d9\02-UNINSTALL_PTAR_X86_D3D9.bat artifact\
@@ -425,6 +440,7 @@ jobs:
             build_x86/D3D9_GW16I_HUD_GPU_SMOKE.txt
             build_x86/D3D9_WALLCLOCK_FPS_SMOKE.txt
             build_x86/D3D9_F9_CAPTURE_SMOKE.txt
+            build_x86/D3D9_PRESENTEX_NOWAIT_SMOKE.txt
             build_x86/D3D9_ASYNC_PRESENTER_SMOKE.txt
             build_x86/D3D9_FG_GPU_PIPELINE_SMOKE.txt
             build_x86/D3D9_FG_PACER_SMOKE.txt
