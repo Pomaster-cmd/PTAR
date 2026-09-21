@@ -142,15 +142,67 @@ static FARPROC RealProc(const char* name)
 static void ReleasePTARResources()
 {
     g_ptar.active=false;
+    g_ptar.previousRealValid=false;
     if(g_ptar.stateBlock){g_ptar.stateBlock->Release();g_ptar.stateBlock=0;}
+
+    if(g_ptar.fgInterpolateShader){g_ptar.fgInterpolateShader->Release();g_ptar.fgInterpolateShader=0;}
+    if(g_ptar.fgMeRefineShader){g_ptar.fgMeRefineShader->Release();g_ptar.fgMeRefineShader=0;}
+    if(g_ptar.fgMeCoarseShader){g_ptar.fgMeCoarseShader->Release();g_ptar.fgMeCoarseShader=0;}
     if(g_ptar.bilinearShader){g_ptar.bilinearShader->Release();g_ptar.bilinearShader=0;}
     if(g_ptar.shader){g_ptar.shader->Release();g_ptar.shader=0;}
+
+    if(g_ptar.motionFineSurface){g_ptar.motionFineSurface->Release();g_ptar.motionFineSurface=0;}
+    if(g_ptar.motionFineTexture){g_ptar.motionFineTexture->Release();g_ptar.motionFineTexture=0;}
+    if(g_ptar.motionCoarseSurface){g_ptar.motionCoarseSurface->Release();g_ptar.motionCoarseSurface=0;}
+    if(g_ptar.motionCoarseTexture){g_ptar.motionCoarseTexture->Release();g_ptar.motionCoarseTexture=0;}
+
+    if(g_ptar.generatedSurface){g_ptar.generatedSurface->Release();g_ptar.generatedSurface=0;}
+    if(g_ptar.generatedTexture){g_ptar.generatedTexture->Release();g_ptar.generatedTexture=0;}
+    if(g_ptar.currentRealSurface){g_ptar.currentRealSurface->Release();g_ptar.currentRealSurface=0;}
+    if(g_ptar.currentRealTexture){g_ptar.currentRealTexture->Release();g_ptar.currentRealTexture=0;}
+    if(g_ptar.previousRealSurface){g_ptar.previousRealSurface->Release();g_ptar.previousRealSurface=0;}
+    if(g_ptar.previousRealTexture){g_ptar.previousRealTexture->Release();g_ptar.previousRealTexture=0;}
+
     if(g_ptar.realBackBuffer){g_ptar.realBackBuffer->Release();g_ptar.realBackBuffer=0;}
     if(g_ptar.virtualDepth){g_ptar.virtualDepth->Release();g_ptar.virtualDepth=0;}
     if(g_ptar.sourceSurface){g_ptar.sourceSurface->Release();g_ptar.sourceSurface=0;}
     if(g_ptar.sourceTexture){g_ptar.sourceTexture->Release();g_ptar.sourceTexture=0;}
+
     g_ptar.device=0;
     g_ptar.sourceW=g_ptar.sourceH=g_ptar.outputW=g_ptar.outputH=0;
+    g_ptar.motionCoarseW=g_ptar.motionCoarseH=0;
+    g_ptar.motionFineW=g_ptar.motionFineH=0;
+}
+
+static HRESULT CreateRenderTexture(
+    IDirect3DDevice9* dev,
+    UINT width,
+    UINT height,
+    D3DFORMAT format,
+    IDirect3DTexture9** textureOut,
+    IDirect3DSurface9** surfaceOut)
+{
+    if(!dev || !textureOut || !surfaceOut || !width || !height)
+        return D3DERR_INVALIDCALL;
+
+    *textureOut=0;
+    *surfaceOut=0;
+
+    HRESULT hr=dev->CreateTexture(
+        width,height,1,D3DUSAGE_RENDERTARGET,
+        format,D3DPOOL_DEFAULT,textureOut,0);
+    if(FAILED(hr) || !*textureOut)
+        return FAILED(hr)?hr:E_FAIL;
+
+    hr=(*textureOut)->GetSurfaceLevel(0,surfaceOut);
+    if(FAILED(hr) || !*surfaceOut)
+    {
+        (*textureOut)->Release();
+        *textureOut=0;
+        return FAILED(hr)?hr:E_FAIL;
+    }
+
+    return S_OK;
 }
 
 static HRESULT SetVirtualViewport(IDirect3DDevice9* dev)
