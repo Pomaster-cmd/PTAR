@@ -98,7 +98,7 @@ jobs:
           }
           $sha=(Get-FileHash artifact\d3d9.dll -Algorithm SHA256).Hash.ToLowerInvariant()
           @(
-            'PTAR_VARIANT=PTAR_X86_D3D9_PRODPORT1_GENERIC_VTABLEFIX2_CRASHLOG1',
+            'PTAR_VARIANT=PTAR_X86_D3D9_GW16I_ISOLATED_CPU_BRIDGE1',
             'PE_MACHINE=I386_0x014C',
             'API=D3D9',
             'SPATIAL=PTAR_NG_MOE_X15_PLUS_UNIVERSAL_EDGE_PS3',
@@ -113,15 +113,20 @@ jobs:
             'FG_PROFILE=CTRL_F8',
             'CAPTURE=F9_POST_OVERLAY_BMP',
             'VIDEO_RECORD=CTRL_F9',
-            'TOGGLE_PRESENTER=F10_FUNCTIONAL_ASYNC_ON_OFF',
+            'TOGGLE_PRESENTER=F10_FUNCTIONAL_ISOLATED_ON_OFF',
             'FILTER_NEXT=F12',
             'FG=CTRL_F6_PRODPORT1_SHADER_ME_DIV4_DIV2_INTERPOLATE',
             'FG_VISIBLE_TARGET_HZ=60',
             'FG_PACING=GW16I_ISOLATED_PRESENTER_SYNC1',
-            'FG_LATE_POLICY=EXISTING_LOAD_SHED_REAL_ONLY',
-            'PRESENTER_ARCH=D3D11_MODEL_SEPARATE_DEVICE_SHARED_RING',
-            'PRESENTER_SWAP_INTERVAL=SYNC1',
-            'FG_GENERATION_POLICY=GW16I_HIGH_TARGET60_REAL_GOVERNOR',
+            'FG_LATE_POLICY=LOAD_SHED_GENERATED_BEFORE_REAL',
+            'PRESENTER_ARCH=D3D11_MODEL_SEPARATE_DEVICE_CPU_RING',
+            'PRESENTER_TRANSPORT=REGULAR_D3D9_READBACK_TO_D3D9EX',
+            'PRODUCER_DEVICE=REGULAR_D3D9_MANAGED_COMPAT',
+            'PRODUCER_SWAP=WINDOWED_IMMEDIATE_NONVISIBLE',
+            'PRESENTER_SWAP=FLIPEX_OR_DISCARD_SYNC1',
+            'FG_WORK=ISOLATED_PRESENTER_THREAD',
+            'FG_GENERATION_POLICY=GW16I_TARGET60_REAL30_PLUS_GENERATED',
+            'FG_OFF_POLICY=GW16I_TARGET120_REAL60_PRESENTER_ARMED',
             'FPS_METRIC=QPC_WALLCLOCK_ROLLING_WINDOW',
             'CRASH_DIAGNOSTICS=EARLY_VEH_UNHANDLED_STAGE_REGISTERS',
             ('DLL_SHA256='+$sha),
@@ -359,6 +364,68 @@ jobs:
           if($sp -notmatch 'SEPARATE_DEVICE_PRESENTED=[1-9][0-9]*'){throw 'isolated presenter produced no visible presents'}
           if($sp -notmatch 'SEPARATE_DEVICE_ERRORS=0'){throw 'isolated presenter reported errors'}
           Write-Host 'D3D9_SEPARATE_DEVICE_PRESENTER=PASS'
+
+      - name: Gate GW16I isolated-presenter runtime architecture
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $proxy=Get-Content compat\x86_d3d9\ptar_d3d9_proxy.cpp -Raw
+          $iso=Get-Content compat\x86_d3d9\ptar_isolated_presenter.h -Raw
+          $gov=Get-Content compat\x86_d3d9\ptar_fg_governor.h -Raw
+
+          foreach($required in @(
+            'PtIsoPresenterInitialize',
+            'PtIsoSubmitReal',
+            'PtRealGovernorWaitAfterSourceFrame',
+            'producer_windowed',
+            'ISOLATED_SUBMIT_REAL'
+          )){
+            if($proxy -notmatch [regex]::Escape($required)){
+              throw "isolated runtime wiring missing: $required"
+            }
+          }
+
+          foreach($forbidden in @(
+            'PtAsyncPresenter',
+            'RenderFGMotionAndIntermediate',
+            'QueuePTARFrame',
+            'PtShouldGenerateThisSourceFrame',
+            'HookBeginScene',
+            'HookEndScene'
+          )){
+            if($proxy -match [regex]::Escape($forbidden)){
+              throw "superseded same-device path returned: $forbidden"
+            }
+          }
+
+          foreach($required in @(
+            'GetRenderTargetData',
+            'D3DPOOL_SYSTEMMEM',
+            'D3DUSAGE_DYNAMIC',
+            'PtIsoRenderGenerated',
+            'ISOLATED_LOAD_SHED_REAL_ONLY',
+            'PresentEx',
+            'D3DPRESENT_INTERVAL_ONE',
+            'PtCaptureSavePostOverlayBmp',
+            'PtGw16RenderExactHudD3D9'
+          )){
+            if($iso -notmatch [regex]::Escape($required)){
+              throw "isolated presenter contract missing: $required"
+            }
+          }
+
+          foreach($required in @(
+            'PtRealGovernorTarget',
+            'fgEnabled?30u:60u',
+            'GW16I_TARGET60_REAL30',
+            'GW16I_TARGET120_REAL60'
+          )){
+            if($gov -notmatch [regex]::Escape($required)){
+              throw "GW16I governor contract missing: $required"
+            }
+          }
+
+          Write-Host 'D3D9_GW16I_ISOLATED_RUNTIME_ARCH=PASS'
 
       - name: Execute generic D3D9 FG GPU pipeline smoke
         shell: pwsh
