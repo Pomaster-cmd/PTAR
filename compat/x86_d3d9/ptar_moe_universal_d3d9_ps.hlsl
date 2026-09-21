@@ -67,7 +67,7 @@ float4 main(float2 uv : TEXCOORD0) : COLOR0
     float4 f2 =SampleTexel(anchor+2.0*axis);
 
     float4 cubic=Cubic4(fm1,f0,f1,f2,phase);
-    float4 linear=lerp(f0,f1,phase);
+    float4 baseLinear=lerp(f0,f1,phase);
 
     // Preserve the fail-soft behavior used by PTAR: clamp high-order
     // excursions to the local source envelope, then blend according to edge
@@ -87,6 +87,6 @@ float4 main(float2 uv : TEXCOORD0) : COLOR0
     float axisConf=1.0-saturate((diagRatio-0.08)/0.55);
     float trust=rangeConf*coherenceConf*axisConf;
 
-    float4 outColor=lerp(linear,cubic,0.72*trust);
+    float4 outColor=lerp(baseLinear,cubic,0.72*trust);
     return saturate(outColor);
 }
