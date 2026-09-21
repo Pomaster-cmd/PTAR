@@ -2,6 +2,7 @@
 #define NOMINMAX
 #include <windows.h>
 #include <cstdio>
+#pragma warning(disable:4505)
 #include "ptar_diag.h"
 #include "ptar_fg_pacer.h"
 
