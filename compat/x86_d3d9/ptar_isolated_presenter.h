@@ -106,6 +106,7 @@ struct PTARIsoPresenter
     UINT motionFineH;
     UINT refreshHz;
     D3DFORMAT frameFormat;
+    bool spatialActive;
 
     volatile LONG running;
     volatile LONG enabled;
@@ -860,6 +861,7 @@ static void PtIsoPresenterRelease()
     p.motionFineW=p.motionFineH=0;
     p.refreshHz=0;
     p.frameFormat=D3DFMT_UNKNOWN;
+    p.spatialActive=false;
 
     p.submittedReal=0;
     p.presentedReal=0;
