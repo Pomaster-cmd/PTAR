@@ -295,10 +295,12 @@ jobs:
           if($LASTEXITCODE -ne 0){throw "D3D9 FG pacer smoke failed rc=$LASTEXITCODE"}
           $p=Get-Content build_x86\D3D9_FG_PACER_SMOKE.txt -Raw
           if($p -notmatch 'D3D9_FG_PACER_SMOKE=PASS'){throw 'FG pacer PASS marker missing'}
-          if($p -notmatch 'FG_PACER_STALL_GENERATE=1'){throw 'FG stall-resync acceptance gate failed'}
-          if($p -notmatch 'FG_PACER_LATE_SKIP_COUNT=0'){throw 'FG historical late-skip regression detected'}
-          if($p -notmatch 'FG_PACER_RESYNC_COUNT=[1-9][0-9]*'){throw 'FG resync evidence missing'}
-          Write-Host 'D3D9_FG_QPC_PACING=PASS'
+          if($p -notmatch 'FG_PACER_LATE_SKIP_COUNT=0'){throw 'FG late-skip regression detected'}
+          if($p -notmatch 'FG_PACER_RESYNC_COUNT=0'){throw 'legacy local-grid resync unexpectedly active'}
+          if($p -notmatch 'FG_PACER_WAIT_YIELDS=0'){throw 'producer-thread wait/yield regression detected'}
+          if($p -notmatch 'FG_PRODUCER_GENERATED_PREP_MS='){throw 'producer generated prep evidence missing'}
+          if($p -notmatch 'FG_PRODUCER_REAL_PREP_MS='){throw 'producer real prep evidence missing'}
+          Write-Host 'D3D9_FG_PRODUCER_NO_WAIT=PASS'
 
       - name: Reproduce Direct3DCreate9 object lifetime sequence
         shell: pwsh
