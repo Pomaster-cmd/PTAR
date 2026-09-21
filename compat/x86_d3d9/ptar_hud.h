@@ -323,15 +323,22 @@ static void PtHudDraw(
         "PTAR X86 D3D9 PRODPORT",
         D3DCOLOR_XRGB(240,240,240));
 
+    const bool spatial15=PtResolutionExactScale15(
+        sourceW,sourceH,outputW,outputH);
+
     _snprintf_s(
         line,sizeof(line),_TRUNCATE,
         "MODE: %s",
-        g_ptarHudUseMoe?"PTAR MOE":"BILINEAR REF");
+        spatial15?
+            (g_ptarHudUseMoe?"PTAR MOE X1.5":"BILINEAR X1.5"):
+            "NATIVE 1X1");
     PtHudDrawLine(
         dev,x,y+lineStep,scale,line,
-        g_ptarHudUseMoe?
-            D3DCOLOR_XRGB(70,255,120):
-            D3DCOLOR_XRGB(255,210,70));
+        spatial15?
+            (g_ptarHudUseMoe?
+                D3DCOLOR_XRGB(70,255,120):
+                D3DCOLOR_XRGB(255,210,70)):
+            D3DCOLOR_XRGB(180,220,255));
 
     _snprintf_s(
         line,sizeof(line),_TRUNCATE,
