@@ -1,4 +1,4 @@
-PTAR X86/D3D9 FG1 GENERIC — LAB / FIELD TEST
+PTAR X86/D3D9 PRODPORT1 GENERIC — LAB / FIELD TEST
 =============================================
 
 Purpose
@@ -31,8 +31,10 @@ Included:
       * coarse motion estimation at /4
       * refinement at /2
       * midpoint interpolation
+      * production-derived fail-soft confidence/clamp rules adapted to D3D9 shader ME
       * 60-visible-Hz presentation target
-      * late GENERATED frames are skipped instead of forcing bad cadence
+      * local GENERATED -> REAL pacing grid
+      * stall resynchronisation without historical late-skip cascades
   - VTABLEFIX2 generic D3D9 COM compatibility model
   - early crash diagnostics and collector
   - generic install / uninstall workflow
@@ -60,7 +62,7 @@ The HUD displays:
   - FG ON/OFF
   - motion-estimation tier
   - REAL / GENERATED counters
-  - late-generated skip counter
+  - late-generated skip counter (kept for continuity; expected to remain 0 in PRODPORT1)
   - current cadence state
 
 Frame-generation pacing
@@ -70,12 +72,24 @@ FG uses a generic 60-visible-Hz target.
 For a healthy 60-Hz path, the intended steady-state cadence is approximately:
   30 REAL + 30 GENERATED = 60 visible frames/s.
 
-The scheduler uses QueryPerformanceCounter and the previous REAL presentation
-as the timing anchor. It targets the GENERATED frame at the midpoint and the
-next REAL frame at the following half-rate slot.
+PRODPORT1 uses QueryPerformanceCounter but no longer compares a generated frame
+that is already ready against a historical midpoint which may have elapsed while
+CURRENT reconstruction and motion estimation were running.
 
-If the source/FG work misses the midpoint by too much, PTAR skips that GENERATED
-frame rather than presenting it late and creating severe G/R imbalance.
+Once a GENERATED frame is ready, the pacer anchors or resumes a local visible
+grid, presents GENERATED, then places REAL on the following visible slot. The
+next GENERATED slot is one visible period after REAL.
+
+If the source, driver or game stalls long enough that the local grid becomes
+stale, PTAR performs a one-step resynchronisation to the current time. It does
+not replay missed deadlines and does not create a cascade of late-generated
+skips.
+
+The interpolation policy also differs intentionally from the production
+D3D11/NVENC-ME backend: D3D9 currently estimates motion in shaders, so low
+motion confidence is allowed to reject a vector completely. Production-derived
+fail-soft clamping is retained, but the NVENC-specific minimum trust floor is
+not copied blindly.
 
 Spatial A/B comparison
 ----------------------
@@ -126,7 +140,7 @@ Logging starts at DLL_PROCESS_ATTACH and includes:
   - vtable patching
   - spatial / FG passes
   - GENERATED / REAL presentation stages
-  - FG pacing late-skip events
+  - FG pacing resynchronisation events and continuity counters
   - hotkey mode changes
   - serious Win32 exceptions and x86 registers
 
@@ -168,6 +182,9 @@ Before any new hardware request, CI must pass:
   - generic separate-folder install passes;
   - generic in-place install passes;
   - diagnostic collector passes;
+  - PRODPORT1 pacing test verifies GENERATED -> REAL slot ordering;
+  - a simulated long stall is accepted through local-grid resynchronisation;
+  - historical LATE_SKIP remains zero;
   - generic package is produced.
 
 Final product rule
