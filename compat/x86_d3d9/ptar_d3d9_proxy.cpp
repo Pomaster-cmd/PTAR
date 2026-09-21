@@ -1498,6 +1498,7 @@ static HRESULT STDMETHODCALLTYPE HookReset(
                 hr=InitializePTARResources(
                     self,sourceW,sourceH,outputW,outputH,
                     spatialActive,
+                    original.FullScreen_RefreshRateInHz,
                     original.EnableAutoDepthStencil,
                     original.AutoDepthStencilFormat);
             }
@@ -1716,6 +1717,7 @@ static HRESULT STDMETHODCALLTYPE HookCreateDevice(
     hr=InitializePTARResources(
         dev,sourceW,sourceH,outputW,outputH,
         spatialActive,
+        original.FullScreen_RefreshRateInHz,
         original.EnableAutoDepthStencil,
         original.AutoDepthStencilFormat);
 
@@ -1745,6 +1747,7 @@ static HRESULT STDMETHODCALLTYPE HookCreateDevice(
                 hr=InitializePTARResources(
                     dev,sourceW,sourceH,outputW,outputH,
                     spatialActive,
+                    original.FullScreen_RefreshRateInHz,
                     original.EnableAutoDepthStencil,
                     original.AutoDepthStencilFormat);
             }
