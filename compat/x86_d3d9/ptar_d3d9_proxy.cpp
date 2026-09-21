@@ -262,6 +262,12 @@ static void PreparePTARPresentationParameters(
     actual->MultiSampleType=D3DMULTISAMPLE_NONE;
     actual->MultiSampleQuality=0;
     actual->EnableAutoDepthStencil=FALSE;
+
+    // PTAR owns presentation timing. Keeping the game's INTERVAL_ONE here
+    // makes every real/generated Present consume a VBlank and halves source
+    // throughput when FG is enabled. Use IMMEDIATE on the underlying D3D9
+    // swapchain and pace output from the async presenter instead.
+    actual->PresentationInterval=D3DPRESENT_INTERVAL_IMMEDIATE;
 }
 
 static HRESULT QueryRealBackBufferGeometry(
@@ -327,6 +333,7 @@ static HRESULT InitializePTARResources(
     UINT sourceW,UINT sourceH,
     UINT outputW,UINT outputH,
     bool spatialActive,
+    UINT outputRefreshHz,
     BOOL originalAutoDepth,
     D3DFORMAT originalDepthFormat)
 {
@@ -341,6 +348,7 @@ static HRESULT InitializePTARResources(
     g_ptar.outputW=outputW;
     g_ptar.outputH=outputH;
     g_ptar.spatialActive=spatialActive;
+    g_ptar.outputRefreshHz=outputRefreshHz;
     g_ptar.originalAutoDepth=originalAutoDepth;
     g_ptar.depthFormat=originalDepthFormat;
 
