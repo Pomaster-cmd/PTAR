@@ -24,9 +24,15 @@ static HRESULT DrawPass(
 {
     dev->SetTexture(0,0);dev->SetTexture(1,0);dev->SetTexture(2,0);
     HRESULT hr=dev->SetDepthStencilSurface(0);
-    if(FAILED(hr)) return hr;
+    if(FAILED(hr)){
+        std::printf("FAIL SetDepthStencilSurface 0x%08lX\n",(unsigned long)hr);
+        return hr;
+    }
     hr=dev->SetRenderTarget(0,target);
-    if(FAILED(hr)) return hr;
+    if(FAILED(hr)){
+        std::printf("FAIL SetRenderTarget 0x%08lX size=%ux%u\n",(unsigned long)hr,w,h);
+        return hr;
+    }
 
     D3DVIEWPORT9 vp={0,0,w,h,0.0f,1.0f};
     dev->SetViewport(&vp);
@@ -51,6 +57,12 @@ static HRESULT DrawPass(
     dev->SetFVF(D3DFVF_XYZRHW|D3DFVF_TEX1);
     dev->SetTexture(0,t0);dev->SetTexture(1,t1);dev->SetTexture(2,t2);
 
+    hr=dev->BeginScene();
+    if(FAILED(hr)){
+        std::printf("FAIL BeginScene 0x%08lX\n",(unsigned long)hr);
+        return hr;
+    }
+
     Vtx q[4]={
         {-0.5f,-0.5f,0,1,0,0},
         {(float)w-0.5f,-0.5f,0,1,1,0},
@@ -58,8 +70,16 @@ static HRESULT DrawPass(
         {(float)w-0.5f,(float)h-0.5f,0,1,1,1}
     };
     hr=dev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP,2,q,sizeof(Vtx));
+    if(FAILED(hr))
+        std::printf("FAIL DrawPrimitiveUP 0x%08lX\n",(unsigned long)hr);
+
+    HRESULT endHr=dev->EndScene();
+    if(FAILED(endHr))
+        std::printf("FAIL EndScene 0x%08lX\n",(unsigned long)endHr);
+
     dev->SetTexture(0,0);dev->SetTexture(1,0);dev->SetTexture(2,0);
-    return hr;
+    if(FAILED(hr)) return hr;
+    return endHr;
 }
 
 static HRESULT CreateRT(
