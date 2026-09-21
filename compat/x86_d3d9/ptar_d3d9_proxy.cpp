@@ -483,10 +483,10 @@ static HRESULT DrawFullscreenPass(
     dev->SetTexture(1,0);
     dev->SetTexture(2,0);
 
-    HRESULT hr=g_realSetRenderTarget(dev,0,target);
+    HRESULT hr=dev->SetDepthStencilSurface(0);
     if(FAILED(hr)) return hr;
 
-    hr=dev->SetDepthStencilSurface(0);
+    hr=g_realSetRenderTarget(dev,0,target);
     if(FAILED(hr)) return hr;
 
     D3DVIEWPORT9 vp={};
