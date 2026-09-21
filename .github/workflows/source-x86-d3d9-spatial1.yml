@@ -89,7 +89,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 compat\x86_d3d9\d3d9_object_lifetime_smoke.cpp /link /OUT:artifact\d3d9_object_lifetime_smoke.exe /SUBSYSTEM:CONSOLE,6.03
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 compat\x86_d3d9\d3d9_object_lifetime_smoke.cpp /link user32.lib /OUT:artifact\d3d9_object_lifetime_smoke.exe /SUBSYSTEM:CONSOLE,6.03
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
           Push-Location artifact
           try{
