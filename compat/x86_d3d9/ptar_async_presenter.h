@@ -151,7 +151,7 @@ static void PtAsyncWaitUntil(
     }
 }
 
-static void PtAsyncFreeSlotLocked(int index)
+inline void PtAsyncFreeSlotLocked(int index)
 {
     if(index<0 || index>=6)
         return;
@@ -691,23 +691,23 @@ static void PtAsyncPresenterCommitSlot(
         SetEvent(p.wakeEvent);
 }
 
-static unsigned long PtAsyncPresenterPresentedReal()
+inline unsigned long PtAsyncPresenterPresentedReal()
 {
     return g_ptarAsyncPresenter.presentedReal;
 }
 
-static unsigned long PtAsyncPresenterPresentedGenerated()
+inline unsigned long PtAsyncPresenterPresentedGenerated()
 {
     return g_ptarAsyncPresenter.presentedGenerated;
 }
 
-static unsigned long PtAsyncPresenterDroppedReal()
+inline unsigned long PtAsyncPresenterDroppedReal()
 {
     return g_ptarAsyncPresenter.droppedReal+
            g_ptarAsyncPresenter.reclaimedReal;
 }
 
-static unsigned long PtAsyncPresenterDroppedGenerated()
+inline unsigned long PtAsyncPresenterDroppedGenerated()
 {
     return g_ptarAsyncPresenter.droppedGenerated+
            g_ptarAsyncPresenter.reclaimedGenerated;
