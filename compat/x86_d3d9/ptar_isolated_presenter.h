@@ -20,6 +20,9 @@
 // - the presenter owns its own swapchain/device and blocks on Sync1 there;
 // - shared-resource producer completion uses D3DQUERYTYPE_EVENT + FLUSH.
 
+typedef HRESULT (WINAPI *PTARIsoPTARIsoPFN_Direct3DCreate9Ex)(
+    UINT,IDirect3D9Ex**);
+
 enum PTARIsoSlotState
 {
     PTAR_ISO_FREE=0,
@@ -684,7 +687,7 @@ static void PtIsoPresenterRelease()
 }
 
 static HRESULT PtIsoCreatePresenterDevice(
-    PFN_Direct3DCreate9Ex create9Ex,
+    PTARIsoPFN_Direct3DCreate9Ex create9Ex,
     UINT adapter,
     D3DDEVTYPE type,
     HWND hwnd,
@@ -797,7 +800,7 @@ static HRESULT PtIsoCreatePresenterDevice(
 
 static HRESULT PtIsoPresenterInitialize(
     IDirect3DDevice9Ex* producer,
-    PFN_Direct3DCreate9Ex create9Ex,
+    PTARIsoPFN_Direct3DCreate9Ex create9Ex,
     HMODULE selfModule,
     UINT adapter,
     D3DDEVTYPE type,
