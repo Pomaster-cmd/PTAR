@@ -17,14 +17,16 @@ function Get-PeMachine([string]$Path){
 }
 
 if([string]::IsNullOrWhiteSpace($GameExe)){
-    $candidates=@(
-        (Join-Path $Here 'conviction_game.exe'),
-        (Join-Path $Here 'src\system\conviction_game.exe')
-    )
-    foreach($c in $candidates){
-        if(Test-Path -LiteralPath $c -PathType Leaf){
-            $GameExe=$c
-            break
+    $localState=Join-Path $Here 'PTAR_X86_D3D9_INSTALL_STATE.txt'
+    if(Test-Path -LiteralPath $localState -PathType Leaf){
+        foreach($line in Get-Content -LiteralPath $localState){
+            if($line -like 'GAME_EXE=*'){
+                $candidate=$line.Substring('GAME_EXE='.Length)
+                if(Test-Path -LiteralPath $candidate -PathType Leaf){
+                    $GameExe=$candidate
+                    break
+                }
+            }
         }
     }
 }
@@ -99,10 +101,13 @@ try{
 
 try{
     $start=(Get-Date).AddHours(-4)
+    $exeName=''
+    if($GameExe){$exeName=[IO.Path]::GetFileName($GameExe)}
+    $exePattern=if($exeName){[regex]::Escape($exeName)}else{'$a'}
     $events=Get-WinEvent -FilterHashtable @{LogName='Application';StartTime=$start} -ErrorAction Stop |
         Where-Object {
             $_.ProviderName -in @('Application Error','Windows Error Reporting') -or
-            ($_.Message -match 'conviction_game\.exe') -or
+            ($_.Message -match $exePattern) -or
             ($_.Message -match 'd3d9\.dll')
         } |
         Select-Object -First 80 TimeCreated,Id,LevelDisplayName,ProviderName,Message
@@ -126,8 +131,11 @@ try{
     $copied=0
     foreach($root in $werRoots){
         if(Test-Path -LiteralPath $root){
+            $baseName=''
+            if($GameExe){$baseName=[IO.Path]::GetFileNameWithoutExtension($GameExe)}
+            $werPattern=if($baseName){[regex]::Escape($baseName)+'|APPCRASH'}else{'APPCRASH'}
             Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue |
-                Where-Object { $_.LastWriteTime -gt (Get-Date).AddHours(-4) -and $_.Name -match 'conviction|APPCRASH' } |
+                Where-Object { $_.LastWriteTime -gt (Get-Date).AddHours(-4) -and $_.Name -match $werPattern } |
                 ForEach-Object {
                     $wer=Join-Path $_.FullName 'Report.wer'
                     if(Test-Path -LiteralPath $wer -PathType Leaf){
