@@ -1,4 +1,4 @@
-name: SOURCE x86 D3D9 SPATIAL1
+name: SOURCE x86 D3D9 SPATIAL2 HUDCOMPARE1
 
 on:
   push:
@@ -76,11 +76,13 @@ jobs:
           }
           $sha=(Get-FileHash artifact\d3d9.dll -Algorithm SHA256).Hash.ToLowerInvariant()
           @(
-            'PTAR_VARIANT=PTAR_X86_D3D9_SPATIAL1_VTABLEFIX2_CRASHLOG1',
+            'PTAR_VARIANT=PTAR_X86_D3D9_SPATIAL2_HUDCOMPARE1_VTABLEFIX2_CRASHLOG1',
             'PE_MACHINE=I386_0x014C',
             'API=D3D9',
             'SPATIAL=PTAR_NG_MOE_V01_PS3_PORT',
-            'FG=NOT_INCLUDED_IN_SPATIAL1',
+            'HUD=F8_NATIVE_D3D9',
+            'AB_COMPARE=F6_MOE_VS_BILINEAR',
+            'FG=NOT_PORTED_IN_SPATIAL2',
             'CRASH_DIAGNOSTICS=EARLY_VEH_UNHANDLED_STAGE_REGISTERS',
             ('DLL_SHA256='+$sha),
             ('SOURCE_COMMIT='+$env:GITHUB_SHA)
@@ -167,7 +169,7 @@ jobs:
           Write-Host 'INSTALLER_PATH_SMOKE=PASS'
           Write-Host 'INSTALLER_INPLACE_SMOKE=PASS'
 
-      - name: Package VTABLEFIX2 diagnostic test build
+      - name: Package SPATIAL2 HUDCOMPARE1 diagnostic build
         shell: pwsh
         run: |
           Remove-Item artifact\d3d9_object_lifetime_smoke.exe -Force -ErrorAction SilentlyContinue
@@ -179,15 +181,15 @@ jobs:
           Copy-Item compat\x86_d3d9\uninstall_x86_d3d9.ps1 artifact\
           Copy-Item compat\x86_d3d9\collect_x86_d3d9_diag.ps1 artifact\
           Copy-Item compat\x86_d3d9\README_TEST.txt artifact\
-          Compress-Archive -Path artifact\* -DestinationPath PTAR_X86_D3D9_SPATIAL1_VTABLEFIX2_CRASHLOG1_CONVICTION_TEST.zip -CompressionLevel Optimal
-          $z=(Get-FileHash PTAR_X86_D3D9_SPATIAL1_VTABLEFIX2_CRASHLOG1_CONVICTION_TEST.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          Compress-Archive -Path artifact\* -DestinationPath PTAR_X86_D3D9_SPATIAL2_HUDCOMPARE1_VTABLEFIX2_CRASHLOG1_CONVICTION_TEST.zip -CompressionLevel Optimal
+          $z=(Get-FileHash PTAR_X86_D3D9_SPATIAL2_HUDCOMPARE1_VTABLEFIX2_CRASHLOG1_CONVICTION_TEST.zip -Algorithm SHA256).Hash.ToLowerInvariant()
           Write-Host "PACKAGE_SHA256=$z"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PTAR-X86-D3D9-SPATIAL1-VTABLEFIX2-CRASHLOG1-CONVICTION
+          name: PTAR-X86-D3D9-SPATIAL2-HUDCOMPARE1-VTABLEFIX2-CRASHLOG1-CONVICTION
           path: |
-            PTAR_X86_D3D9_SPATIAL1_VTABLEFIX2_CRASHLOG1_CONVICTION_TEST.zip
+            PTAR_X86_D3D9_SPATIAL2_HUDCOMPARE1_VTABLEFIX2_CRASHLOG1_CONVICTION_TEST.zip
             build_x86/HEADERS.txt
             build_x86/EXPORTS.txt
             build_x86/DEPENDENTS.txt
