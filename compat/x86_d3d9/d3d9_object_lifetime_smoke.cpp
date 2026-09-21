@@ -52,6 +52,75 @@ static HWND CreateSmokeWindow()
         0,0,inst,0);
 }
 
+static int CheckVirtualBackBuffer(
+    IDirect3DDevice9* dev,
+    UINT expectW,UINT expectH,
+    const char* label)
+{
+    IDirect3DSurface9* surface=0;
+    HRESULT hr=dev->GetBackBuffer(
+        0,0,D3DBACKBUFFER_TYPE_MONO,&surface);
+    if(FAILED(hr) || !surface)
+    {
+        std::printf(
+            "FAIL %s GetBackBuffer hr=0x%08lX\n",
+            label,(unsigned long)hr);
+        return 1;
+    }
+
+    D3DSURFACE_DESC desc={};
+    hr=surface->GetDesc(&desc);
+    surface->Release();
+    if(FAILED(hr))
+    {
+        std::printf(
+            "FAIL %s GetDesc hr=0x%08lX\n",
+            label,(unsigned long)hr);
+        return 2;
+    }
+
+    std::printf(
+        "%s BACKBUFFER=%ux%u\n",
+        label,desc.Width,desc.Height);
+
+    if(desc.Width!=expectW || desc.Height!=expectH)
+    {
+        std::printf(
+            "FAIL %s expected=%ux%u got=%ux%u\n",
+            label,expectW,expectH,desc.Width,desc.Height);
+        return 3;
+    }
+    return 0;
+}
+
+static int ResetAndCheck(
+    IDirect3DDevice9* dev,
+    D3DPRESENT_PARAMETERS* pp,
+    UINT width,UINT height,
+    const char* label)
+{
+    pp->BackBufferWidth=width;
+    pp->BackBufferHeight=height;
+
+    const HRESULT hr=dev->Reset(pp);
+    std::printf(
+        "%s RESET hr=0x%08lX request=%ux%u returnedPP=%ux%u\n",
+        label,(unsigned long)hr,width,height,
+        pp->BackBufferWidth,pp->BackBufferHeight);
+
+    if(FAILED(hr))
+        return 1;
+
+    // HookReset must preserve the game's requested presentation parameters.
+    if(pp->BackBufferWidth!=width || pp->BackBufferHeight!=height)
+    {
+        std::printf("FAIL %s presentation parameters mutated\n",label);
+        return 2;
+    }
+
+    return CheckVirtualBackBuffer(dev,width,height,label);
+}
+
 static int ExerciseCreateDevice(IDirect3D9* d3d)
 {
     HWND hwnd=CreateSmokeWindow();
@@ -102,15 +171,30 @@ static int ExerciseCreateDevice(IDirect3D9* d3d)
 
     if(dev)
     {
+        int rc=CheckVirtualBackBuffer(dev,640,480,"NATIVE_640");
+        if(!rc) rc=ResetAndCheck(dev,&pp,800,600,"NATIVE_800");
+        if(!rc) rc=ResetAndCheck(dev,&pp,1280,720,"SPATIAL_720");
+        if(!rc) rc=ResetAndCheck(dev,&pp,1920,1080,"NATIVE_1080");
+        if(!rc) rc=ResetAndCheck(dev,&pp,1365,767,"NATIVE_ODD");
+        if(!rc) rc=ResetAndCheck(dev,&pp,640,480,"NATIVE_RETURN");
+
         dev->Release();
         dev=0;
+        DestroyWindow(hwnd);
+
+        if(rc)
+            return 70+rc;
     }
-    DestroyWindow(hwnd);
+    else
+    {
+        DestroyWindow(hwnd);
+    }
 
     // The regression being guarded is an EIP=0 call through a lost
     // g_realCreateDevice pointer. Any HRESULT return proves that call target
     // remained valid; successful device creation is not required on headless CI.
     std::printf("CREATEDEVICE_CALL_SURVIVED=PASS\n");
+    std::printf("D3D9_DYNAMIC_RESOLUTION_SEQUENCE=PASS\n");
     return 0;
 }
 
