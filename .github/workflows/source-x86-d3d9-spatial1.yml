@@ -106,7 +106,8 @@ jobs:
             'ASPECT_POLICY=PRESENTER_ASPECT_FIT',
             'NATIVE_1X1_FG=SUPPORTED',
             'RESOLUTION_RESET_PERSISTENCE=SUPPORTED',
-            'HUD=GW16I_EMBEDDED_SHADER_PORT_D3D9',
+            'HUD=GW16I_EXACT_RASTER_PORT_D3D9_CLEAR_RECTS',
+            'HUD_SHADER_DEPENDENCY=NONE',
             'MANUAL_FILTER=F6_MOE_VS_BILINEAR',
             'STATUS=F8_TEMPORARY_NOTICE_AND_RUNTIME_TELEMETRY',
             'FG_PROFILE=CTRL_F8',
@@ -162,6 +163,8 @@ jobs:
           $ErrorActionPreference='Stop'
           $hud=Get-Content compat\x86_d3d9\ptar_gw16i_hud_ps.hlsl -Raw
           $fb=Get-Content compat\x86_d3d9\ptar_gw16i_feedback_ps.hlsl -Raw
+          $cpu=Get-Content compat\x86_d3d9\ptar_gw16i_hud_d3d9.h -Raw
+          $proxy=Get-Content compat\x86_d3d9\ptar_d3d9_proxy.cpp -Raw
           foreach($token in @(
             '87,73,78,56,49,32,85,83,82,32',
             '70,80,83,32,32,32,32,32,32,32',
@@ -171,7 +174,21 @@ jobs:
             'float3(.01,.012,.018)',
             'float3(.92,.96,1)'
           )){
-            if($hud -notmatch [regex]::Escape($token)){throw "GW16I HUD source token missing: $token"}
+            if($hud -notmatch [regex]::Escape($token)){throw "GW16I HUD HLSL provenance token missing: $token"}
+          }
+          foreach($token in @(
+            'case 87:return 24557',
+            'case 73:return 29847',
+            'case 78:return 24573',
+            'case 56:return 31727',
+            'case 49:return 29850',
+            'WIN81 USR V0.41',
+            'COPY 1X1',
+            'PTAR X15',
+            'EDGE 25',
+            'EDGE 45'
+          )){
+            if($cpu -notmatch [regex]::Escape($token)){throw "GW16I D3D9 raster contract missing: $token"}
           }
           foreach($token in @(
             'PtHudFeedback(5',
@@ -182,8 +199,15 @@ jobs:
             $state=Get-Content compat\x86_d3d9\ptar_hud.h -Raw
             if($state -notmatch [regex]::Escape($token)){throw "GW16I HUD state contract missing: $token"}
           }
-          if($fb -notmatch 'float Line1' -or $fb -notmatch 'float DLine1'){throw 'GW16I feedback source incomplete'}
+          if($fb -notmatch 'float Line1' -or $fb -notmatch 'float DLine1'){throw 'GW16I feedback provenance source incomplete'}
+          if($proxy -match 'CreateGW16IHUDShaders' -or $proxy -match 'g_ptarGw16iHudPs' -or $proxy -match 'g_ptarGw16iFeedbackPs'){
+            throw 'runtime regressed to field-rejected monolithic HUD pixel-shader dependency'
+          }
+          if($proxy -notmatch 'PtGw16RenderExactHudD3D9'){
+            throw 'D3D9 exact GW16I raster renderer is not wired'
+          }
           Write-Host 'D3D9_GW16I_HUD_CONTRACT=PASS'
+          Write-Host 'D3D9_GW16I_HUD_NO_PS3_RUNTIME_DEPENDENCY=PASS'
 
       - name: Validate GW16I HUD visibility on D3D9 GPU
         shell: pwsh
