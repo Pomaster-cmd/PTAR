@@ -1,154 +1,178 @@
-PTAR X86/D3D9 SPATIAL2 HUDCOMPARE1 — CONVICTION TEST
-======================================================
+PTAR X86/D3D9 FG1 GENERIC — LAB / FIELD TEST
+=============================================
 
 Purpose
 -------
-This is the x86 / Direct3D 9 compatibility runtime for testing PTAR on legacy
-32-bit games such as Tom Clancy's Splinter Cell: Conviction.
+Generic PTAR backend for 32-bit Direct3D 9 applications.
 
-This revision keeps the validated VTABLEFIX2 compatibility fixes and adds a
-native on-screen HUD plus an instant A/B comparison mode so the spatial
-reconstruction can actually be judged in-game.
+This package is NOT tied to a specific game. It accepts any x86 executable
+intended to use Direct3D 9. Game names belong only to validation evidence or,
+when unavoidable, isolated compatibility profiles.
 
-Current scope
--------------
+Current backend
+---------------
+Architecture:
+  x86 / PE machine 0x014C
+
+Graphics API:
+  Direct3D 9
+
 Included:
-  - x86 PE runtime (I386 / 0x014C)
-  - Direct3D 9 proxy frontend
-  - PTAR-NG MoE spatial reconstruction, x1.5 output
-  - bilinear reference path at the same output resolution
+  - PTAR-NG MoE spatial reconstruction
+  - bilinear A/B reference at the same output resolution
   - native D3D9 HUD
-  - FPS display
   - source/output resolution display
-  - F6 instant A/B toggle: PTAR MoE <-> bilinear reference
-  - F8 HUD show/hide
-  - early crash diagnostics and collection tooling
-  - VTABLEFIX2 for Conviction's multi-object D3D9 behavior
+  - measured REAL and visible FPS
+  - F6 spatial A/B toggle
+  - CTRL+F6 frame-generation toggle
+  - F8 HUD toggle
+  - generic GPU frame generation:
+      * previous/current reconstructed REAL history
+      * coarse motion estimation at /4
+      * refinement at /2
+      * midpoint interpolation
+      * 60-visible-Hz presentation target
+      * late GENERATED frames are skipped instead of forcing bad cadence
+  - VTABLEFIX2 generic D3D9 COM compatibility model
+  - early crash diagnostics and collector
+  - generic install / uninstall workflow
 
-Not included yet:
-  - production x64 frame generation stack
-  - production recorder stack
-  - production x64 HUD feature parity
+Not included in this x86/D3D9 backend yet:
+  - recorder parity with the production x64/D3D11 backend
+  - every quality/profile feature of the production x64/D3D11 runtime
+  - x86/D3D11 backend
+  - x64/D3D9 backend
 
-Why the A/B mode matters
-------------------------
-Both modes use the same game render resolution and the same physical output
-resolution. Pressing F6 changes only the reconstruction method:
+Hotkeys
+-------
+  F6        PTAR MoE <-> bilinear reference
+  CTRL+F6   Frame generation ON/OFF
+  F8        HUD ON/OFF
+
+HUD
+---
+The HUD displays:
+  - PTAR backend identity
+  - spatial mode
+  - source and output resolution
+  - REAL FPS
+  - measured visible FPS
+  - FG ON/OFF
+  - motion-estimation tier
+  - REAL / GENERATED counters
+  - late-generated skip counter
+  - current cadence state
+
+Frame-generation pacing
+-----------------------
+FG uses a generic 60-visible-Hz target.
+
+For a healthy 60-Hz path, the intended steady-state cadence is approximately:
+  30 REAL + 30 GENERATED = 60 visible frames/s.
+
+The scheduler uses QueryPerformanceCounter and the previous REAL presentation
+as the timing anchor. It targets the GENERATED frame at the midpoint and the
+next REAL frame at the following half-rate slot.
+
+If the source/FG work misses the midpoint by too much, PTAR skips that GENERATED
+frame rather than presenting it late and creating severe G/R imbalance.
+
+Spatial A/B comparison
+----------------------
+F6 keeps the same source and output geometry and changes only the reconstruction:
 
   PTAR MOE
     PTAR-NG MoE spatial reconstruction.
 
   BILINEAR REF
-    Plain bilinear upscale reference.
+    Plain bilinear reference.
 
-This makes the visual comparison meaningful: geometry, output resolution and
-game state stay the same while the reconstruction algorithm changes.
-
-HUD
----
-The HUD is visible by default and shows:
-
-  PTAR X86 D3D9 SPATIAL2
-  MODE: PTAR MOE
-      or
-  MODE: BILINEAR REF
-
-  SRC: 1280X720 > OUT: 1920X1080
-  FPS: xx.x
-  F6 A/B  F8 HUD
-  FG: NOT PORTED
-
-Hotkeys
--------
-  F6  Toggle PTAR MoE / bilinear reference
-  F8  Show/hide HUD
-
-These hotkeys are polled non-destructively and do not consume the underlying
-keyboard messages.
-
-Expected Conviction executable
-------------------------------
-  src\system\conviction_game.exe
-
-Recommended first test geometry
--------------------------------
-For the first comparison:
-  Fullscreen
-  1280x720
-  MSAA/antialiasing disabled if the game exposes it
-
-PTAR then creates a 1920x1080 physical backbuffer while keeping the game-facing
-render target at 1280x720.
+This allows direct visual comparison without changing the scene or output size.
 
 Install
 -------
-You may extract the package either:
-  - in a separate folder, or
-  - directly next to conviction_game.exe.
-
 Run:
-  01-INSTALL_CONVICTION_PTAR_X86.bat
+  01-INSTALL_PTAR_X86_D3D9.bat
 
-Or drag conviction_game.exe onto that BAT.
+Then drag the target x86 executable onto the BAT, provide it as an argument, or
+enter its full path when prompted.
 
-The installer derives its package directory internally and supports paths with
-spaces/apostrophes and the in-place layout without copying d3d9.dll onto itself.
+Example:
+  01-INSTALL_PTAR_X86_D3D9.bat "C:\Games\Example\game.exe"
 
-Safety
-------
-- x86 PE machine 0x014C is verified before install.
-- Existing d3d9.dll is never silently destroyed.
-- An existing d3d9.dll is backed up once as d3d9.dll.ptar_original.
-- Uninstall removes PTAR only if the installed DLL hash still matches.
-- If PTAR cannot create the x1.5 D3D9 presentation path, the proxy retries the
-  original D3D9 device creation instead of intentionally preventing launch.
-- main is not modified by this compatibility work; this remains in SOURCE.
+The installer:
+  - verifies PE machine 0x014C;
+  - never silently destroys an existing d3d9.dll;
+  - creates a backup when appropriate;
+  - supports packages extracted directly beside the target EXE;
+  - writes PTAR_X86_D3D9_INSTALL_STATE.txt.
 
-VTABLEFIX2
-----------
-The original prototype cloned only the documented public COM vtable length.
-Conviction/D3D9 used additional internal entries, causing an EIP=0 crash.
+Uninstall
+---------
+Run:
+  02-UNINSTALL_PTAR_X86_D3D9.bat
 
-VTABLEFIX1 changed the design to patch only required slots in the original
-system vtable, preserving all other entries.
+The uninstaller removes PTAR only when the installed DLL still matches the hash
+recorded by the installer and restores an owned backup when present.
 
-VTABLEFIX2 additionally preserves the captured real CreateDevice pointer when
-later IDirect3D9 objects see that shared vtable already patched. This fixes the
-second field-observed EIP=0 crash at the first CreateDevice call.
+Diagnostics
+-----------
+The runtime writes:
+  PTAR_X86_D3D9.log
 
-Crash diagnostics
------------------
-This build writes PTAR_X86_D3D9.log from DLL_PROCESS_ATTACH onward, before the
-real Direct3D 9 runtime or PTAR resources are initialized.
+Logging starts at DLL_PROCESS_ATTACH and includes:
+  - Direct3DCreate9 / CreateDevice stages
+  - PTAR resource creation
+  - vtable patching
+  - spatial / FG passes
+  - GENERATED / REAL presentation stages
+  - FG pacing late-skip events
+  - hotkey mode changes
+  - serious Win32 exceptions and x86 registers
 
-The log includes:
-  - ordered STAGE markers
-  - Direct3DCreate9 / CreateDevice parameters and return values
-  - backbuffer / texture / depth / shader / state-block creation results
-  - D3D9 object and device vtable hook stages
-  - serious Win32 exceptions observed by a vectored exception handler
-  - exception code/address/module/module offset
-  - x86 registers
-  - access-violation operation and target address when available
-  - HUD A/B mode changes
-
-After a General Protection Fault or other crash, run:
+After a crash run:
   03-COLLECT_CRASH_DIAGNOSTICS.bat
 
-It creates:
-  PTAR_X86_D3D9_DIAG_YYYYMMDD_HHMMSS.zip
+The collector is target-agnostic. It uses the supplied EXE or the local install
+state and packages PTAR logs, hashes, PE type, GPU/OS information and recent
+matching Windows/WER evidence.
 
-The ZIP contains the PTAR log, install state, executable/DLL hashes and PE type,
-GPU/OS information, recent Windows Application Error / WER events, and recent
-matching Report.wer files when accessible.
+Safety / compatibility
+----------------------
+- Windows 8.1 compatible target subsystem.
+- No dynamic VCRUNTIME/MSVCP/UCRT dependency.
+- Generic runtime logic contains no game-name branch.
+- D3D9 vtables are patched in place only at required slots.
+- Existing main x64/D3D11 production runtime is not modified during this work.
+- Final product integration must start from the current production main and add
+  this backend through a generic multi-backend dispatcher.
 
-Success evidence
-----------------
-A successful active path should include log entries similar to:
+Field-validation evidence
+-------------------------
+Tom Clancy's Splinter Cell: Conviction has already validated the generic
+x86/D3D9 frontend, VTABLEFIX2, spatial path, HUD and A/B controls on real
+hardware.
 
-  PROXY_LOADED arch=x86 api=D3D9
-  CREATEDEVICE_PTAR_TRY src=1280x720 out=1920x1080
-  PTAR_ACTIVE src=1280x720 out=1920x1080 ... hud=ON compare=F6
+That game is a validation target only. It is not an activation condition and
+does not define the product architecture.
 
-If the HUD appears, the runtime is definitively inside the PTAR presentation
-path. Use F6 to compare PTAR MoE against the bilinear reference immediately.
+Current FG gate
+---------------
+Before any new hardware request, CI must pass:
+  - both spatial shaders compile;
+  - all three FG shaders compile;
+  - x86 proxy builds with Win8.1 subsystem;
+  - PE/export/dependency checks pass;
+  - multi-object Direct3DCreate9/CreateDevice regression passes;
+  - D3D9 FG GPU pipeline produces non-empty generated output and non-zero motion;
+  - generic separate-folder install passes;
+  - generic in-place install passes;
+  - diagnostic collector passes;
+  - generic package is produced.
+
+Final product rule
+------------------
+After the x86/D3D9 FG backend is field-validated, the final deliverable must be
+rebuilt from the production main baseline, preserving the validated x64/D3D11
+runtime and adding the generic x86/D3D9 backend plus unified install/verify/
+uninstall logic. It must not become a Splinter Cell-specific fork.
