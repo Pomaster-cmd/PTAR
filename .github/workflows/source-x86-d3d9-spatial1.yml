@@ -113,12 +113,15 @@ jobs:
             'FG_PROFILE=CTRL_F8',
             'CAPTURE=F9_POST_OVERLAY_BMP',
             'VIDEO_RECORD=CTRL_F9',
-            'TOGGLE_PRESENTER=F10',
+            'TOGGLE_PRESENTER=F10_FUNCTIONAL_ASYNC_ON_OFF',
             'FILTER_NEXT=F12',
             'FG=CTRL_F6_PRODPORT1_SHADER_ME_DIV4_DIV2_INTERPOLATE',
             'FG_VISIBLE_TARGET_HZ=60',
-            'FG_PACING=PRODPORT1_EVEN_LOCAL_GRID',
-            'FG_LATE_POLICY=RESYNC_LOCAL_GRID_NO_SKIP_STORM',
+            'FG_PACING=ASYNC_MAILBOX_QPC_OUTPUT_CLOCK',
+            'FG_LATE_POLICY=COALESCE_STALE_REAL_DROP_GENERATED_FIRST',
+            'PRESENTER_SWAP_INTERVAL=IMMEDIATE',
+            'PRESENTER_SCENE_GATE=BEGINSCENE_ENDSCENE',
+            'FG_GENERATION_POLICY=ADAPT_TO_OUTPUT_HEADROOM',
             'FPS_METRIC=QPC_WALLCLOCK_ROLLING_WINDOW',
             'CRASH_DIAGNOSTICS=EARLY_VEH_UNHANDLED_STAGE_REGISTERS',
             ('DLL_SHA256='+$sha),
@@ -254,6 +257,21 @@ jobs:
           if($cap -notmatch 'CAPTURE_DIMENSIONS=320x180'){throw 'F9 capture dimensions gate failed'}
           Write-Host 'D3D9_F9_CAPTURE=PASS'
 
+      - name: Validate nonblocking async D3D9 presenter
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I compat\x86_d3d9 compat\x86_d3d9\d3d9_async_presenter_smoke.cpp /link user32.lib /OUT:artifact\d3d9_async_presenter_smoke.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          & artifact\d3d9_async_presenter_smoke.exe | Tee-Object build_x86\D3D9_ASYNC_PRESENTER_SMOKE.txt
+          if($LASTEXITCODE -ne 0){throw "D3D9 async presenter smoke failed rc=$LASTEXITCODE"}
+          $ap=Get-Content build_x86\D3D9_ASYNC_PRESENTER_SMOKE.txt -Raw
+          if($ap -notmatch 'D3D9_ASYNC_PRESENTER_SMOKE=PASS'){throw 'async presenter PASS marker missing'}
+          if($ap -notmatch 'ASYNC_PRODUCER_60_FRAMES_MS='){throw 'producer throughput evidence missing'}
+          if($ap -notmatch 'ASYNC_HIGH_RATE_DROPPED_REAL=[1-9][0-9]*'){throw 'mailbox coalescing evidence missing'}
+          if($ap -notmatch 'ASYNC_LOW_RATE_GENERATED_DELTA=[1-9][0-9]*'){throw 'generated cadence evidence missing'}
+          Write-Host 'D3D9_ASYNC_PRESENTER=PASS'
+
       - name: Execute generic D3D9 FG GPU pipeline smoke
         shell: pwsh
         run: |
@@ -374,6 +392,7 @@ jobs:
           Remove-Item artifact\d3d9_gw16i_hud_gpu_smoke.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\d3d9_wallclock_fps_smoke.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\d3d9_f9_capture_smoke.exe -Force -ErrorAction SilentlyContinue
+          Remove-Item artifact\d3d9_async_presenter_smoke.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\PTAR_X86_D3D9.log -Force -ErrorAction SilentlyContinue
           Copy-Item compat\x86_d3d9\01-INSTALL_PTAR_X86_D3D9.bat artifact\
           Copy-Item compat\x86_d3d9\02-UNINSTALL_PTAR_X86_D3D9.bat artifact\
@@ -404,5 +423,6 @@ jobs:
             build_x86/D3D9_GW16I_HUD_GPU_SMOKE.txt
             build_x86/D3D9_WALLCLOCK_FPS_SMOKE.txt
             build_x86/D3D9_F9_CAPTURE_SMOKE.txt
+            build_x86/D3D9_ASYNC_PRESENTER_SMOKE.txt
             build_x86/D3D9_FG_GPU_PIPELINE_SMOKE.txt
             build_x86/D3D9_FG_PACER_SMOKE.txt
