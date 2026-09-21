@@ -894,10 +894,11 @@ static unsigned long g_ptarHudFrameSequence=0;
 
 static HRESULT RenderGW16IProductionHud(
     IDirect3DDevice9* dev,
+    IDirect3DSurface9* targetSurface,
     bool generatedFrame,
     bool fgProducing)
 {
-    if(!dev || !g_ptar.realBackBuffer)
+    if(!dev || !targetSurface)
         return D3DERR_INVALIDCALL;
 
     // Make the final presenter backbuffer explicit. Clear(rects) then writes
@@ -907,7 +908,7 @@ static HRESULT RenderGW16IProductionHud(
     if(FAILED(hr))
         return hr;
 
-    hr=g_realSetRenderTarget(dev,0,g_ptar.realBackBuffer);
+    hr=g_realSetRenderTarget(dev,0,targetSurface);
     if(FAILED(hr))
         return hr;
 
@@ -1005,36 +1006,42 @@ static void RotateRealHistory()
     g_ptar.previousRealValid=true;
 }
 
-static HRESULT PresentPTARTexture(
+static HRESULT ComposePTARFrameToSurface(
     IDirect3DDevice9* dev,
-    IDirect3DTexture9* texture,
-    HWND hwnd,
-    const RGNDATA* dirty,
+    IDirect3DSurface9* sourceSurface,
+    IDirect3DSurface9* targetSurface,
     bool generatedFrame,
     bool fgProducing)
 {
-    HRESULT hr=RenderTextureToBackBuffer(dev,texture);
+    if(!dev || !sourceSurface || !targetSurface)
+        return D3DERR_INVALIDCALL;
+
+    // REAL/GENERATED are already output-sized render targets. A direct GPU
+    // copy avoids another fullscreen shader pass before mailbox submission.
+    HRESULT hr=dev->StretchRect(
+        sourceSurface,0,
+        targetSurface,0,
+        D3DTEXF_NONE);
     if(FAILED(hr))
         return hr;
 
     HRESULT hudHr=RenderGW16IProductionHud(
-        dev,generatedFrame,fgProducing);
+        dev,targetSurface,
+        generatedFrame,fgProducing);
     if(FAILED(hudHr))
     {
-        // HUD is fail-open exactly like the D3D11 model: presentation and FG
-        // continue even if overlay resources fail.
         PtDiagLogA(
             "GW16I_HUD_FAILOPEN hr=0x%08lX",
             (unsigned long)hudHr);
     }
 
-    // F9 follows the production contract: capture the final presenter
-    // backbuffer after PTAR/HUD/status rendering and before Present.
+    // Capture the exact composed mailbox frame that will be submitted by the
+    // presenter. This retains the production post-overlay F9 contract.
     if(PtCaptureConsumeRequest())
     {
         wchar_t saved[MAX_PATH]={0};
         HRESULT captureHr=PtCaptureSavePostOverlayBmp(
-            dev,g_ptar.realBackBuffer,g_self,
+            dev,targetSurface,g_self,
             saved,_countof(saved));
 
         if(SUCCEEDED(captureHr))
@@ -1053,10 +1060,113 @@ static HRESULT PresentPTARTexture(
         }
     }
 
-    hr=g_realPresent(dev,0,0,hwnd,dirty);
+    return S_OK;
+}
+
+static HRESULT QueuePTARFrame(
+    IDirect3DDevice9* dev,
+    IDirect3DSurface9* sourceSurface,
+    HWND hwnd,
+    bool generatedFrame,
+    bool fgProducing,
+    unsigned long sequence)
+{
+    if(!PtAsyncPresenterIsActive())
+        return D3DERR_NOTAVAILABLE;
+
+    const int slot=PtAsyncPresenterAcquireSlot(
+        generatedFrame,sequence);
+    if(slot<0)
+    {
+        PtDiagLogA(
+            "ASYNC_QUEUE_DROP seq=%lu generated=%d",
+            sequence,
+            generatedFrame?1:0);
+        return S_FALSE;
+    }
+
+    IDirect3DSurface9* target=
+        PtAsyncPresenterSlotSurface(slot);
+    if(!target)
+    {
+        PtAsyncPresenterCancelSlot(slot);
+        return E_FAIL;
+    }
+
+    HRESULT hr=ComposePTARFrameToSurface(
+        dev,sourceSurface,target,
+        generatedFrame,fgProducing);
+    if(FAILED(hr))
+    {
+        PtAsyncPresenterCancelSlot(slot);
+        PtDiagLogA(
+            "ASYNC_QUEUE_COMPOSE_FAIL seq=%lu generated=%d hr=0x%08lX",
+            sequence,
+            generatedFrame?1:0,
+            (unsigned long)hr);
+        return hr;
+    }
+
+    PtAsyncPresenterCommitSlot(slot,hwnd);
+    return S_OK;
+}
+
+static HRESULT PresentPTARFrameDirectFallback(
+    IDirect3DDevice9* dev,
+    IDirect3DSurface9* sourceSurface,
+    HWND hwnd,
+    bool generatedFrame,
+    bool fgProducing)
+{
+    if(!dev || !sourceSurface || !g_ptar.realBackBuffer)
+        return D3DERR_INVALIDCALL;
+
+    HRESULT hr=ComposePTARFrameToSurface(
+        dev,sourceSurface,g_ptar.realBackBuffer,
+        generatedFrame,fgProducing);
+    if(FAILED(hr))
+        return hr;
+
+    hr=g_realPresent(dev,0,0,hwnd,0);
     if(SUCCEEDED(hr))
         PtFgPacerRecordVisible(generatedFrame);
     return hr;
+}
+
+static bool PtShouldGenerateThisSourceFrame()
+{
+    if(!PtHudFgEnabled() ||
+       !g_ptar.previousRealValid ||
+       !PtAsyncPresenterIsActive())
+        return false;
+
+    const double target=
+        g_ptar.outputRefreshHz>=30u?
+            (double)g_ptar.outputRefreshHz:
+            60.0;
+
+    double sourceFps=PtHudRealFps();
+    if(sourceFps<5.0)
+        sourceFps=target*0.5;
+
+    // Generate only the number of intermediate frames for which the output
+    // clock has room. This keeps REAL source throughput primary:
+    //   30 REAL -> ~30 GENERATED -> 60 output
+    //   42 REAL -> ~18 GENERATED -> 60 output
+    //   50 REAL -> ~10 GENERATED -> 60 output
+    //   60 REAL -> 0 GENERATED (no physical headroom at 60 Hz)
+    double desired=target/sourceFps-1.0;
+    if(desired<0.0) desired=0.0;
+    if(desired>1.0) desired=1.0;
+
+    g_ptar.fgGenerationBudget+=desired;
+    if(g_ptar.fgGenerationBudget>=1.0)
+    {
+        g_ptar.fgGenerationBudget-=1.0;
+        return true;
+    }
+
+    return false;
 }
 
 static HRESULT STDMETHODCALLTYPE HookPresent(
