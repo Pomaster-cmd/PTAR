@@ -185,6 +185,20 @@ jobs:
           if($fb -notmatch 'float Line1' -or $fb -notmatch 'float DLine1'){throw 'GW16I feedback source incomplete'}
           Write-Host 'D3D9_GW16I_HUD_CONTRACT=PASS'
 
+      - name: Validate GW16I HUD visibility on D3D9 GPU
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I build_x86 compat\x86_d3d9\d3d9_gw16i_hud_gpu_smoke.cpp /link user32.lib /OUT:artifact\d3d9_gw16i_hud_gpu_smoke.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          & artifact\d3d9_gw16i_hud_gpu_smoke.exe | Tee-Object build_x86\D3D9_GW16I_HUD_GPU_SMOKE.txt
+          if($LASTEXITCODE -ne 0){throw "D3D9 GW16I HUD GPU smoke failed rc=$LASTEXITCODE"}
+          $hudgpu=Get-Content build_x86\D3D9_GW16I_HUD_GPU_SMOKE.txt -Raw
+          if($hudgpu -notmatch 'D3D9_GW16I_HUD_GPU_SMOKE=PASS'){throw 'GW16I HUD GPU PASS marker missing'}
+          if($hudgpu -notmatch 'HUD_MAIN changed=[1-9][0-9]*'){throw 'GW16I main HUD produced no visible pixels'}
+          if($hudgpu -notmatch 'HUD_FEEDBACK changed=[1-9][0-9]*'){throw 'GW16I feedback HUD produced no visible pixels'}
+          Write-Host 'D3D9_GW16I_HUD_GPU=PASS'
+
       - name: Validate wall-clock FPS metric
         shell: pwsh
         run: |
@@ -333,6 +347,7 @@ jobs:
           Remove-Item artifact\d3d9_fg_pacer_smoke.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\d3d9_resolution_policy_smoke.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\d3d9_universal_spatial_gpu_smoke.exe -Force -ErrorAction SilentlyContinue
+          Remove-Item artifact\d3d9_gw16i_hud_gpu_smoke.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\d3d9_wallclock_fps_smoke.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\d3d9_f9_capture_smoke.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\PTAR_X86_D3D9.log -Force -ErrorAction SilentlyContinue
@@ -362,6 +377,7 @@ jobs:
             build_x86/D3D9_OBJECT_LIFETIME_SMOKE.txt
             build_x86/D3D9_RESOLUTION_POLICY_SMOKE.txt
             build_x86/D3D9_UNIVERSAL_SPATIAL_GPU_SMOKE.txt
+            build_x86/D3D9_GW16I_HUD_GPU_SMOKE.txt
             build_x86/D3D9_WALLCLOCK_FPS_SMOKE.txt
             build_x86/D3D9_F9_CAPTURE_SMOKE.txt
             build_x86/D3D9_FG_GPU_PIPELINE_SMOKE.txt
