@@ -41,6 +41,28 @@ static int Check(
     return 0;
 }
 
+static int CheckFit(
+    const char* name,
+    UINT sourceW,UINT sourceH,
+    UINT outputW,UINT outputH,
+    UINT x,UINT y,UINT width,UINT height)
+{
+    const PTARPresentationRect r=
+        PtResolutionAspectFit(sourceW,sourceH,outputW,outputH);
+
+    std::printf(
+        "%s fit=%u,%u %ux%u\n",
+        name,r.x,r.y,r.width,r.height);
+
+    if(r.x!=x || r.y!=y ||
+       r.width!=width || r.height!=height)
+    {
+        std::printf("FAIL %s\n",name);
+        return 1;
+    }
+    return 0;
+}
+
 int main()
 {
     g_ptarResolutionPolicy.loaded=true;
@@ -57,47 +79,66 @@ int main()
         true,1280,720,1920,1080)) return 10;
 
     if(Check(
+        "SPATIAL_900_TO_1080",
+        1600,900,1920,1080,
+        true,1600,900,1920,1080)) return 11;
+
+    if(Check(
+        "SPATIAL_576_TO_1080",
+        1024,576,1920,1080,
+        true,1024,576,1920,1080)) return 12;
+
+    if(Check(
+        "SPATIAL_4X3_TO_NATIVE_TARGET",
+        1024,768,1920,1080,
+        true,1024,768,1920,1080)) return 13;
+
+    if(CheckFit(
+        "ASPECT_FIT_16X9",
+        1600,900,1920,1080,
+        0,0,1920,1080)) return 14;
+
+    if(CheckFit(
+        "ASPECT_FIT_4X3",
+        1024,768,1920,1080,
+        240,0,1440,1080)) return 15;
+
+    if(Check(
         "NATIVE_1080_FG_ONLY",
         1920,1080,1920,1080,
-        false,1920,1080,1920,1080)) return 11;
+        false,1920,1080,1920,1080)) return 16;
 
     if(Check(
-        "NATIVE_900",
-        1600,900,1600,900,
-        false,1600,900,1600,900)) return 12;
+        "NATIVE_ABOVE_TARGET",
+        2560,1440,2560,1440,
+        false,2560,1440,2560,1440)) return 17;
 
-    if(Check(
-        "NATIVE_ODD_GEOMETRY",
-        1365,767,1365,767,
-        false,1365,767,1365,767)) return 13;
-
-    // D3D9 windowed mode permits zero requested dimensions; D3D resolves them
-    // from the client area. PTAR must remain active after that resolution is
-    // known rather than treating 0x0 as a backend-disable condition.
+    // D3D9 windowed mode permits zero requested dimensions. Keep the backend
+    // alive at the resolved native size rather than guessing a spatial source.
     if(Check(
         "WINDOWED_ZERO_REQUEST_RESOLVED_NATIVE",
         0,0,1366,768,
-        false,1366,768,1366,768)) return 14;
+        false,1366,768,1366,768)) return 18;
 
-    // If a requested spatial presentation does not resolve to the configured
-    // 1.5x output, fail soft to native 1:1 rather than disabling PTAR/FG.
+    // If the requested universal presentation cannot create/resolve the native
+    // output target, fail soft to the resolved native 1:1 geometry.
     if(Check(
         "SPATIAL_NEGOTIATION_FAILSOFT",
         1280,720,1600,900,
-        false,1600,900,1600,900)) return 15;
+        false,1600,900,1600,900)) return 19;
 
     g_ptarResolutionPolicy.universalSpatialPresenter=false;
     if(Check(
         "SPATIAL_DISABLED_NATIVE_720",
         1280,720,1280,720,
-        false,1280,720,1280,720)) return 16;
+        false,1280,720,1280,720)) return 20;
 
     g_ptarResolutionPolicy.universalSpatialPresenter=true;
     g_ptarResolutionPolicy.enabled=false;
     if(Check(
         "PTAR_CONFIG_DISABLED_NATIVE_PLAN",
         1280,720,1280,720,
-        false,1280,720,1280,720)) return 17;
+        false,1280,720,1280,720)) return 21;
 
     std::printf("D3D9_RESOLUTION_POLICY_SMOKE=PASS\n");
     return 0;
