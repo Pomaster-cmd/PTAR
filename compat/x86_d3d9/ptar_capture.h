@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <d3d9.h>
 #include <cstdio>
+#include "ptar_diag.h"
 
 static volatile LONG g_ptarCapturePending=0;
 
