@@ -44,8 +44,21 @@ jobs:
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
           & $fxcPath /nologo /T ps_2_0 /E main /O3 /Fh build_x86\ptar_bilinear_ps_bytecode.h /Vn g_ptarBilinearPs compat\x86_d3d9\ptar_bilinear_ref_ps.hlsl
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
-          if(-not(Test-Path build_x86\ptar_ps_bytecode.h)){throw 'MoE shader header missing'}
-          if(-not(Test-Path build_x86\ptar_bilinear_ps_bytecode.h)){throw 'bilinear shader header missing'}
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 /Fh build_x86\ptar_fg_me_coarse_ps_bytecode.h /Vn g_ptarFgMeCoarsePs compat\x86_d3d9\ptar_fg_me_coarse_ps.hlsl
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 /Fh build_x86\ptar_fg_me_refine_ps_bytecode.h /Vn g_ptarFgMeRefinePs compat\x86_d3d9\ptar_fg_me_refine_ps.hlsl
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 /Fh build_x86\ptar_fg_interpolate_ps_bytecode.h /Vn g_ptarFgInterpolatePs compat\x86_d3d9\ptar_fg_interpolate_ps.hlsl
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          foreach($header in @(
+            'build_x86\ptar_ps_bytecode.h',
+            'build_x86\ptar_bilinear_ps_bytecode.h',
+            'build_x86\ptar_fg_me_coarse_ps_bytecode.h',
+            'build_x86\ptar_fg_me_refine_ps_bytecode.h',
+            'build_x86\ptar_fg_interpolate_ps_bytecode.h'
+          )){
+            if(-not(Test-Path $header)){throw "shader header missing: $header"}
+          }
           Write-Host "FXC=$fxcPath"
 
       - name: Build 32-bit D3D9 proxy
