@@ -243,6 +243,10 @@ static bool PatchVtableSlot(
 
     if(current==hook)
     {
+        // Preserve the previously captured real function. Returning the hook
+        // through originalOut tells callers not to overwrite their saved
+        // original with NULL when the shared D3D9 vtable was already patched.
+        if(originalOut) *originalOut=hook;
         PtDiagLogA("VTABLE_PATCH_ALREADY label=%s object=%p vtable=%p index=%u",
             label?label:"<null>",object,vtable,(unsigned)index);
         return true;
