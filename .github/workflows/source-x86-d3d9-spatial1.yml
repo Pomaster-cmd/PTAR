@@ -112,6 +112,20 @@ jobs:
           Write-Host 'X86_PE_GATE=PASS'
           Write-Host "DLL_SHA256=$sha"
 
+      - name: Validate universal D3D9 resolution policy
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I compat\x86_d3d9 compat\x86_d3d9\d3d9_resolution_policy_smoke.cpp /link /OUT:artifact\d3d9_resolution_policy_smoke.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          & artifact\d3d9_resolution_policy_smoke.exe | Tee-Object build_x86\D3D9_RESOLUTION_POLICY_SMOKE.txt
+          if($LASTEXITCODE -ne 0){throw "D3D9 resolution policy smoke failed rc=$LASTEXITCODE"}
+          $rp=Get-Content build_x86\D3D9_RESOLUTION_POLICY_SMOKE.txt -Raw
+          if($rp -notmatch 'D3D9_RESOLUTION_POLICY_SMOKE=PASS'){throw 'resolution policy PASS marker missing'}
+          if($rp -notmatch 'NATIVE_1080_FG_ONLY'){throw 'native 1080/FG-only gate missing'}
+          if($rp -notmatch 'SPATIAL_720_TO_1080'){throw '720p spatial gate missing'}
+          Write-Host 'D3D9_UNIVERSAL_RESOLUTION_POLICY=PASS'
+
       - name: Execute generic D3D9 FG GPU pipeline smoke
         shell: pwsh
         run: |
@@ -155,7 +169,9 @@ jobs:
           }
           $smoke=Get-Content build_x86\D3D9_OBJECT_LIFETIME_SMOKE.txt -Raw
           if($smoke -notmatch 'D3D9_OBJECT_LIFETIME_SMOKE=PASS'){throw 'lifetime PASS marker missing'}
+          if($smoke -notmatch 'D3D9_DYNAMIC_RESOLUTION_SEQUENCE=PASS'){throw 'dynamic resolution sequence gate missing'}
           Write-Host 'D3D9_VTABLE_PRESERVATION=PASS'
+          Write-Host 'D3D9_DYNAMIC_RESOLUTION=PASS'
 
       - name: Installer path, in-place and diagnostic collector smoke tests
         shell: pwsh
@@ -225,6 +241,7 @@ jobs:
           Remove-Item artifact\d3d9_object_lifetime_smoke.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\d3d9_fg_gpu_pipeline_smoke.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\d3d9_fg_pacer_smoke.exe -Force -ErrorAction SilentlyContinue
+          Remove-Item artifact\d3d9_resolution_policy_smoke.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\PTAR_X86_D3D9.log -Force -ErrorAction SilentlyContinue
           Copy-Item compat\x86_d3d9\01-INSTALL_PTAR_X86_D3D9.bat artifact\
           Copy-Item compat\x86_d3d9\02-UNINSTALL_PTAR_X86_D3D9.bat artifact\
@@ -250,5 +267,6 @@ jobs:
             build_x86/EXPORTS.txt
             build_x86/DEPENDENTS.txt
             build_x86/D3D9_OBJECT_LIFETIME_SMOKE.txt
+            build_x86/D3D9_RESOLUTION_POLICY_SMOKE.txt
             build_x86/D3D9_FG_GPU_PIPELINE_SMOKE.txt
             build_x86/D3D9_FG_PACER_SMOKE.txt
