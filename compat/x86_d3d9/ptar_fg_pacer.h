@@ -1,6 +1,7 @@
 #pragma once
 
 #include <windows.h>
+#include "ptar_runtime_metrics.h"
 
 // D3D9 FG production-port pacer.
 //
@@ -21,7 +22,7 @@ struct PTFGPacerState
     LONGLONG lastRealQpc;
     LONGLONG lastVisibleQpc;
     LONGLONG nextVisibleQpc;
-    double visibleFpsEma;
+    PTARRollingRate visibleRate;
     unsigned long realPresents;
     unsigned long generatedPresents;
     unsigned long generatedLateSkips;
@@ -53,7 +54,7 @@ static void PtFgPacerReset()
     g_ptarFgPacer.lastRealQpc=0;
     g_ptarFgPacer.lastVisibleQpc=0;
     g_ptarFgPacer.nextVisibleQpc=0;
-    g_ptarFgPacer.visibleFpsEma=0.0;
+    PtRollingRateReset(&g_ptarFgPacer.visibleRate);
     g_ptarFgPacer.realPresents=0;
     g_ptarFgPacer.generatedPresents=0;
     g_ptarFgPacer.generatedLateSkips=0;
@@ -169,24 +170,8 @@ static void PtFgPacerRecordVisible(bool generated)
     PtFgPacerInit();
 
     const LONGLONG now=PtFgPacerNow();
-    if(g_ptarFgPacer.lastVisibleQpc>0)
-    {
-        const LONGLONG delta=now-g_ptarFgPacer.lastVisibleQpc;
-        if(delta>0)
-        {
-            const double fps=
-                (double)g_ptarFgPacer.frequency.QuadPart/(double)delta;
-            if(fps>1.0 && fps<1000.0)
-            {
-                g_ptarFgPacer.visibleFpsEma=
-                    g_ptarFgPacer.visibleFpsEma<=0.0?
-                        fps:
-                        g_ptarFgPacer.visibleFpsEma*0.90+fps*0.10;
-            }
-        }
-    }
-
     g_ptarFgPacer.lastVisibleQpc=now;
+    PtRollingRateRecordAt(&g_ptarFgPacer.visibleRate,now);
 
     if(generated)
     {
@@ -208,7 +193,10 @@ static void PtFgPacerRecordVisible(bool generated)
 
 static double PtFgPacerVisibleFps()
 {
-    return g_ptarFgPacer.visibleFpsEma;
+    // Deliberately wall-clock based. This is the visible throughput over the
+    // recent QPC window, so hitches and pacing gaps reduce the displayed FPS
+    // instead of being hidden by an instantaneous-FPS EMA.
+    return PtRollingRateValue(&g_ptarFgPacer.visibleRate);
 }
 
 static unsigned long PtFgPacerGeneratedCount()
