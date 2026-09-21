@@ -281,6 +281,61 @@ static HRESULT InitializePTARResources(
     PtDiagLogA("INIT_CreateBilinearShader hr=0x%08lX ptr=%p",(unsigned long)hr,g_ptar.bilinearShader);
     if(FAILED(hr) || !g_ptar.bilinearShader) goto fail;
 
+    PtDiagStage("Initialize_CreateFGShaders");
+    hr=dev->CreatePixelShader((const DWORD*)g_ptarFgMeCoarsePs,&g_ptar.fgMeCoarseShader);
+    PtDiagLogA("INIT_CreateFGMeCoarse hr=0x%08lX ptr=%p",(unsigned long)hr,g_ptar.fgMeCoarseShader);
+    if(FAILED(hr) || !g_ptar.fgMeCoarseShader) goto fail;
+
+    hr=dev->CreatePixelShader((const DWORD*)g_ptarFgMeRefinePs,&g_ptar.fgMeRefineShader);
+    PtDiagLogA("INIT_CreateFGMeRefine hr=0x%08lX ptr=%p",(unsigned long)hr,g_ptar.fgMeRefineShader);
+    if(FAILED(hr) || !g_ptar.fgMeRefineShader) goto fail;
+
+    hr=dev->CreatePixelShader((const DWORD*)g_ptarFgInterpolatePs,&g_ptar.fgInterpolateShader);
+    PtDiagLogA("INIT_CreateFGInterpolate hr=0x%08lX ptr=%p",(unsigned long)hr,g_ptar.fgInterpolateShader);
+    if(FAILED(hr) || !g_ptar.fgInterpolateShader) goto fail;
+
+    g_ptar.motionCoarseW=(outputW+3u)/4u;
+    g_ptar.motionCoarseH=(outputH+3u)/4u;
+    g_ptar.motionFineW=(outputW+1u)/2u;
+    g_ptar.motionFineH=(outputH+1u)/2u;
+
+    PtDiagStage("Initialize_CreateFGFrameTextures");
+    hr=CreateRenderTexture(
+        dev,outputW,outputH,desc.Format,
+        &g_ptar.previousRealTexture,&g_ptar.previousRealSurface);
+    PtDiagLogA("INIT_FG_PreviousReal hr=0x%08lX tex=%p surf=%p",
+        (unsigned long)hr,g_ptar.previousRealTexture,g_ptar.previousRealSurface);
+    if(FAILED(hr)) goto fail;
+
+    hr=CreateRenderTexture(
+        dev,outputW,outputH,desc.Format,
+        &g_ptar.currentRealTexture,&g_ptar.currentRealSurface);
+    PtDiagLogA("INIT_FG_CurrentReal hr=0x%08lX tex=%p surf=%p",
+        (unsigned long)hr,g_ptar.currentRealTexture,g_ptar.currentRealSurface);
+    if(FAILED(hr)) goto fail;
+
+    hr=CreateRenderTexture(
+        dev,outputW,outputH,desc.Format,
+        &g_ptar.generatedTexture,&g_ptar.generatedSurface);
+    PtDiagLogA("INIT_FG_Generated hr=0x%08lX tex=%p surf=%p",
+        (unsigned long)hr,g_ptar.generatedTexture,g_ptar.generatedSurface);
+    if(FAILED(hr)) goto fail;
+
+    PtDiagStage("Initialize_CreateFGMotionTextures");
+    hr=CreateRenderTexture(
+        dev,g_ptar.motionCoarseW,g_ptar.motionCoarseH,desc.Format,
+        &g_ptar.motionCoarseTexture,&g_ptar.motionCoarseSurface);
+    PtDiagLogA("INIT_FG_MotionCoarse hr=0x%08lX %ux%u tex=%p",
+        (unsigned long)hr,g_ptar.motionCoarseW,g_ptar.motionCoarseH,g_ptar.motionCoarseTexture);
+    if(FAILED(hr)) goto fail;
+
+    hr=CreateRenderTexture(
+        dev,g_ptar.motionFineW,g_ptar.motionFineH,desc.Format,
+        &g_ptar.motionFineTexture,&g_ptar.motionFineSurface);
+    PtDiagLogA("INIT_FG_MotionFine hr=0x%08lX %ux%u tex=%p",
+        (unsigned long)hr,g_ptar.motionFineW,g_ptar.motionFineH,g_ptar.motionFineTexture);
+    if(FAILED(hr)) goto fail;
+
     PtDiagStage("Initialize_CreateStateBlock");
     hr=dev->CreateStateBlock(D3DSBT_ALL,&g_ptar.stateBlock);
     PtDiagLogA("INIT_CreateStateBlock hr=0x%08lX ptr=%p",(unsigned long)hr,g_ptar.stateBlock);
@@ -298,7 +353,7 @@ static HRESULT InitializePTARResources(
     if(FAILED(hr)) goto fail;
 
     g_ptar.active=true;
-    Log(L"PTAR_ACTIVE src=%ux%u out=%ux%u shader=MoE_v01_D3D9_PS3 samples=8 hud=ON compare=F6",
+    Log(L"PTAR_ACTIVE src=%ux%u out=%ux%u shader=MoE_v01_D3D9_PS3 samples=8 hud=ON compare=F6 fg=CTRL_F6 me=/4>/2",
         sourceW,sourceH,outputW,outputH);
     return S_OK;
 
