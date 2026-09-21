@@ -852,6 +852,194 @@ static HRESULT RenderTextureToBackBuffer(
         0);
 }
 
+static unsigned long g_ptarHudFrameSequence=0;
+
+static HRESULT DrawGW16IOverlayShader(
+    IDirect3DDevice9* dev,
+    IDirect3DPixelShader9* shader,
+    const float* constants,
+    UINT constantCount)
+{
+    if(!dev || !shader || !constants || !constantCount ||
+       !g_ptar.realBackBuffer || !g_ptar.outputW || !g_ptar.outputH)
+        return D3DERR_INVALIDCALL;
+
+    dev->SetTexture(0,0);
+    dev->SetTexture(1,0);
+    dev->SetTexture(2,0);
+
+    HRESULT hr=dev->SetDepthStencilSurface(0);
+    if(FAILED(hr)) return hr;
+
+    hr=g_realSetRenderTarget(dev,0,g_ptar.realBackBuffer);
+    if(FAILED(hr)) return hr;
+
+    D3DVIEWPORT9 vp={};
+    vp.X=0;
+    vp.Y=0;
+    vp.Width=g_ptar.outputW;
+    vp.Height=g_ptar.outputH;
+    vp.MinZ=0.0f;
+    vp.MaxZ=1.0f;
+    hr=dev->SetViewport(&vp);
+    if(FAILED(hr)) return hr;
+
+    dev->SetRenderState(D3DRS_ZENABLE,FALSE);
+    dev->SetRenderState(D3DRS_ZWRITEENABLE,FALSE);
+    dev->SetRenderState(D3DRS_ALPHABLENDENABLE,FALSE);
+    dev->SetRenderState(D3DRS_CULLMODE,D3DCULL_NONE);
+    dev->SetRenderState(D3DRS_SCISSORTESTENABLE,FALSE);
+    dev->SetRenderState(
+        D3DRS_COLORWRITEENABLE,
+        D3DCOLORWRITEENABLE_RED|
+        D3DCOLORWRITEENABLE_GREEN|
+        D3DCOLORWRITEENABLE_BLUE|
+        D3DCOLORWRITEENABLE_ALPHA);
+
+    hr=dev->SetPixelShaderConstantF(0,constants,constantCount);
+    if(FAILED(hr)) return hr;
+
+    dev->SetPixelShader(shader);
+    dev->SetVertexShader(0);
+    dev->SetFVF(D3DFVF_XYZRHW|D3DFVF_TEX1);
+
+    hr=dev->BeginScene();
+    if(FAILED(hr))
+        return hr;
+
+    const float w=(float)g_ptar.outputW;
+    const float h=(float)g_ptar.outputH;
+    QuadVertex q[4]={
+        {-0.5f,-0.5f,0.0f,1.0f,0.0f,0.0f},
+        {w-0.5f,-0.5f,0.0f,1.0f,1.0f,0.0f},
+        {-0.5f,h-0.5f,0.0f,1.0f,0.0f,1.0f},
+        {w-0.5f,h-0.5f,0.0f,1.0f,1.0f,1.0f}
+    };
+
+    hr=dev->DrawPrimitiveUP(
+        D3DPT_TRIANGLESTRIP,2,q,sizeof(QuadVertex));
+
+    HRESULT endHr=dev->EndScene();
+    if(FAILED(hr))
+        return hr;
+    return endHr;
+}
+
+static HRESULT RenderGW16IProductionHud(
+    IDirect3DDevice9* dev,
+    bool generatedFrame,
+    bool fgProducing)
+{
+    if(!dev || !g_ptar.hudShader || !g_ptar.feedbackShader)
+        return D3DERR_INVALIDCALL;
+
+    const PTARPresentationRect fit=PtResolutionAspectFit(
+        g_ptar.sourceW,g_ptar.sourceH,
+        g_ptar.outputW,g_ptar.outputH);
+    const bool exact15=
+        g_ptar.spatialActive &&
+        PtResolutionExactScale15(
+            g_ptar.sourceW,g_ptar.sourceH,
+            fit.width,fit.height);
+
+    const int state=PtHudStateNotice();
+    const bool marker=PtHudMarkerEnabled();
+    const bool visible=PtHudVisible();
+
+    ++g_ptarHudFrameSequence;
+
+    float hud[20]={0};
+    hud[2]=(float)PtHudDisplayFps(fgProducing);
+    hud[3]=visible?1.0f:0.0f;
+
+    hud[4]=(float)g_ptar.sourceW;
+    hud[5]=(float)g_ptar.sourceH;
+    hud[6]=(float)PtHudFilterId(g_ptar.spatialActive,exact15);
+    hud[7]=(float)state;
+
+    // Exact production key display contract:
+    // USR presenter = F10, HUD = CTRL+F11.
+    hud[8]=(float)VK_F10;
+    hud[9]=0.0f;
+    hud[10]=(float)VK_F11;
+    hud[11]=2.0f; // CTRL bit in the GW16I HudParams encoding.
+
+    hud[12]=(float)(g_ptarHudFrameSequence&4095ul);
+    hud[13]=generatedFrame?1.0f:0.0f;
+    hud[14]=marker?1.0f:0.0f;
+
+    HRESULT hr=DrawGW16IOverlayShader(
+        dev,g_ptar.hudShader,hud,5);
+    if(FAILED(hr))
+    {
+        PtDiagLogA(
+            "GW16I_HUD_DRAW_FAIL hr=0x%08lX",
+            (unsigned long)hr);
+        return hr;
+    }
+
+    if(PtHudFeedbackActive())
+    {
+        float feedback[8]={0};
+
+        // The production feedback shader is a 440x96 physical-pixel notice.
+        // Keep it immediately below the persistent HUD; when HUD is hidden it
+        // moves to the normal top-left origin.
+        feedback[0]=16.0f;
+        feedback[1]=visible?192.0f:16.0f;
+        feedback[2]=(float)PtHudFeedbackType();
+        feedback[3]=0.0f;
+        feedback[4]=(float)PtHudFeedbackArgA();
+        feedback[5]=(float)PtHudFeedbackArgB();
+        feedback[6]=(float)PtHudFeedbackArgC();
+
+        HRESULT feedbackHr=DrawGW16IOverlayShader(
+            dev,g_ptar.feedbackShader,feedback,2);
+        if(FAILED(feedbackHr))
+        {
+            PtDiagLogA(
+                "GW16I_FEEDBACK_DRAW_FAIL hr=0x%08lX",
+                (unsigned long)feedbackHr);
+        }
+    }
+
+    if(PtHudConsumeStatusLogPending())
+    {
+        PtDiagLogA(
+            "STATUS_RUNTIME fg=%s profile=%d src=%ux%u out=%ux%u "
+            "filter=%d real_fps=%.3f visible_fps=%.3f "
+            "real_count=%lu gen_count=%lu resyncs=%lu late_skip=%lu",
+            PtHudFgEnabled()?"ON":"OFF",
+            PtHudFgProfile(),
+            g_ptar.sourceW,g_ptar.sourceH,
+            g_ptar.outputW,g_ptar.outputH,
+            PtHudFilterId(g_ptar.spatialActive,exact15),
+            PtHudRealFps(),PtHudDisplayFps(fgProducing),
+            PtFgPacerRealCount(),
+            PtFgPacerGeneratedCount(),
+            g_ptarFgPacer.resyncs,
+            PtFgPacerLateSkipCount());
+    }
+
+    const LONGLONG now=PtHudNow();
+    if(g_ptarHudLastFpsLogQpc==0 ||
+       now-g_ptarHudLastFpsLogQpc>=g_ptarHudFreq.QuadPart)
+    {
+        g_ptarHudLastFpsLogQpc=now;
+        PtDiagLogA(
+            "FPS_WALLCLOCK_SAMPLE real_fps=%.3f visible_fps=%.3f "
+            "fg=%s real_count=%lu gen_count=%lu resyncs=%lu",
+            PtHudRealFps(),
+            PtHudDisplayFps(fgProducing),
+            PtHudFgEnabled()?"ON":"OFF",
+            PtFgPacerRealCount(),
+            PtFgPacerGeneratedCount(),
+            g_ptarFgPacer.resyncs);
+    }
+
+    return S_OK;
+}
+
 static void RotateRealHistory()
 {
     IDirect3DTexture9* texture=g_ptar.previousRealTexture;
@@ -877,11 +1065,16 @@ static HRESULT PresentPTARTexture(
     if(FAILED(hr))
         return hr;
 
-    PtHudDraw(
-        dev,
-        g_ptar.sourceW,g_ptar.sourceH,
-        g_ptar.outputW,g_ptar.outputH,
-        fgProducing);
+    HRESULT hudHr=RenderGW16IProductionHud(
+        dev,generatedFrame,fgProducing);
+    if(FAILED(hudHr))
+    {
+        // HUD is fail-open exactly like the D3D11 model: presentation and FG
+        // continue even if overlay resources fail.
+        PtDiagLogA(
+            "GW16I_HUD_FAILOPEN hr=0x%08lX",
+            (unsigned long)hudHr);
+    }
 
     // F9 follows the production contract: capture the final presenter
     // backbuffer after PTAR/HUD/status rendering and before Present.
@@ -894,6 +1087,7 @@ static HRESULT PresentPTARTexture(
 
         if(SUCCEEDED(captureHr))
         {
+            PtHudNotifyCaptureSaved();
             PtDiagLogA(
                 "OK: F9 post-overlay D3D9 screenshot saved path=%ls frame=%s",
                 saved,
