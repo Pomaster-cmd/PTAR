@@ -277,6 +277,24 @@ jobs:
             throw "regular D3D9 to D3D9Ex probe failed unexpectedly rc=$rc"
           }
 
+      - name: Probe regular D3D9 swapchain Present DONOTWAIT isolation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 compat\x86_d3d9\d3d9_swapchain_donotwait_smoke.cpp /link user32.lib /OUT:artifact\d3d9_swapchain_donotwait_smoke.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          & artifact\d3d9_swapchain_donotwait_smoke.exe | Tee-Object build_x86\D3D9_SWAPCHAIN_DONOTWAIT_SMOKE.txt
+          $rc=$LASTEXITCODE
+          $sd=Get-Content build_x86\D3D9_SWAPCHAIN_DONOTWAIT_SMOKE.txt -Raw
+          if($sd -notmatch 'SWAPCHAIN_NOWAIT_PRODUCER_MS='){
+            throw 'swapchain DONOTWAIT probe emitted no timing evidence'
+          }
+          if($rc -eq 0){
+            Write-Host 'D3D9_SWAPCHAIN_DONOTWAIT=SUPPORTED'
+          } else {
+            Write-Host "D3D9_SWAPCHAIN_DONOTWAIT=UNSUITABLE rc=$rc"
+          }
+
       - name: Validate D3D11-model isolated D3D9Ex presenter architecture
         shell: pwsh
         run: |
@@ -419,6 +437,7 @@ jobs:
           Remove-Item artifact\d3d9_presentex_nowait_smoke.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\d3d9_separate_device_presenter_smoke.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\d3d9_regular_to_ex_shared_smoke.exe -Force -ErrorAction SilentlyContinue
+          Remove-Item artifact\d3d9_swapchain_donotwait_smoke.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\PTAR_X86_D3D9.log -Force -ErrorAction SilentlyContinue
           Copy-Item compat\x86_d3d9\01-INSTALL_PTAR_X86_D3D9.bat artifact\
           Copy-Item compat\x86_d3d9\02-UNINSTALL_PTAR_X86_D3D9.bat artifact\
@@ -450,6 +469,7 @@ jobs:
             build_x86/D3D9_WALLCLOCK_FPS_SMOKE.txt
             build_x86/D3D9_F9_CAPTURE_SMOKE.txt
             build_x86/D3D9_REGULAR_TO_EX_SHARED_SMOKE.txt
+            build_x86/D3D9_SWAPCHAIN_DONOTWAIT_SMOKE.txt
             build_x86/D3D9_SEPARATE_DEVICE_PRESENTER_SMOKE.txt
             build_x86/D3D9_FG_GPU_PIPELINE_SMOKE.txt
             build_x86/D3D9_FG_PACER_SMOKE.txt
