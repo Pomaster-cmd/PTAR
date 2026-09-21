@@ -227,3 +227,8 @@ static unsigned long PtFgPacerLateSkipCount()
     // with local-grid resynchronisation, so this remains zero by design.
     return g_ptarFgPacer.generatedLateSkips;
 }
+
+static unsigned long PtFgPacerResyncCount()
+{
+    return g_ptarFgPacer.resyncs;
+}
