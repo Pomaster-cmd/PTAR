@@ -124,7 +124,7 @@ static void PtFgPacerResyncIfStale(LONGLONG now)
     }
 }
 
-static bool PtFgPacerPrepareGenerated()
+inline bool PtFgPacerPrepareGenerated()
 {
     PtFgPacerInit();
 
@@ -141,7 +141,7 @@ static bool PtFgPacerPrepareGenerated()
     return true;
 }
 
-static void PtFgPacerPrepareReal(bool fgPair)
+inline void PtFgPacerPrepareReal(bool fgPair)
 {
     PtFgPacerInit();
 
