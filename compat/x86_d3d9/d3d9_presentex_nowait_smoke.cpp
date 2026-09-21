@@ -4,6 +4,7 @@
 #include <d3d9.h>
 #include <cstdio>
 
+typedef IDirect3D9* (WINAPI *PFN_Direct3DCreate9)(UINT);
 typedef HRESULT (WINAPI *PFN_Direct3DCreate9Ex)(
     UINT,IDirect3D9Ex**);
 
@@ -26,10 +27,13 @@ int main()
     HMODULE d3d9=LoadLibraryW(L"d3d9.dll");
     if(!d3d9) return 2;
 
+    PFN_Direct3DCreate9 create9=
+        (PFN_Direct3DCreate9)GetProcAddress(
+            d3d9,"Direct3DCreate9");
     PFN_Direct3DCreate9Ex create9Ex=
         (PFN_Direct3DCreate9Ex)GetProcAddress(
             d3d9,"Direct3DCreate9Ex");
-    if(!create9Ex)
+    if(!create9 || !create9Ex)
     {
         std::printf("PRESENTEX_AVAILABLE=0\n");
         return 3;
@@ -39,7 +43,7 @@ int main()
     // can be upgraded through QueryInterface. If that succeeds, PTAR can use
     // PresentEx without changing the device construction contract seen by the
     // game.
-    IDirect3D9* regular=Direct3DCreate9(D3D_SDK_VERSION);
+    IDirect3D9* regular=create9(D3D_SDK_VERSION);
     HWND qiHwnd=MakeWindow();
     IDirect3DDevice9* regularDev=0;
     HRESULT qiCreate=E_FAIL;
