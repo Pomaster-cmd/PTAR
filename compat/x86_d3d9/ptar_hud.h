@@ -251,10 +251,10 @@ static void PtHudUpdateInput()
 
     if(f10 && !g_ptarHudPrevF10 && !ctrl)
     {
-        if(PtAsyncPresenterAvailable())
+        if(PtIsoPresenterAvailable())
         {
-            const bool enable=!PtAsyncPresenterIsActive();
-            PtAsyncPresenterSetEnabled(enable);
+            const bool enable=!PtIsoPresenterIsActive();
+            PtIsoPresenterSetEnabled(enable);
 
             // Production HudParams state encoding:
             // 1 = USR OFF / F10 ENABLE
