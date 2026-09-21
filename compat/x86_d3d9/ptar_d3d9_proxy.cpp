@@ -896,7 +896,7 @@ static HRESULT RenderFGMotionAndIntermediate(IDirect3DDevice9* dev)
     return hr;
 }
 
-static HRESULT RenderTextureToBackBuffer(
+inline HRESULT RenderTextureToBackBuffer(
     IDirect3DDevice9* dev,
     IDirect3DTexture9* texture)
 {
