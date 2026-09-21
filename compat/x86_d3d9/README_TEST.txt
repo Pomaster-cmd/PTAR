@@ -3,7 +3,7 @@ PTAR X86/D3D9 SPATIAL1 — FIRST HARDWARE GATE
 
 Purpose
 -------
-VTABLEFIX1 replaces the earlier truncated COM-vtable cloning with in-place\npatching of only the intercepted D3D9 slots. This preserves all private/internal\nvtable entries used by legacy D3D9 runtimes and engines such as Conviction.\n\nFirst PTAR compatibility runtime for 32-bit Direct3D 9 games.
+VTABLEFIX2 keeps the VTABLEFIX1 in-place patching model and additionally preserves\nthe captured real CreateDevice pointer when subsequent IDirect3D9 objects see the\nshared system vtable already patched. This fixes the field-observed EIP=0 crash at\nthe first CreateDevice after several Direct3DCreate9 calls.\n\nFirst PTAR compatibility runtime for 32-bit Direct3D 9 games.
 Primary test target: Tom Clancy's Splinter Cell: Conviction.
 
 This build validates the x86/D3D9 frontend and PTAR-NG MoE spatial path.
