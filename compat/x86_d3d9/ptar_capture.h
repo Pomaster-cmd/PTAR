@@ -7,12 +7,12 @@
 
 static volatile LONG g_ptarCapturePending=0;
 
-static void PtCaptureRequest()
+inline void PtCaptureRequest()
 {
     InterlockedExchange(&g_ptarCapturePending,1);
 }
 
-static bool PtCaptureConsumeRequest()
+inline bool PtCaptureConsumeRequest()
 {
     return InterlockedExchange(&g_ptarCapturePending,0)!=0;
 }
@@ -43,7 +43,7 @@ struct PTARBmpInfoHeader
 };
 #pragma pack(pop)
 
-static bool PtCaptureDecodePixel(
+inline bool PtCaptureDecodePixel(
     D3DFORMAT format,
     const BYTE* src,
     BYTE* b,
@@ -100,7 +100,7 @@ static bool PtCaptureDecodePixel(
     return false;
 }
 
-static UINT PtCaptureBytesPerPixel(D3DFORMAT format)
+inline UINT PtCaptureBytesPerPixel(D3DFORMAT format)
 {
     if(format==D3DFMT_A8R8G8B8 ||
        format==D3DFMT_X8R8G8B8 ||
@@ -115,7 +115,7 @@ static UINT PtCaptureBytesPerPixel(D3DFORMAT format)
     return 0u;
 }
 
-static bool PtCaptureBuildPath(
+inline bool PtCaptureBuildPath(
     HMODULE module,
     wchar_t* pathOut,
     size_t pathCount)
@@ -151,7 +151,7 @@ static bool PtCaptureBuildPath(
     return false;
 }
 
-static HRESULT PtCaptureSavePostOverlayBmp(
+inline HRESULT PtCaptureSavePostOverlayBmp(
     IDirect3DDevice9* dev,
     IDirect3DSurface9* finalBackBuffer,
     HMODULE module,
