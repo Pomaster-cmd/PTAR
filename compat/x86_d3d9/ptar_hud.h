@@ -251,9 +251,25 @@ static void PtHudUpdateInput()
 
     if(f10 && !g_ptarHudPrevF10 && !ctrl)
     {
-        // The D3D9 presenter-switch backend is not yet implemented; retain the
-        // production shortcut/log contract without fabricating state.
-        PtDiagLogA("HOTKEY F10 TogglePresenter requested");
+        if(PtAsyncPresenterAvailable())
+        {
+            const bool enable=!PtAsyncPresenterIsActive();
+            PtAsyncPresenterSetEnabled(enable);
+
+            // Production HudParams state encoding:
+            // 1 = USR OFF / F10 ENABLE
+            // 2 = USR ON  / F10 DISABLE
+            PtHudStateFeedback(enable?2:1);
+
+            PtDiagLogA(
+                "HOTKEY F10 TogglePresenter=%s",
+                enable?"ON":"OFF");
+        }
+        else
+        {
+            PtDiagLogA(
+                "HOTKEY F10 TogglePresenter unavailable");
+        }
     }
 
     if(f11 && !g_ptarHudPrevF11 && ctrl)
