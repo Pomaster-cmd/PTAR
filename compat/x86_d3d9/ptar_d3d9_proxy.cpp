@@ -800,6 +800,30 @@ static HRESULT PresentPTARTexture(
         g_ptar.outputW,g_ptar.outputH,
         fgProducing);
 
+    // F9 follows the production contract: capture the final presenter
+    // backbuffer after PTAR/HUD/status rendering and before Present.
+    if(PtCaptureConsumeRequest())
+    {
+        wchar_t saved[MAX_PATH]={0};
+        HRESULT captureHr=PtCaptureSavePostOverlayBmp(
+            dev,g_ptar.realBackBuffer,g_self,
+            saved,_countof(saved));
+
+        if(SUCCEEDED(captureHr))
+        {
+            PtDiagLogA(
+                "OK: F9 post-overlay D3D9 screenshot saved path=%ls frame=%s",
+                saved,
+                generatedFrame?"GENERATED":"REAL");
+        }
+        else
+        {
+            PtDiagLogA(
+                "ERROR: F9 D3D9 post-overlay screenshot failed hr=0x%08lX",
+                (unsigned long)captureHr);
+        }
+    }
+
     hr=g_realPresent(dev,0,0,hwnd,dirty);
     if(SUCCEEDED(hr))
         PtFgPacerRecordVisible(generatedFrame);
