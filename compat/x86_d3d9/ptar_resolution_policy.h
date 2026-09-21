@@ -83,3 +83,69 @@ static bool PtResolutionExactScale15(
         ((unsigned long long)outputH*2ull==
          (unsigned long long)sourceH*3ull);
 }
+
+
+struct PTARResolutionPlan
+{
+    bool spatialRequested;
+    UINT requestedW;
+    UINT requestedH;
+    UINT deviceW;
+    UINT deviceH;
+};
+
+static void PtResolutionBuildPlan(
+    UINT requestedW,UINT requestedH,
+    PTARResolutionPlan* plan)
+{
+    if(!plan)
+        return;
+
+    plan->requestedW=requestedW;
+    plan->requestedH=requestedH;
+    plan->spatialRequested=
+        PtResolutionSpatialRequested(requestedW,requestedH);
+
+    plan->deviceW=plan->spatialRequested?
+        g_ptarResolutionPolicy.outputW:requestedW;
+    plan->deviceH=plan->spatialRequested?
+        g_ptarResolutionPolicy.outputH:requestedH;
+}
+
+static bool PtResolutionFinalizePlan(
+    const PTARResolutionPlan* plan,
+    UINT resolvedDeviceW,UINT resolvedDeviceH,
+    UINT* sourceW,UINT* sourceH,
+    UINT* outputW,UINT* outputH)
+{
+    if(!plan || !sourceW || !sourceH || !outputW || !outputH ||
+       !resolvedDeviceW || !resolvedDeviceH)
+        return false;
+
+    *outputW=resolvedDeviceW;
+    *outputH=resolvedDeviceH;
+
+    const bool spatialActive=
+        plan->spatialRequested &&
+        resolvedDeviceW==g_ptarResolutionPolicy.outputW &&
+        resolvedDeviceH==g_ptarResolutionPolicy.outputH &&
+        PtResolutionExactScale15(
+            g_ptarResolutionPolicy.renderW,
+            g_ptarResolutionPolicy.renderH,
+            resolvedDeviceW,resolvedDeviceH);
+
+    if(spatialActive)
+    {
+        *sourceW=g_ptarResolutionPolicy.renderW;
+        *sourceH=g_ptarResolutionPolicy.renderH;
+    }
+    else
+    {
+        // Native 1:1 mode: keep the backend/presenter/FG active while spatial
+        // reconstruction is bypassed. This is the production D3D11 contract.
+        *sourceW=resolvedDeviceW;
+        *sourceH=resolvedDeviceH;
+    }
+
+    return spatialActive;
+}
