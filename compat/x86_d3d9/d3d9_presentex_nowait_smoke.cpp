@@ -35,6 +35,53 @@ int main()
         return 3;
     }
 
+    // Also determine whether a regular Direct3DCreate9/CreateDevice object
+    // can be upgraded through QueryInterface. If that succeeds, PTAR can use
+    // PresentEx without changing the device construction contract seen by the
+    // game.
+    IDirect3D9* regular=Direct3DCreate9(D3D_SDK_VERSION);
+    HWND qiHwnd=MakeWindow();
+    IDirect3DDevice9* regularDev=0;
+    HRESULT qiCreate=E_FAIL;
+    HRESULT qiExHr=E_NOINTERFACE;
+    IDirect3DDevice9Ex* regularAsEx=0;
+
+    if(regular && qiHwnd)
+    {
+        D3DPRESENT_PARAMETERS qpp={};
+        qpp.BackBufferWidth=320;
+        qpp.BackBufferHeight=180;
+        qpp.BackBufferFormat=D3DFMT_UNKNOWN;
+        qpp.BackBufferCount=1;
+        qpp.SwapEffect=D3DSWAPEFFECT_DISCARD;
+        qpp.hDeviceWindow=qiHwnd;
+        qpp.Windowed=TRUE;
+        qpp.PresentationInterval=D3DPRESENT_INTERVAL_IMMEDIATE;
+
+        qiCreate=regular->CreateDevice(
+            D3DADAPTER_DEFAULT,
+            D3DDEVTYPE_HAL,
+            qiHwnd,
+            D3DCREATE_SOFTWARE_VERTEXPROCESSING|
+            D3DCREATE_MULTITHREADED,
+            &qpp,&regularDev);
+
+        if(SUCCEEDED(qiCreate) && regularDev)
+            qiExHr=regularDev->QueryInterface(
+                __uuidof(IDirect3DDevice9Ex),
+                (void**)&regularAsEx);
+    }
+
+    std::printf(
+        "REGULAR_DEVICE_QI_EX_HR=0x%08lX QI_EX=%d\n",
+        (unsigned long)qiExHr,
+        regularAsEx?1:0);
+
+    if(regularAsEx) regularAsEx->Release();
+    if(regularDev) regularDev->Release();
+    if(qiHwnd) DestroyWindow(qiHwnd);
+    if(regular) regular->Release();
+
     IDirect3D9Ex* d3d=0;
     HRESULT hr=create9Ex(D3D_SDK_VERSION,&d3d);
     if(FAILED(hr)||!d3d)
