@@ -99,9 +99,10 @@ int main()
     pp.SwapEffect=D3DSWAPEFFECT_DISCARD;
     pp.hDeviceWindow=hwnd;
     pp.Windowed=TRUE;
-    pp.PresentationInterval=D3DPRESENT_INTERVAL_ONE;
+    pp.PresentationInterval=D3DPRESENT_INTERVAL_IMMEDIATE;
 
     IDirect3DDevice9Ex* dev=0;
+    bool usedRef=false;
     hr=d3d->CreateDeviceEx(
         D3DADAPTER_DEFAULT,
         D3DDEVTYPE_HAL,
@@ -112,6 +113,7 @@ int main()
 
     if(FAILED(hr))
     {
+        usedRef=true;
         hr=d3d->CreateDeviceEx(
             D3DADAPTER_DEFAULT,
             D3DDEVTYPE_REF,
@@ -167,6 +169,7 @@ int main()
         1000.0/(double)freq.QuadPart;
 
     std::printf("PRESENTEX_AVAILABLE=1\n");
+    std::printf("PRESENTEX_DEVICE=%s\n",usedRef?"REF":"HAL");
     std::printf("PRESENTEX_60_CALLS_MS=%.3f\n",ms);
     std::printf("PRESENTEX_OK=%lu\n",ok);
     std::printf("PRESENTEX_BUSY=%lu\n",busy);
