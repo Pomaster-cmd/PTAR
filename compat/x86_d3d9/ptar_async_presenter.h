@@ -603,7 +603,7 @@ static bool PtAsyncPresenterIsActive()
             &g_ptarAsyncPresenter.enabled,1,1)!=0;
 }
 
-static void PtAsyncPresenterSetEnabled(bool enabled)
+inline void PtAsyncPresenterSetEnabled(bool enabled)
 {
     InterlockedExchange(
         &g_ptarAsyncPresenter.enabled,
