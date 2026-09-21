@@ -71,13 +71,6 @@ static bool PtResolutionSpatialRequested(UINT requestedW,UINT requestedH)
            g_ptarResolutionPolicy.outputH>0;
 }
 
-static UINT PtResolutionRequestedOutputW(UINT requestedW)
-{
-    return PtResolutionSpatialRequested(
-        requestedW,g_ptarResolutionPolicy.renderH)?
-            g_ptarResolutionPolicy.outputW:requestedW;
-}
-
 static bool PtResolutionExactScale15(
     UINT sourceW,UINT sourceH,UINT outputW,UINT outputH)
 {
