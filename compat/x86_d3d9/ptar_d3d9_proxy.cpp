@@ -226,16 +226,57 @@ fail:
     return FAILED(hr)?hr:E_FAIL;
 }
 
-static void** CloneVtable(void* object,size_t count)
+static bool PatchVtableSlot(
+    void* object,
+    size_t index,
+    void* hook,
+    void** originalOut,
+    const char* label)
 {
-    if(!object || !count) return 0;
-    void*** obj=(void***)object;
-    void** old=*obj;
-    void** copy=(void**)HeapAlloc(GetProcessHeap(),HEAP_ZERO_MEMORY,count*sizeof(void*));
-    if(!copy) return 0;
-    memcpy(copy,old,count*sizeof(void*));
-    *obj=copy;
-    return old;
+    if(!object || !hook) return false;
+
+    void** vtable=*(void***)object;
+    if(!vtable) return false;
+
+    void** slot=&vtable[index];
+    void* current=*slot;
+
+    if(current==hook)
+    {
+        PtDiagLogA("VTABLE_PATCH_ALREADY label=%s object=%p vtable=%p index=%u",
+            label?label:"<null>",object,vtable,(unsigned)index);
+        return true;
+    }
+
+    DWORD oldProtect=0;
+    PtDiagLogA(
+        "VTABLE_PATCH_BEGIN label=%s object=%p vtable=%p index=%u old=%p hook=%p",
+        label?label:"<null>",object,vtable,(unsigned)index,current,hook);
+
+    if(!VirtualProtect(slot,sizeof(void*),PAGE_EXECUTE_READWRITE,&oldProtect))
+    {
+        PtDiagLogA(
+            "VTABLE_PATCH_VPROTECT_FAIL label=%s gle=%lu",
+            label?label:"<null>",(unsigned long)GetLastError());
+        return false;
+    }
+
+    InterlockedExchangePointer((PVOID volatile*)slot,hook);
+
+    DWORD ignored=0;
+    if(!VirtualProtect(slot,sizeof(void*),oldProtect,&ignored))
+    {
+        PtDiagLogA(
+            "VTABLE_PATCH_RESTORE_PROTECT_FAIL label=%s gle=%lu",
+            label?label:"<null>",(unsigned long)GetLastError());
+    }
+
+    if(originalOut) *originalOut=current;
+
+    PtDiagLogA(
+        "VTABLE_PATCH_DONE label=%s index=%u now=%p preserved=%p",
+        label?label:"<null>",(unsigned)index,*slot,current);
+    return *slot==hook;
 }
 
 static HRESULT STDMETHODCALLTYPE HookGetDisplayMode(
@@ -420,26 +461,41 @@ static bool HookDevice(IDirect3DDevice9* dev)
         return false;
     }
 
-    PtDiagStage("HookDevice_CloneVtable");
-    void** old=CloneVtable(dev,119);
-    PtDiagLogA("HOOK_DEVICE_VTABLE old=%p new=%p",old,dev?*(void***)dev:0);
-    if(!old) return false;
+    PtDiagStage("HookDevice_PatchOriginalVtable");
+    void** vt=*(void***)dev;
+    PtDiagLogA("HOOK_DEVICE_ORIGINAL_VTABLE=%p",vt);
+    if(!vt) return false;
 
-    g_realGetDisplayMode=(PFN_GetDisplayMode)old[8];
-    g_realReset=(PFN_Reset)old[16];
-    g_realPresent=(PFN_Present)old[17];
-    g_realGetBackBuffer=(PFN_GetBackBuffer)old[18];
-    g_realSetRenderTarget=(PFN_SetRenderTarget)old[37];
+    void* old=0;
 
-    void** now=*(void***)dev;
-    now[8]=(void*)&HookGetDisplayMode;
-    now[16]=(void*)&HookReset;
-    now[17]=(void*)&HookPresent;
-    now[18]=(void*)&HookGetBackBuffer;
-    now[37]=(void*)&HookSetRenderTarget;
+    if(!PatchVtableSlot(dev,8,(void*)&HookGetDisplayMode,&old,"Device.GetDisplayMode"))
+        return false;
+    if(old!=(void*)&HookGetDisplayMode) g_realGetDisplayMode=(PFN_GetDisplayMode)old;
+
+    old=0;
+    if(!PatchVtableSlot(dev,16,(void*)&HookReset,&old,"Device.Reset"))
+        return false;
+    if(old!=(void*)&HookReset) g_realReset=(PFN_Reset)old;
+
+    old=0;
+    if(!PatchVtableSlot(dev,17,(void*)&HookPresent,&old,"Device.Present"))
+        return false;
+    if(old!=(void*)&HookPresent) g_realPresent=(PFN_Present)old;
+
+    old=0;
+    if(!PatchVtableSlot(dev,18,(void*)&HookGetBackBuffer,&old,"Device.GetBackBuffer"))
+        return false;
+    if(old!=(void*)&HookGetBackBuffer) g_realGetBackBuffer=(PFN_GetBackBuffer)old;
+
+    old=0;
+    if(!PatchVtableSlot(dev,37,(void*)&HookSetRenderTarget,&old,"Device.SetRenderTarget"))
+        return false;
+    if(old!=(void*)&HookSetRenderTarget) g_realSetRenderTarget=(PFN_SetRenderTarget)old;
+
     PtDiagStage("HookDevice_DONE");
-    PtDiagLogA("HOOK_DEVICE_DONE present=%p reset=%p getbb=%p setrt=%p",
-        (void*)g_realPresent,(void*)g_realReset,(void*)g_realGetBackBuffer,(void*)g_realSetRenderTarget);
+    PtDiagLogA("HOOK_DEVICE_DONE vtable=%p present=%p reset=%p getbb=%p setrt=%p",
+        vt,(void*)g_realPresent,(void*)g_realReset,
+        (void*)g_realGetBackBuffer,(void*)g_realSetRenderTarget);
     return true;
 }
 
@@ -543,12 +599,22 @@ static bool HookD3D9(IDirect3D9* d3d)
     PtDiagStage("HookD3D9_ENTER");
     PtDiagLogA("HOOK_D3D9 object=%p",d3d);
     if(!d3d) return false;
-    void** old=CloneVtable(d3d,17);
-    if(!old) return false;
-    g_realCreateDevice=(PFN_CreateDevice)old[16];
-    void** now=*(void***)d3d;
-    PtDiagLogA("HOOK_D3D9_VTABLE old=%p new=%p createDevice=%p",old,now,(void*)g_realCreateDevice);
-    now[16]=(void*)&HookCreateDevice;
+
+    void** vt=*(void***)d3d;
+    PtDiagLogA("HOOK_D3D9_ORIGINAL_VTABLE=%p",vt);
+    if(!vt) return false;
+
+    void* old=0;
+    if(!PatchVtableSlot(
+        d3d,16,(void*)&HookCreateDevice,&old,"IDirect3D9.CreateDevice"))
+        return false;
+
+    if(old!=(void*)&HookCreateDevice)
+        g_realCreateDevice=(PFN_CreateDevice)old;
+
+    PtDiagLogA(
+        "HOOK_D3D9_PATCHED vtable=%p createDeviceReal=%p createDeviceNow=%p",
+        vt,(void*)g_realCreateDevice,vt[16]);
     PtDiagStage("HookD3D9_DONE");
     return true;
 }
