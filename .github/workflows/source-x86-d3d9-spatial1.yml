@@ -1,4 +1,4 @@
-name: SOURCE x86 D3D9 FG1
+name: SOURCE x86 D3D9 PRODPORT1
 
 on:
   push:
@@ -89,15 +89,16 @@ jobs:
           }
           $sha=(Get-FileHash artifact\d3d9.dll -Algorithm SHA256).Hash.ToLowerInvariant()
           @(
-            'PTAR_VARIANT=PTAR_X86_D3D9_FG1_GENERIC_VTABLEFIX2_CRASHLOG1',
+            'PTAR_VARIANT=PTAR_X86_D3D9_PRODPORT1_GENERIC_VTABLEFIX2_CRASHLOG1',
             'PE_MACHINE=I386_0x014C',
             'API=D3D9',
             'SPATIAL=PTAR_NG_MOE_V01_PS3_PORT',
             'HUD=F8_NATIVE_D3D9',
             'AB_COMPARE=F6_MOE_VS_BILINEAR',
-            'FG=CTRL_F6_GENERIC_ME_DIV4_DIV2_INTERPOLATE',
+            'FG=CTRL_F6_PRODPORT1_SHADER_ME_DIV4_DIV2_INTERPOLATE',
             'FG_VISIBLE_TARGET_HZ=60',
-            'FG_LATE_POLICY=SKIP_GENERATED_KEEP_REAL',
+            'FG_PACING=PRODPORT1_EVEN_LOCAL_GRID',
+            'FG_LATE_POLICY=RESYNC_LOCAL_GRID_NO_SKIP_STORM',
             'CRASH_DIAGNOSTICS=EARLY_VEH_UNHANDLED_STAGE_REGISTERS',
             ('DLL_SHA256='+$sha),
             ('SOURCE_COMMIT='+$env:GITHUB_SHA)
@@ -128,7 +129,9 @@ jobs:
           if($LASTEXITCODE -ne 0){throw "D3D9 FG pacer smoke failed rc=$LASTEXITCODE"}
           $p=Get-Content build_x86\D3D9_FG_PACER_SMOKE.txt -Raw
           if($p -notmatch 'D3D9_FG_PACER_SMOKE=PASS'){throw 'FG pacer PASS marker missing'}
-          if($p -notmatch 'FG_PACER_LATE_GENERATE=0'){throw 'FG late-skip gate failed'}
+          if($p -notmatch 'FG_PACER_STALL_GENERATE=1'){throw 'FG stall-resync acceptance gate failed'}
+          if($p -notmatch 'FG_PACER_LATE_SKIP_COUNT=0'){throw 'FG historical late-skip regression detected'}
+          if($p -notmatch 'FG_PACER_RESYNC_COUNT=[1-9][0-9]*'){throw 'FG resync evidence missing'}
           Write-Host 'D3D9_FG_QPC_PACING=PASS'
 
       - name: Reproduce Direct3DCreate9 object lifetime sequence
@@ -210,7 +213,7 @@ jobs:
           Write-Host 'INSTALLER_PATH_SMOKE=PASS'
           Write-Host 'INSTALLER_INPLACE_SMOKE=PASS'
 
-      - name: Package generic x86 D3D9 FG1 test build
+      - name: Package generic x86 D3D9 PRODPORT1 test build
         shell: pwsh
         run: |
           Remove-Item artifact\d3d9_object_lifetime_smoke.exe -Force -ErrorAction SilentlyContinue
@@ -228,15 +231,15 @@ jobs:
           if($unexpectedExe){
             throw ('Unexpected lab executable(s) in deliverable: '+(($unexpectedExe.Name) -join ', '))
           }
-          Compress-Archive -Path artifact\* -DestinationPath PTAR_X86_D3D9_FG1_GENERIC_TEST.zip -CompressionLevel Optimal
-          $z=(Get-FileHash PTAR_X86_D3D9_FG1_GENERIC_TEST.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          Compress-Archive -Path artifact\* -DestinationPath PTAR_X86_D3D9_PRODPORT1_GENERIC_TEST.zip -CompressionLevel Optimal
+          $z=(Get-FileHash PTAR_X86_D3D9_PRODPORT1_GENERIC_TEST.zip -Algorithm SHA256).Hash.ToLowerInvariant()
           Write-Host "PACKAGE_SHA256=$z"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PTAR-X86-D3D9-FG1-GENERIC
+          name: PTAR-X86-D3D9-PRODPORT1-GENERIC
           path: |
-            PTAR_X86_D3D9_FG1_GENERIC_TEST.zip
+            PTAR_X86_D3D9_PRODPORT1_GENERIC_TEST.zip
             build_x86/HEADERS.txt
             build_x86/EXPORTS.txt
             build_x86/DEPENDENTS.txt
