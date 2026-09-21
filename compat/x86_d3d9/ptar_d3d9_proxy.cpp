@@ -348,7 +348,24 @@ static HRESULT InitializePTARResources(
     g_ptar.outputW=outputW;
     g_ptar.outputH=outputH;
     g_ptar.spatialActive=spatialActive;
+
+    if(outputRefreshHz<30u || outputRefreshHz>360u)
+    {
+        D3DDISPLAYMODE mode={};
+        if(g_realGetDisplayMode &&
+           SUCCEEDED(g_realGetDisplayMode(dev,0,&mode)) &&
+           mode.RefreshRate>=30u &&
+           mode.RefreshRate<=360u)
+        {
+            outputRefreshHz=mode.RefreshRate;
+        }
+        else
+        {
+            outputRefreshHz=60u;
+        }
+    }
     g_ptar.outputRefreshHz=outputRefreshHz;
+
     g_ptar.originalAutoDepth=originalAutoDepth;
     g_ptar.depthFormat=originalDepthFormat;
 
@@ -1216,6 +1233,7 @@ static HRESULT STDMETHODCALLTYPE HookReset(
     hr=InitializePTARResources(
         self,sourceW,sourceH,outputW,outputH,
         spatialActive,
+        original.FullScreen_RefreshRateInHz,
         original.EnableAutoDepthStencil,
         original.AutoDepthStencilFormat);
 
