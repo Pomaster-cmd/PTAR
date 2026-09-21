@@ -554,18 +554,25 @@ struct QuadVertex
     float u,v;
 };
 
-static HRESULT DrawFullscreenPass(
+static HRESULT DrawFullscreenPassRect(
     IDirect3DDevice9* dev,
     IDirect3DSurface9* target,
     UINT targetW,
     UINT targetH,
+    UINT drawX,
+    UINT drawY,
+    UINT drawW,
+    UINT drawH,
+    bool clearTarget,
     IDirect3DPixelShader9* shader,
     IDirect3DTexture9* texture0,
     IDirect3DTexture9* texture1,
     IDirect3DTexture9* texture2,
     const float* constant0)
 {
-    if(!dev || !target || !targetW || !targetH || !shader || !texture0)
+    if(!dev || !target || !targetW || !targetH ||
+       !drawW || !drawH || !shader || !texture0 ||
+       drawX+drawW>targetW || drawY+drawH>targetH)
         return D3DERR_INVALIDCALL;
 
     // Always unbind shader resources before selecting a new render target so a
@@ -611,6 +618,15 @@ static HRESULT DrawFullscreenPass(
         dev->SetSamplerState(sampler,D3DSAMP_ADDRESSV,D3DTADDRESS_CLAMP);
     }
 
+    if(clearTarget)
+    {
+        hr=dev->Clear(
+            0,0,D3DCLEAR_TARGET,
+            D3DCOLOR_XRGB(0,0,0),
+            1.0f,0);
+        if(FAILED(hr)) return hr;
+    }
+
     if(constant0)
         dev->SetPixelShaderConstantF(0,constant0,1);
 
@@ -630,13 +646,15 @@ static HRESULT DrawFullscreenPass(
         return hr;
     }
 
-    const float w=(float)targetW;
-    const float h=(float)targetH;
+    const float x=(float)drawX;
+    const float y=(float)drawY;
+    const float w=(float)drawW;
+    const float h=(float)drawH;
     QuadVertex q[4]={
-        {-0.5f,-0.5f,0.0f,1.0f,0.0f,0.0f},
-        {w-0.5f,-0.5f,0.0f,1.0f,1.0f,0.0f},
-        {-0.5f,h-0.5f,0.0f,1.0f,0.0f,1.0f},
-        {w-0.5f,h-0.5f,0.0f,1.0f,1.0f,1.0f}
+        {x-0.5f,y-0.5f,0.0f,1.0f,0.0f,0.0f},
+        {x+w-0.5f,y-0.5f,0.0f,1.0f,1.0f,0.0f},
+        {x-0.5f,y+h-0.5f,0.0f,1.0f,0.0f,1.0f},
+        {x+w-0.5f,y+h-0.5f,0.0f,1.0f,1.0f,1.0f}
     };
 
     hr=dev->DrawPrimitiveUP(
@@ -653,6 +671,23 @@ static HRESULT DrawFullscreenPass(
     return endHr;
 }
 
+static HRESULT DrawFullscreenPass(
+    IDirect3DDevice9* dev,
+    IDirect3DSurface9* target,
+    UINT targetW,
+    UINT targetH,
+    IDirect3DPixelShader9* shader,
+    IDirect3DTexture9* texture0,
+    IDirect3DTexture9* texture1,
+    IDirect3DTexture9* texture2,
+    const float* constant0)
+{
+    return DrawFullscreenPassRect(
+        dev,target,targetW,targetH,
+        0,0,targetW,targetH,false,
+        shader,texture0,texture1,texture2,constant0);
+}
+
 static HRESULT RenderSpatialToCurrent(IDirect3DDevice9* dev)
 {
     if(!g_ptar.spatialActive)
@@ -666,8 +701,6 @@ static HRESULT RenderSpatialToCurrent(IDirect3DDevice9* dev)
         if(SUCCEEDED(hr))
             return hr;
 
-        // Some D3D9 drivers are restrictive about StretchRect combinations.
-        // Fall back to a 1:1 bilinear fullscreen copy without enabling MoE.
         PtDiagLogA(
             "NATIVE_1X1_STRETCHRECT_FALLBACK hr=0x%08lX",
             (unsigned long)hr);
@@ -681,18 +714,43 @@ static HRESULT RenderSpatialToCurrent(IDirect3DDevice9* dev)
             0,0,0);
     }
 
+    const PTARPresentationRect fit=PtResolutionAspectFit(
+        g_ptar.sourceW,g_ptar.sourceH,
+        g_ptar.outputW,g_ptar.outputH);
+
+    const bool exact15=PtResolutionExactScale15(
+        g_ptar.sourceW,g_ptar.sourceH,
+        fit.width,fit.height);
+
+    IDirect3DPixelShader9* spatialShader=g_ptar.bilinearShader;
+    const char* spatialMode="BILINEAR";
+    if(PtHudUseMoe())
+    {
+        spatialShader=exact15?g_ptar.shader:g_ptar.universalShader;
+        spatialMode=exact15?"MOE_X1.5":"MOE_UNIVERSAL";
+    }
+
     float sizes[4]={
         (float)g_ptar.sourceW,
         (float)g_ptar.sourceH,
-        (float)g_ptar.outputW,
-        (float)g_ptar.outputH};
+        (float)fit.width,
+        (float)fit.height};
 
-    return DrawFullscreenPass(
+    PtDiagLogA(
+        "SPATIAL_PASS mode=%s src=%ux%u fit=%u,%u %ux%u target=%ux%u",
+        spatialMode,
+        g_ptar.sourceW,g_ptar.sourceH,
+        fit.x,fit.y,fit.width,fit.height,
+        g_ptar.outputW,g_ptar.outputH);
+
+    return DrawFullscreenPassRect(
         dev,
         g_ptar.currentRealSurface,
         g_ptar.outputW,
         g_ptar.outputH,
-        PtHudUseMoe()?g_ptar.shader:g_ptar.bilinearShader,
+        fit.x,fit.y,fit.width,fit.height,
+        true,
+        spatialShader,
         g_ptar.sourceTexture,
         0,
         0,
