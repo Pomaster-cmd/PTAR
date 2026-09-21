@@ -105,9 +105,37 @@ motion confidence is allowed to reject a vector completely. Production-derived
 fail-soft clamping is retained, but the NVENC-specific minimum trust floor is
 not copied blindly.
 
+Resolution independence / native 1:1
+----------------------------------
+The D3D9 backend follows the production D3D11 separation between PTAR spatial
+reconstruction and the rest of the runtime.
+
+With the default model configuration:
+  RenderWidth=1280
+  RenderHeight=720
+  OutputWidth=1920
+  OutputHeight=1080
+
+an exact 1280x720 game presentation activates PTAR x1.5 and presents at
+1920x1080.
+
+If the game changes to another resolution, PTAR itself does NOT deactivate.
+The proxy, HUD, presenter and frame-generation path remain attached. Spatial
+reconstruction is bypassed and the game runs in native 1:1 presentation.
+
+Example:
+  1920x1080 game resolution -> 1920x1080 native 1:1 + FG remains available.
+
+Changing back to the configured RenderWidth/RenderHeight re-enables the x1.5
+spatial path on the next D3D9 Reset.
+
+Windowed D3D9 modes whose requested BackBufferWidth/Height are 0 are resolved
+from the actual created backbuffer and also remain in native 1:1 mode.
+
 Spatial A/B comparison
 ----------------------
-F6 keeps the same source and output geometry and changes only the reconstruction:
+When the configured x1.5 spatial path is active, F6 keeps the same source and
+output geometry and changes only the reconstruction:
 
   PTAR MOE
     PTAR-NG MoE spatial reconstruction.
@@ -116,6 +144,8 @@ F6 keeps the same source and output geometry and changes only the reconstruction
     Plain bilinear reference.
 
 This allows direct visual comparison without changing the scene or output size.
+In native 1:1 mode the spatial stage is bypassed; F6 does not disable the D3D9
+backend and FG remains independently available.
 
 Install
 -------
@@ -192,6 +222,10 @@ Before any new hardware request, CI must pass:
   - x86 proxy builds with Win8.1 subsystem;
   - PE/export/dependency checks pass;
   - multi-object Direct3DCreate9/CreateDevice regression passes;
+  - resolution-policy regression validates 720p->1080p spatial and native
+    1080p FG-only operation;
+  - live D3D9 Reset sequence preserves PTAR across native/spatial/native
+    resolution transitions;
   - D3D9 FG GPU pipeline produces non-empty generated output and non-zero motion;
   - generic separate-folder install passes;
   - generic in-place install passes;
