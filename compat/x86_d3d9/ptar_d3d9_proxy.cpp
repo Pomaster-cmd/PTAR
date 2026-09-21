@@ -30,6 +30,7 @@
 #include "ptar_fg_interpolate_ps_bytecode.h"
 #include "ptar_diag.h"
 #include "ptar_fg_pacer.h"
+#include "ptar_resolution_policy.h"
 #include "ptar_hud.h"
 
 static HMODULE g_self=0;
@@ -94,6 +95,7 @@ struct PTARContext
     D3DFORMAT depthFormat;
     BOOL originalAutoDepth;
     bool active;
+    bool spatialActive;
     bool inPresent;
     bool previousRealValid;
 };
@@ -143,6 +145,7 @@ static FARPROC RealProc(const char* name)
 static void ReleasePTARResources()
 {
     g_ptar.active=false;
+    g_ptar.spatialActive=false;
     g_ptar.previousRealValid=false;
     if(g_ptar.stateBlock){g_ptar.stateBlock->Release();g_ptar.stateBlock=0;}
 
@@ -216,10 +219,88 @@ static HRESULT SetVirtualViewport(IDirect3DDevice9* dev)
     return dev->SetViewport(&vp);
 }
 
+static void PreparePTARPresentationParameters(
+    const D3DPRESENT_PARAMETERS& original,
+    const PTARResolutionPlan& plan,
+    D3DPRESENT_PARAMETERS* actual)
+{
+    if(!actual)
+        return;
+
+    *actual=original;
+    actual->BackBufferWidth=plan.deviceW;
+    actual->BackBufferHeight=plan.deviceH;
+
+    // PTAR owns a virtual game render target. Keep that target non-MSAA and
+    // provide the game's depth surface separately at the source resolution.
+    actual->MultiSampleType=D3DMULTISAMPLE_NONE;
+    actual->MultiSampleQuality=0;
+    actual->EnableAutoDepthStencil=FALSE;
+}
+
+static HRESULT QueryRealBackBufferGeometry(
+    IDirect3DDevice9* dev,
+    UINT* width,UINT* height)
+{
+    if(!dev || !width || !height || !g_realGetBackBuffer)
+        return D3DERR_INVALIDCALL;
+
+    *width=0;
+    *height=0;
+
+    IDirect3DSurface9* backBuffer=0;
+    HRESULT hr=g_realGetBackBuffer(
+        dev,0,0,D3DBACKBUFFER_TYPE_MONO,&backBuffer);
+    if(FAILED(hr) || !backBuffer)
+        return FAILED(hr)?hr:E_FAIL;
+
+    D3DSURFACE_DESC desc={};
+    hr=backBuffer->GetDesc(&desc);
+    backBuffer->Release();
+
+    if(FAILED(hr) || !desc.Width || !desc.Height)
+        return FAILED(hr)?hr:E_FAIL;
+
+    *width=desc.Width;
+    *height=desc.Height;
+    return S_OK;
+}
+
+static bool FinalizeCurrentResolutionPlan(
+    const PTARResolutionPlan& plan,
+    IDirect3DDevice9* dev,
+    UINT* sourceW,UINT* sourceH,
+    UINT* outputW,UINT* outputH)
+{
+    UINT resolvedW=0;
+    UINT resolvedH=0;
+    HRESULT hr=QueryRealBackBufferGeometry(dev,&resolvedW,&resolvedH);
+    if(FAILED(hr))
+    {
+        PtDiagLogA(
+            "RESOLUTION_QUERY_BACKBUFFER_FAIL hr=0x%08lX",
+            (unsigned long)hr);
+        return false;
+    }
+
+    const bool spatialActive=PtResolutionFinalizePlan(
+        &plan,resolvedW,resolvedH,
+        sourceW,sourceH,outputW,outputH);
+
+    PtDiagLogA(
+        "RESOLUTION_PLAN requested=%ux%u device=%ux%u resolved=%ux%u mode=%s",
+        plan.requestedW,plan.requestedH,
+        plan.deviceW,plan.deviceH,
+        resolvedW,resolvedH,
+        spatialActive?"PTAR_X1.5":"NATIVE_1X1");
+    return spatialActive;
+}
+
 static HRESULT InitializePTARResources(
     IDirect3DDevice9* dev,
     UINT sourceW,UINT sourceH,
     UINT outputW,UINT outputH,
+    bool spatialActive,
     BOOL originalAutoDepth,
     D3DFORMAT originalDepthFormat)
 {
@@ -233,6 +314,7 @@ static HRESULT InitializePTARResources(
     g_ptar.sourceH=sourceH;
     g_ptar.outputW=outputW;
     g_ptar.outputH=outputH;
+    g_ptar.spatialActive=spatialActive;
     g_ptar.originalAutoDepth=originalAutoDepth;
     g_ptar.depthFormat=originalDepthFormat;
 
@@ -355,8 +437,9 @@ static HRESULT InitializePTARResources(
 
     PtFgPacerReset();
     g_ptar.active=true;
-    Log(L"PTAR_ACTIVE src=%ux%u out=%ux%u shader=MoE_v01_D3D9_PS3 samples=8 hud=ON compare=F6 fg=CTRL_F6 me=/4>/2 targetVisible=60",
-        sourceW,sourceH,outputW,outputH);
+    Log(L"PTAR_ACTIVE src=%ux%u out=%ux%u spatial=%s shader=MoE_v01_D3D9_PS3 samples=8 hud=CTRL_F11 fg=CTRL_F6 me=/4>/2 targetVisible=60",
+        sourceW,sourceH,outputW,outputH,
+        spatialActive?L"PTAR_X1.5":L"NATIVE_1X1");
     return S_OK;
 
 fail:
@@ -564,6 +647,32 @@ static HRESULT DrawFullscreenPass(
 
 static HRESULT RenderSpatialToCurrent(IDirect3DDevice9* dev)
 {
+    if(!g_ptar.spatialActive)
+    {
+        // Native 1:1 mode is not "PTAR disabled". The proxy, HUD, presenter
+        // and FG remain active; only spatial reconstruction is bypassed.
+        HRESULT hr=dev->StretchRect(
+            g_ptar.sourceSurface,0,
+            g_ptar.currentRealSurface,0,
+            D3DTEXF_NONE);
+        if(SUCCEEDED(hr))
+            return hr;
+
+        // Some D3D9 drivers are restrictive about StretchRect combinations.
+        // Fall back to a 1:1 bilinear fullscreen copy without enabling MoE.
+        PtDiagLogA(
+            "NATIVE_1X1_STRETCHRECT_FALLBACK hr=0x%08lX",
+            (unsigned long)hr);
+        return DrawFullscreenPass(
+            dev,
+            g_ptar.currentRealSurface,
+            g_ptar.outputW,
+            g_ptar.outputH,
+            g_ptar.bilinearShader,
+            g_ptar.sourceTexture,
+            0,0,0);
+    }
+
     float sizes[4]={
         (float)g_ptar.sourceW,
         (float)g_ptar.sourceH,
@@ -724,7 +833,7 @@ static HRESULT STDMETHODCALLTYPE HookPresent(
         return result;
     }
 
-    PtDiagStage("SPATIAL_CURRENT_REAL");
+    PtDiagStage(g_ptar.spatialActive?"SPATIAL_CURRENT_REAL":"NATIVE_1X1_CURRENT_REAL");
     HRESULT spatialHr=RenderSpatialToCurrent(self);
     if(FAILED(spatialHr))
     {
@@ -748,9 +857,8 @@ static HRESULT STDMETHODCALLTYPE HookPresent(
             {
                 fgPipelineReady=true;
 
-                // Do expensive FG work before the cadence wait. If the work
-                // itself makes us miss the midpoint by too much, fail soft and
-                // skip GENERATED for this source frame.
+                // Build FG first, then let the production-port local-grid
+                // pacer place GENERATED/REAL without historical skip storms.
                 if(PtFgPacerPrepareGenerated())
                 {
                     PtDiagStage("FG_PRESENT_GENERATED");
@@ -776,10 +884,8 @@ static HRESULT STDMETHODCALLTYPE HookPresent(
             }
         }
 
-        // Keep REAL frames on the 30-Hz half-rate grid whenever the FG
-        // pipeline is healthy, even when a single GENERATED midpoint was
-        // skipped for lateness. If the pipeline failed, return to REAL-only
-        // without imposing FG pacing.
+        // Preserve the production-port GENERATED -> REAL local cadence when
+        // the FG pipeline is healthy. If it fails, return to REAL-only.
         PtFgPacerPrepareReal(fgSession && fgPipelineReady);
 
         PtDiagStage("PRESENT_REAL");
@@ -803,44 +909,120 @@ restore_game_state:
     return result;
 }
 
-static HRESULT STDMETHODCALLTYPE HookReset(IDirect3DDevice9* self,D3DPRESENT_PARAMETERS* pp)
+static HRESULT STDMETHODCALLTYPE HookReset(
+    IDirect3DDevice9* self,
+    D3DPRESENT_PARAMETERS* pp)
 {
-    if(!pp) return D3DERR_INVALIDCALL;
+    if(!pp)
+        return D3DERR_INVALIDCALL;
 
-    D3DPRESENT_PARAMETERS original=*pp;
-    const bool eligible=!original.Windowed && original.BackBufferWidth>=2 &&
-        original.BackBufferHeight>=2 &&
-        (original.BackBufferWidth%2u)==0u && (original.BackBufferHeight%2u)==0u;
+    const D3DPRESENT_PARAMETERS original=*pp;
+
+    PtResolutionLoadConfig(g_self);
+    PTARResolutionPlan plan={};
+    PtResolutionBuildPlan(
+        original.BackBufferWidth,
+        original.BackBufferHeight,
+        &plan);
 
     ReleasePTARResources();
 
-    if(!eligible)
-    {
-        Log(L"RESET_PASSTHROUGH windowed_or_invalid_geometry");
-        return g_realReset(self,pp);
-    }
+    D3DPRESENT_PARAMETERS actual={};
+    PreparePTARPresentationParameters(original,plan,&actual);
 
-    D3DPRESENT_PARAMETERS actual=original;
-    const UINT outW=original.BackBufferWidth*3u/2u;
-    const UINT outH=original.BackBufferHeight*3u/2u;
-    actual.BackBufferWidth=outW;
-    actual.BackBufferHeight=outH;
-    actual.MultiSampleType=D3DMULTISAMPLE_NONE;
-    actual.MultiSampleQuality=0;
-    actual.EnableAutoDepthStencil=FALSE;
+    PtDiagLogA(
+        "RESET_PLAN requested=%ux%u plannedDevice=%ux%u spatialRequested=%d windowed=%ld",
+        original.BackBufferWidth,original.BackBufferHeight,
+        plan.deviceW,plan.deviceH,
+        plan.spatialRequested?1:0,
+        (long)original.Windowed);
 
     HRESULT hr=g_realReset(self,&actual);
     *pp=original;
+
+    if(FAILED(hr) && plan.spatialRequested)
+    {
+        // Spatial negotiation is allowed to fail soft, but PTAR itself must
+        // remain available. Retry the exact game resolution in native 1:1.
+        PtDiagLogA(
+            "RESET_SPATIAL_DEVICE_FAIL hr=0x%08lX retry=NATIVE_1X1",
+            (unsigned long)hr);
+        plan.spatialRequested=false;
+        plan.deviceW=original.BackBufferWidth;
+        plan.deviceH=original.BackBufferHeight;
+        PreparePTARPresentationParameters(original,plan,&actual);
+        hr=g_realReset(self,&actual);
+        *pp=original;
+    }
+
     if(FAILED(hr))
     {
-        Log(L"RESET_PTAR_TARGET_FAIL hr=0x%08X retry_native",(unsigned)hr);
-        hr=g_realReset(self,pp);
-        return hr;
+        // Last-resort game-compatible reset. This preserves the game even when
+        // the backend cannot virtualize an unusual presentation mode.
+        Log(L"RESET_PTAR_DEVICE_FAIL hr=0x%08X retry_exact_game",(unsigned)hr);
+        D3DPRESENT_PARAMETERS fallback=original;
+        return g_realReset(self,&fallback);
+    }
+
+    UINT sourceW=0,sourceH=0,outputW=0,outputH=0;
+    bool spatialActive=FinalizeCurrentResolutionPlan(
+        plan,self,&sourceW,&sourceH,&outputW,&outputH);
+
+    if(!sourceW || !sourceH || !outputW || !outputH)
+    {
+        Log(L"RESET_RESOLUTION_RESOLVE_FAIL retry_exact_game");
+        D3DPRESENT_PARAMETERS fallback=original;
+        HRESULT fallbackHr=g_realReset(self,&fallback);
+        *pp=original;
+        return fallbackHr;
     }
 
     hr=InitializePTARResources(
-        self,original.BackBufferWidth,original.BackBufferHeight,
-        outW,outH,original.EnableAutoDepthStencil,original.AutoDepthStencilFormat);
+        self,sourceW,sourceH,outputW,outputH,
+        spatialActive,
+        original.EnableAutoDepthStencil,
+        original.AutoDepthStencilFormat);
+
+    if(FAILED(hr) && spatialActive)
+    {
+        // Mirror the D3D11 UniversalSpatialPresenter contract: a spatial
+        // failure drops only x1.5 reconstruction, not the PTAR backend.
+        PtDiagLogA(
+            "RESET_SPATIAL_INIT_FAIL hr=0x%08lX retry=NATIVE_1X1",
+            (unsigned long)hr);
+
+        PTARResolutionPlan nativePlan=plan;
+        nativePlan.spatialRequested=false;
+        nativePlan.deviceW=original.BackBufferWidth;
+        nativePlan.deviceH=original.BackBufferHeight;
+        PreparePTARPresentationParameters(original,nativePlan,&actual);
+
+        HRESULT nativeResetHr=g_realReset(self,&actual);
+        *pp=original;
+        if(SUCCEEDED(nativeResetHr))
+        {
+            sourceW=sourceH=outputW=outputH=0;
+            spatialActive=FinalizeCurrentResolutionPlan(
+                nativePlan,self,&sourceW,&sourceH,&outputW,&outputH);
+            if(sourceW && sourceH && outputW && outputH)
+            {
+                hr=InitializePTARResources(
+                    self,sourceW,sourceH,outputW,outputH,
+                    spatialActive,
+                    original.EnableAutoDepthStencil,
+                    original.AutoDepthStencilFormat);
+            }
+            else
+            {
+                hr=E_FAIL;
+            }
+        }
+        else
+        {
+            hr=nativeResetHr;
+        }
+    }
+
     if(FAILED(hr))
     {
         D3DPRESENT_PARAMETERS fallback=original;
@@ -907,76 +1089,166 @@ static HRESULT STDMETHODCALLTYPE HookCreateDevice(
     D3DPRESENT_PARAMETERS* pp,IDirect3DDevice9** out)
 {
     PtDiagStage("HookCreateDevice_ENTER");
-    PtDiagLogA("CREATEDEVICE_CALL self=%p adapter=%u type=%u focus=%p flags=0x%08lX pp=%p out=%p",
+    PtDiagLogA(
+        "CREATEDEVICE_CALL self=%p adapter=%u type=%u focus=%p flags=0x%08lX pp=%p out=%p",
         self,adapter,(unsigned)type,focus,(unsigned long)flags,pp,out);
-    if(!pp || !out) return D3DERR_INVALIDCALL;
+
+    if(!pp || !out)
+        return D3DERR_INVALIDCALL;
     *out=0;
 
     const D3DPRESENT_PARAMETERS original=*pp;
     PtDiagLogA(
         "CREATEDEVICE_PP w=%u h=%u fmt=%u count=%u ms=%u msq=%lu swap=%u hwnd=%p windowed=%ld "
         "autodepth=%ld depthfmt=%u refresh=%u interval=0x%08lX",
-        original.BackBufferWidth,original.BackBufferHeight,(unsigned)original.BackBufferFormat,
-        original.BackBufferCount,(unsigned)original.MultiSampleType,(unsigned long)original.MultiSampleQuality,
-        (unsigned)original.SwapEffect,original.hDeviceWindow,(long)original.Windowed,
-        (long)original.EnableAutoDepthStencil,(unsigned)original.AutoDepthStencilFormat,
-        original.FullScreen_RefreshRateInHz,(unsigned long)original.PresentationInterval);
-    const bool eligible=!original.Windowed &&
-        original.BackBufferWidth>=2 && original.BackBufferHeight>=2 &&
-        (original.BackBufferWidth%2u)==0u && (original.BackBufferHeight%2u)==0u;
+        original.BackBufferWidth,original.BackBufferHeight,
+        (unsigned)original.BackBufferFormat,
+        original.BackBufferCount,
+        (unsigned)original.MultiSampleType,
+        (unsigned long)original.MultiSampleQuality,
+        (unsigned)original.SwapEffect,
+        original.hDeviceWindow,
+        (long)original.Windowed,
+        (long)original.EnableAutoDepthStencil,
+        (unsigned)original.AutoDepthStencilFormat,
+        original.FullScreen_RefreshRateInHz,
+        (unsigned long)original.PresentationInterval);
 
-    if(!eligible)
+    PtResolutionLoadConfig(g_self);
+
+    if(!g_ptarResolutionPolicy.enabled)
     {
-        Log(L"CREATEDEVICE_PASSTHROUGH windowed_or_invalid_geometry %ux%u",
-            original.BackBufferWidth,original.BackBufferHeight);
+        PtDiagLogA("CREATEDEVICE_PTAR_DISABLED_BY_CONFIG");
         return g_realCreateDevice(self,adapter,type,focus,flags,pp,out);
     }
 
-    const UINT outW=original.BackBufferWidth*3u/2u;
-    const UINT outH=original.BackBufferHeight*3u/2u;
-    D3DPRESENT_PARAMETERS actual=original;
-    actual.BackBufferWidth=outW;
-    actual.BackBufferHeight=outH;
-    actual.MultiSampleType=D3DMULTISAMPLE_NONE;
-    actual.MultiSampleQuality=0;
-    actual.EnableAutoDepthStencil=FALSE;
+    PTARResolutionPlan plan={};
+    PtResolutionBuildPlan(
+        original.BackBufferWidth,
+        original.BackBufferHeight,
+        &plan);
 
-    Log(L"CREATEDEVICE_PTAR_TRY src=%ux%u out=%ux%u",
-        original.BackBufferWidth,original.BackBufferHeight,outW,outH);
+    D3DPRESENT_PARAMETERS actual={};
+    PreparePTARPresentationParameters(original,plan,&actual);
 
-    PtDiagStage("HookCreateDevice_CallRealScaled");
-    PtDiagLogA("CREATEDEVICE_REAL_SCALED w=%u h=%u",actual.BackBufferWidth,actual.BackBufferHeight);
-    HRESULT hr=g_realCreateDevice(self,adapter,type,focus,flags,&actual,out);
-    PtDiagLogA("CREATEDEVICE_REAL_SCALED_RETURN hr=0x%08lX dev=%p",(unsigned long)hr,(out?*out:0));
+    PtDiagLogA(
+        "CREATEDEVICE_PLAN requested=%ux%u plannedDevice=%ux%u spatialRequested=%d windowed=%ld",
+        original.BackBufferWidth,original.BackBufferHeight,
+        plan.deviceW,plan.deviceH,
+        plan.spatialRequested?1:0,
+        (long)original.Windowed);
+
+    HRESULT hr=g_realCreateDevice(
+        self,adapter,type,focus,flags,&actual,out);
     *pp=original;
+
+    if((FAILED(hr) || !*out) && plan.spatialRequested)
+    {
+        // A spatial target failure must not disable PTAR/FG. Retry native 1:1.
+        PtDiagLogA(
+            "CREATEDEVICE_SPATIAL_DEVICE_FAIL hr=0x%08lX retry=NATIVE_1X1",
+            (unsigned long)hr);
+
+        plan.spatialRequested=false;
+        plan.deviceW=original.BackBufferWidth;
+        plan.deviceH=original.BackBufferHeight;
+        PreparePTARPresentationParameters(original,plan,&actual);
+
+        *out=0;
+        hr=g_realCreateDevice(
+            self,adapter,type,focus,flags,&actual,out);
+        *pp=original;
+    }
 
     if(FAILED(hr) || !*out)
     {
-        Log(L"CREATEDEVICE_PTAR_TARGET_FAIL hr=0x%08X retry_native",(unsigned)hr);
-        PtDiagStage("HookCreateDevice_CallRealNativeFallback");
-        hr=g_realCreateDevice(self,adapter,type,focus,flags,pp,out);
-        PtDiagLogA("CREATEDEVICE_REAL_NATIVE_RETURN hr=0x%08lX dev=%p",(unsigned long)hr,(out?*out:0));
+        // Preserve game compatibility if the virtual-target form itself is
+        // unsupported. This is the only path where PTAR cannot attach.
+        PtDiagLogA(
+            "CREATEDEVICE_VIRTUAL_TARGET_FAIL hr=0x%08lX retry=EXACT_GAME",
+            (unsigned long)hr);
+        *out=0;
+        D3DPRESENT_PARAMETERS fallback=original;
+        hr=g_realCreateDevice(
+            self,adapter,type,focus,flags,&fallback,out);
         *pp=original;
         return hr;
     }
 
-    PtDiagStage("HookCreateDevice_PreInit");
     IDirect3DDevice9* dev=*out;
-    PtDiagLogA("CREATEDEVICE_DEVICE_PTR dev=%p",dev);
     void** vt=*(void***)dev;
-    PtDiagLogA("CREATEDEVICE_DEVICE_VTABLE=%p",vt);
+    if(!vt)
+    {
+        *pp=original;
+        return S_OK;
+    }
+
     g_realGetDisplayMode=(PFN_GetDisplayMode)vt[8];
     g_realReset=(PFN_Reset)vt[16];
     g_realPresent=(PFN_Present)vt[17];
     g_realGetBackBuffer=(PFN_GetBackBuffer)vt[18];
     g_realSetRenderTarget=(PFN_SetRenderTarget)vt[37];
 
+    UINT sourceW=0,sourceH=0,outputW=0,outputH=0;
+    bool spatialActive=FinalizeCurrentResolutionPlan(
+        plan,dev,&sourceW,&sourceH,&outputW,&outputH);
+
+    if(!sourceW || !sourceH || !outputW || !outputH)
+    {
+        Log(L"CREATEDEVICE_RESOLUTION_RESOLVE_FAIL passthrough");
+        *pp=original;
+        return S_OK;
+    }
+
     hr=InitializePTARResources(
-        dev,original.BackBufferWidth,original.BackBufferHeight,
-        outW,outH,original.EnableAutoDepthStencil,original.AutoDepthStencilFormat);
+        dev,sourceW,sourceH,outputW,outputH,
+        spatialActive,
+        original.EnableAutoDepthStencil,
+        original.AutoDepthStencilFormat);
+
+    if(FAILED(hr) && spatialActive)
+    {
+        // If only the x1.5 path fails, recreate the presentation domain at the
+        // game's requested resolution and keep PTAR active in native 1:1.
+        PtDiagLogA(
+            "CREATEDEVICE_SPATIAL_INIT_FAIL hr=0x%08lX retry=NATIVE_1X1",
+            (unsigned long)hr);
+
+        PTARResolutionPlan nativePlan=plan;
+        nativePlan.spatialRequested=false;
+        nativePlan.deviceW=original.BackBufferWidth;
+        nativePlan.deviceH=original.BackBufferHeight;
+        PreparePTARPresentationParameters(original,nativePlan,&actual);
+
+        HRESULT resetHr=g_realReset(dev,&actual);
+        *pp=original;
+        if(SUCCEEDED(resetHr))
+        {
+            sourceW=sourceH=outputW=outputH=0;
+            spatialActive=FinalizeCurrentResolutionPlan(
+                nativePlan,dev,&sourceW,&sourceH,&outputW,&outputH);
+            if(sourceW && sourceH && outputW && outputH)
+            {
+                hr=InitializePTARResources(
+                    dev,sourceW,sourceH,outputW,outputH,
+                    spatialActive,
+                    original.EnableAutoDepthStencil,
+                    original.AutoDepthStencilFormat);
+            }
+            else
+            {
+                hr=E_FAIL;
+            }
+        }
+        else
+        {
+            hr=resetHr;
+        }
+    }
 
     if(FAILED(hr))
     {
+        // Keep the created game device alive even when PTAR resources fail.
         D3DPRESENT_PARAMETERS fallback=original;
         HRESULT resetHr=g_realReset(dev,&fallback);
         Log(L"CREATEDEVICE_PTAR_INIT_FAIL native_reset=0x%08X",(unsigned)resetHr);
@@ -994,6 +1266,7 @@ static HRESULT STDMETHODCALLTYPE HookCreateDevice(
         return S_OK;
     }
 
+    *pp=original;
     return S_OK;
 }
 
