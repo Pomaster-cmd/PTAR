@@ -62,13 +62,20 @@ static void PtResolutionLoadConfig(HMODULE selfModule)
 static bool PtResolutionSpatialRequested(UINT requestedW,UINT requestedH)
 {
     if(!g_ptarResolutionPolicy.enabled ||
-       !g_ptarResolutionPolicy.universalSpatialPresenter)
+       !g_ptarResolutionPolicy.universalSpatialPresenter ||
+       !requestedW || !requestedH ||
+       !g_ptarResolutionPolicy.outputW ||
+       !g_ptarResolutionPolicy.outputH)
         return false;
 
-    return requestedW==g_ptarResolutionPolicy.renderW &&
-           requestedH==g_ptarResolutionPolicy.renderH &&
-           g_ptarResolutionPolicy.outputW>0 &&
-           g_ptarResolutionPolicy.outputH>0;
+    // Match the production USR contract: the game owns its render resolution.
+    // Any render domain that fits below the configured/native output can use
+    // PTAR spatial reconstruction. Exact native output is the 1:1 fast path.
+    return
+        requestedW<=g_ptarResolutionPolicy.outputW &&
+        requestedH<=g_ptarResolutionPolicy.outputH &&
+        (requestedW<g_ptarResolutionPolicy.outputW ||
+         requestedH<g_ptarResolutionPolicy.outputH);
 }
 
 static bool PtResolutionExactScale15(
@@ -84,6 +91,48 @@ static bool PtResolutionExactScale15(
          (unsigned long long)sourceH*3ull);
 }
 
+struct PTARPresentationRect
+{
+    UINT x;
+    UINT y;
+    UINT width;
+    UINT height;
+};
+
+static PTARPresentationRect PtResolutionAspectFit(
+    UINT sourceW,UINT sourceH,
+    UINT outputW,UINT outputH)
+{
+    PTARPresentationRect r={0,0,outputW,outputH};
+    if(!sourceW || !sourceH || !outputW || !outputH)
+        return r;
+
+    const unsigned long long lhs=
+        (unsigned long long)outputW*(unsigned long long)sourceH;
+    const unsigned long long rhs=
+        (unsigned long long)outputH*(unsigned long long)sourceW;
+
+    if(lhs<=rhs)
+    {
+        r.width=outputW;
+        r.height=(UINT)(
+            ((unsigned long long)sourceH*(unsigned long long)outputW)/
+            (unsigned long long)sourceW);
+    }
+    else
+    {
+        r.height=outputH;
+        r.width=(UINT)(
+            ((unsigned long long)sourceW*(unsigned long long)outputH)/
+            (unsigned long long)sourceH);
+    }
+
+    if(!r.width) r.width=1;
+    if(!r.height) r.height=1;
+    r.x=(outputW-r.width)/2u;
+    r.y=(outputH-r.height)/2u;
+    return r;
+}
 
 struct PTARResolutionPlan
 {
@@ -127,22 +176,20 @@ static bool PtResolutionFinalizePlan(
 
     const bool spatialActive=
         plan->spatialRequested &&
+        plan->requestedW>0 &&
+        plan->requestedH>0 &&
         resolvedDeviceW==g_ptarResolutionPolicy.outputW &&
-        resolvedDeviceH==g_ptarResolutionPolicy.outputH &&
-        PtResolutionExactScale15(
-            g_ptarResolutionPolicy.renderW,
-            g_ptarResolutionPolicy.renderH,
-            resolvedDeviceW,resolvedDeviceH);
+        resolvedDeviceH==g_ptarResolutionPolicy.outputH;
 
     if(spatialActive)
     {
-        *sourceW=g_ptarResolutionPolicy.renderW;
-        *sourceH=g_ptarResolutionPolicy.renderH;
+        *sourceW=plan->requestedW;
+        *sourceH=plan->requestedH;
     }
     else
     {
         // Native 1:1 mode: keep the backend/presenter/FG active while spatial
-        // reconstruction is bypassed. This is the production D3D11 contract.
+        // reconstruction is bypassed.
         *sourceW=resolvedDeviceW;
         *sourceH=resolvedDeviceH;
     }
