@@ -1349,6 +1349,54 @@ restore_game_state:
     return result;
 }
 
+static HRESULT STDMETHODCALLTYPE HookBeginScene(
+    IDirect3DDevice9* self)
+{
+    const bool gate=
+        g_ptar.active &&
+        self==g_ptar.device &&
+        !g_ptar.inPresent;
+
+    if(gate)
+    {
+        PtAsyncEnterDevice();
+        g_ptarGameSceneThread=GetCurrentThreadId();
+        InterlockedExchange(&g_ptarGameSceneGateHeld,1);
+    }
+
+    HRESULT hr=g_realBeginScene?
+        g_realBeginScene(self):
+        D3DERR_INVALIDCALL;
+
+    if(FAILED(hr) && gate)
+    {
+        InterlockedExchange(&g_ptarGameSceneGateHeld,0);
+        g_ptarGameSceneThread=0;
+        PtAsyncLeaveDevice();
+    }
+
+    return hr;
+}
+
+static HRESULT STDMETHODCALLTYPE HookEndScene(
+    IDirect3DDevice9* self)
+{
+    HRESULT hr=g_realEndScene?
+        g_realEndScene(self):
+        D3DERR_INVALIDCALL;
+
+    if(InterlockedCompareExchange(
+           &g_ptarGameSceneGateHeld,1,1)!=0 &&
+       g_ptarGameSceneThread==GetCurrentThreadId())
+    {
+        InterlockedExchange(&g_ptarGameSceneGateHeld,0);
+        g_ptarGameSceneThread=0;
+        PtAsyncLeaveDevice();
+    }
+
+    return hr;
+}
+
 static HRESULT STDMETHODCALLTYPE HookReset(
     IDirect3DDevice9* self,
     D3DPRESENT_PARAMETERS* pp)
@@ -1518,10 +1566,21 @@ static bool HookDevice(IDirect3DDevice9* dev)
         return false;
     if(old!=(void*)&HookSetRenderTarget) g_realSetRenderTarget=(PFN_SetRenderTarget)old;
 
+    old=0;
+    if(!PatchVtableSlot(dev,41,(void*)&HookBeginScene,&old,"Device.BeginScene"))
+        return false;
+    if(old!=(void*)&HookBeginScene) g_realBeginScene=(PFN_BeginScene)old;
+
+    old=0;
+    if(!PatchVtableSlot(dev,42,(void*)&HookEndScene,&old,"Device.EndScene"))
+        return false;
+    if(old!=(void*)&HookEndScene) g_realEndScene=(PFN_EndScene)old;
+
     PtDiagStage("HookDevice_DONE");
-    PtDiagLogA("HOOK_DEVICE_DONE vtable=%p present=%p reset=%p getbb=%p setrt=%p",
+    PtDiagLogA("HOOK_DEVICE_DONE vtable=%p present=%p reset=%p getbb=%p setrt=%p begin=%p end=%p",
         vt,(void*)g_realPresent,(void*)g_realReset,
-        (void*)g_realGetBackBuffer,(void*)g_realSetRenderTarget);
+        (void*)g_realGetBackBuffer,(void*)g_realSetRenderTarget,
+        (void*)g_realBeginScene,(void*)g_realEndScene);
     return true;
 }
 
@@ -1640,6 +1699,8 @@ static HRESULT STDMETHODCALLTYPE HookCreateDevice(
     g_realPresent=(PFN_Present)vt[17];
     g_realGetBackBuffer=(PFN_GetBackBuffer)vt[18];
     g_realSetRenderTarget=(PFN_SetRenderTarget)vt[37];
+    g_realBeginScene=(PFN_BeginScene)vt[41];
+    g_realEndScene=(PFN_EndScene)vt[42];
 
     UINT sourceW=0,sourceH=0,outputW=0,outputH=0;
     bool spatialActive=FinalizeCurrentResolutionPlan(
