@@ -24,6 +24,7 @@
 #include <cstdarg>
 #include <cstring>
 #include "ptar_ps_bytecode.h"
+#include "ptar_diag.h"
 
 static HMODULE g_self=0;
 static HMODULE g_realD3D9=0;
@@ -76,44 +77,35 @@ static PTARContext g_ptar={};
 
 static void Log(const wchar_t* fmt,...)
 {
-    wchar_t line[1024]={0};
     va_list ap;
     va_start(ap,fmt);
-    _vsnwprintf_s(line,_countof(line),_TRUNCATE,fmt,ap);
+    PtDiagVLogW(fmt,ap);
     va_end(ap);
-
-    wchar_t mod[MAX_PATH]={0};
-    if(!g_self || !GetModuleFileNameW(g_self,mod,_countof(mod)))
-        return;
-    wchar_t* slash=wcsrchr(mod,L'\\');
-    if(slash) *(slash+1)=0;
-    wcscat_s(mod,L"PTAR_X86_D3D9.log");
-
-    FILE* f=0;
-    if(_wfopen_s(&f,mod,L"a+, ccs=UTF-8")==0 && f)
-    {
-        SYSTEMTIME st={};
-        GetLocalTime(&st);
-        fwprintf(f,L"%04u-%02u-%02u %02u:%02u:%02u %s\n",
-            st.wYear,st.wMonth,st.wDay,st.wHour,st.wMinute,st.wSecond,line);
-        fclose(f);
-    }
 }
 
 static bool EnsureRealD3D9()
 {
-    if(g_realD3D9) return true;
+    PtDiagStage("EnsureRealD3D9_ENTER");
+    if(g_realD3D9)
+    {
+        PtDiagLogA("REAL_D3D9_ALREADY_LOADED module=%p",g_realD3D9);
+        return true;
+    }
 
     wchar_t sys[MAX_PATH]={0};
     UINT n=GetSystemDirectoryW(sys,_countof(sys));
     if(!n || n>=_countof(sys)) return false;
     wcscat_s(sys,L"\\d3d9.dll");
 
+    PtDiagStage("EnsureRealD3D9_LoadLibrary");
     g_realD3D9=LoadLibraryW(sys);
+    PtDiagLogA("REAL_D3D9_LOAD result=%p gle=%lu",g_realD3D9,(unsigned long)GetLastError());
     if(!g_realD3D9) return false;
 
     g_sysDirect3DCreate9=(PFN_Direct3DCreate9)GetProcAddress(g_realD3D9,"Direct3DCreate9");
     g_sysDirect3DCreate9Ex=(PFN_Direct3DCreate9Ex)GetProcAddress(g_realD3D9,"Direct3DCreate9Ex");
+    PtDiagLogA("REAL_D3D9_EXPORTS create9=%p create9ex=%p",
+        (void*)g_sysDirect3DCreate9,(void*)g_sysDirect3DCreate9Ex);
     return g_sysDirect3DCreate9!=0;
 }
 
@@ -153,6 +145,9 @@ static HRESULT InitializePTARResources(
     BOOL originalAutoDepth,
     D3DFORMAT originalDepthFormat)
 {
+    PtDiagStage("InitializePTARResources_ENTER");
+    PtDiagLogA("INIT_RESOURCES dev=%p src=%ux%u out=%ux%u autoDepth=%ld depthFmt=%u",
+        dev,sourceW,sourceH,outputW,outputH,(long)originalAutoDepth,(unsigned)originalDepthFormat);
     ReleasePTARResources();
 
     g_ptar.device=dev;
@@ -164,40 +159,60 @@ static HRESULT InitializePTARResources(
     g_ptar.depthFormat=originalDepthFormat;
 
     D3DSURFACE_DESC desc={};
+    PtDiagStage("Initialize_GetRealBackBuffer");
     HRESULT hr=g_realGetBackBuffer(dev,0,0,D3DBACKBUFFER_TYPE_MONO,&g_ptar.realBackBuffer);
+    PtDiagLogA("INIT_GetBackBuffer hr=0x%08lX ptr=%p",(unsigned long)hr,g_ptar.realBackBuffer);
     if(FAILED(hr) || !g_ptar.realBackBuffer) goto fail;
 
+    PtDiagStage("Initialize_BackBufferGetDesc");
     hr=g_ptar.realBackBuffer->GetDesc(&desc);
+    PtDiagLogA("INIT_GetDesc hr=0x%08lX w=%u h=%u fmt=%u ms=%u q=%lu",
+        (unsigned long)hr,desc.Width,desc.Height,(unsigned)desc.Format,
+        (unsigned)desc.MultiSampleType,(unsigned long)desc.MultiSampleQuality);
     if(FAILED(hr)) goto fail;
     g_ptar.outputFormat=desc.Format;
 
+    PtDiagStage("Initialize_CreateSourceTexture");
     hr=dev->CreateTexture(
         sourceW,sourceH,1,D3DUSAGE_RENDERTARGET,
         desc.Format,D3DPOOL_DEFAULT,&g_ptar.sourceTexture,0);
+    PtDiagLogA("INIT_CreateTexture hr=0x%08lX ptr=%p",(unsigned long)hr,g_ptar.sourceTexture);
     if(FAILED(hr) || !g_ptar.sourceTexture) goto fail;
 
+    PtDiagStage("Initialize_GetSourceSurface");
     hr=g_ptar.sourceTexture->GetSurfaceLevel(0,&g_ptar.sourceSurface);
+    PtDiagLogA("INIT_GetSurfaceLevel hr=0x%08lX ptr=%p",(unsigned long)hr,g_ptar.sourceSurface);
     if(FAILED(hr) || !g_ptar.sourceSurface) goto fail;
 
     if(originalAutoDepth)
     {
+        PtDiagStage("Initialize_CreateVirtualDepth");
         hr=dev->CreateDepthStencilSurface(
             sourceW,sourceH,originalDepthFormat,
             D3DMULTISAMPLE_NONE,0,TRUE,&g_ptar.virtualDepth,0);
+        PtDiagLogA("INIT_CreateDepth hr=0x%08lX ptr=%p",(unsigned long)hr,g_ptar.virtualDepth);
         if(FAILED(hr) || !g_ptar.virtualDepth) goto fail;
     }
 
+    PtDiagStage("Initialize_CreatePixelShader");
     hr=dev->CreatePixelShader((const DWORD*)g_ptarPs,&g_ptar.shader);
+    PtDiagLogA("INIT_CreatePixelShader hr=0x%08lX ptr=%p",(unsigned long)hr,g_ptar.shader);
     if(FAILED(hr) || !g_ptar.shader) goto fail;
 
+    PtDiagStage("Initialize_CreateStateBlock");
     hr=dev->CreateStateBlock(D3DSBT_ALL,&g_ptar.stateBlock);
+    PtDiagLogA("INIT_CreateStateBlock hr=0x%08lX ptr=%p",(unsigned long)hr,g_ptar.stateBlock);
     if(FAILED(hr) || !g_ptar.stateBlock) goto fail;
 
+    PtDiagStage("Initialize_BindVirtualTargets");
     hr=dev->SetRenderTarget(0,g_ptar.sourceSurface);
+    PtDiagLogA("INIT_SetRenderTarget hr=0x%08lX",(unsigned long)hr);
     if(FAILED(hr)) goto fail;
     hr=dev->SetDepthStencilSurface(g_ptar.virtualDepth);
+    PtDiagLogA("INIT_SetDepthStencil hr=0x%08lX",(unsigned long)hr);
     if(FAILED(hr)) goto fail;
     hr=SetVirtualViewport(dev);
+    PtDiagLogA("INIT_SetViewport hr=0x%08lX",(unsigned long)hr);
     if(FAILED(hr)) goto fail;
 
     g_ptar.active=true;
@@ -396,6 +411,8 @@ static HRESULT STDMETHODCALLTYPE HookReset(IDirect3DDevice9* self,D3DPRESENT_PAR
 
 static bool HookDevice(IDirect3DDevice9* dev)
 {
+    PtDiagStage("HookDevice_ENTER");
+    PtDiagLogA("HOOK_DEVICE dev=%p",dev);
     if(!dev) return false;
     if(g_ptar.device && g_ptar.device!=dev)
     {
@@ -403,7 +420,9 @@ static bool HookDevice(IDirect3DDevice9* dev)
         return false;
     }
 
+    PtDiagStage("HookDevice_CloneVtable");
     void** old=CloneVtable(dev,119);
+    PtDiagLogA("HOOK_DEVICE_VTABLE old=%p new=%p",old,dev?*(void***)dev:0);
     if(!old) return false;
 
     g_realGetDisplayMode=(PFN_GetDisplayMode)old[8];
@@ -418,6 +437,9 @@ static bool HookDevice(IDirect3DDevice9* dev)
     now[17]=(void*)&HookPresent;
     now[18]=(void*)&HookGetBackBuffer;
     now[37]=(void*)&HookSetRenderTarget;
+    PtDiagStage("HookDevice_DONE");
+    PtDiagLogA("HOOK_DEVICE_DONE present=%p reset=%p getbb=%p setrt=%p",
+        (void*)g_realPresent,(void*)g_realReset,(void*)g_realGetBackBuffer,(void*)g_realSetRenderTarget);
     return true;
 }
 
@@ -425,10 +447,21 @@ static HRESULT STDMETHODCALLTYPE HookCreateDevice(
     IDirect3D9* self,UINT adapter,D3DDEVTYPE type,HWND focus,DWORD flags,
     D3DPRESENT_PARAMETERS* pp,IDirect3DDevice9** out)
 {
+    PtDiagStage("HookCreateDevice_ENTER");
+    PtDiagLogA("CREATEDEVICE_CALL self=%p adapter=%u type=%u focus=%p flags=0x%08lX pp=%p out=%p",
+        self,adapter,(unsigned)type,focus,(unsigned long)flags,pp,out);
     if(!pp || !out) return D3DERR_INVALIDCALL;
     *out=0;
 
     const D3DPRESENT_PARAMETERS original=*pp;
+    PtDiagLogA(
+        "CREATEDEVICE_PP w=%u h=%u fmt=%u count=%u ms=%u msq=%lu swap=%u hwnd=%p windowed=%ld "
+        "autodepth=%ld depthfmt=%u refresh=%u interval=0x%08lX",
+        original.BackBufferWidth,original.BackBufferHeight,(unsigned)original.BackBufferFormat,
+        original.BackBufferCount,(unsigned)original.MultiSampleType,(unsigned long)original.MultiSampleQuality,
+        (unsigned)original.SwapEffect,original.hDeviceWindow,(long)original.Windowed,
+        (long)original.EnableAutoDepthStencil,(unsigned)original.AutoDepthStencilFormat,
+        original.FullScreen_RefreshRateInHz,(unsigned long)original.PresentationInterval);
     const bool eligible=!original.Windowed &&
         original.BackBufferWidth>=2 && original.BackBufferHeight>=2 &&
         (original.BackBufferWidth%2u)==0u && (original.BackBufferHeight%2u)==0u;
@@ -452,19 +485,27 @@ static HRESULT STDMETHODCALLTYPE HookCreateDevice(
     Log(L"CREATEDEVICE_PTAR_TRY src=%ux%u out=%ux%u",
         original.BackBufferWidth,original.BackBufferHeight,outW,outH);
 
+    PtDiagStage("HookCreateDevice_CallRealScaled");
+    PtDiagLogA("CREATEDEVICE_REAL_SCALED w=%u h=%u",actual.BackBufferWidth,actual.BackBufferHeight);
     HRESULT hr=g_realCreateDevice(self,adapter,type,focus,flags,&actual,out);
+    PtDiagLogA("CREATEDEVICE_REAL_SCALED_RETURN hr=0x%08lX dev=%p",(unsigned long)hr,(out?*out:0));
     *pp=original;
 
     if(FAILED(hr) || !*out)
     {
         Log(L"CREATEDEVICE_PTAR_TARGET_FAIL hr=0x%08X retry_native",(unsigned)hr);
+        PtDiagStage("HookCreateDevice_CallRealNativeFallback");
         hr=g_realCreateDevice(self,adapter,type,focus,flags,pp,out);
+        PtDiagLogA("CREATEDEVICE_REAL_NATIVE_RETURN hr=0x%08lX dev=%p",(unsigned long)hr,(out?*out:0));
         *pp=original;
         return hr;
     }
 
+    PtDiagStage("HookCreateDevice_PreInit");
     IDirect3DDevice9* dev=*out;
+    PtDiagLogA("CREATEDEVICE_DEVICE_PTR dev=%p",dev);
     void** vt=*(void***)dev;
+    PtDiagLogA("CREATEDEVICE_DEVICE_VTABLE=%p",vt);
     g_realGetDisplayMode=(PFN_GetDisplayMode)vt[8];
     g_realReset=(PFN_Reset)vt[16];
     g_realPresent=(PFN_Present)vt[17];
@@ -499,24 +540,39 @@ static HRESULT STDMETHODCALLTYPE HookCreateDevice(
 
 static bool HookD3D9(IDirect3D9* d3d)
 {
+    PtDiagStage("HookD3D9_ENTER");
+    PtDiagLogA("HOOK_D3D9 object=%p",d3d);
     if(!d3d) return false;
     void** old=CloneVtable(d3d,17);
     if(!old) return false;
     g_realCreateDevice=(PFN_CreateDevice)old[16];
     void** now=*(void***)d3d;
+    PtDiagLogA("HOOK_D3D9_VTABLE old=%p new=%p createDevice=%p",old,now,(void*)g_realCreateDevice);
     now[16]=(void*)&HookCreateDevice;
+    PtDiagStage("HookD3D9_DONE");
     return true;
 }
 
 extern "C" __declspec(dllexport) IDirect3D9* WINAPI Direct3DCreate9(UINT sdk)
 {
-    if(!EnsureRealD3D9()) return 0;
+    PtDiagStage("Direct3DCreate9_ENTER");
+    PtDiagLogA("Direct3DCreate9 sdk=%u",sdk);
+    if(!EnsureRealD3D9())
+    {
+        PtDiagLogA("Direct3DCreate9 real runtime unavailable");
+        return 0;
+    }
+    PtDiagStage("Direct3DCreate9_CallReal");
     IDirect3D9* d3d=g_sysDirect3DCreate9(sdk);
+    PtDiagLogA("Direct3DCreate9 real returned=%p",d3d);
     if(d3d)
     {
-        HookD3D9(d3d);
+        PtDiagStage("Direct3DCreate9_HookObject");
+        const bool hooked=HookD3D9(d3d);
+        PtDiagLogA("Direct3DCreate9 hook_result=%d",hooked?1:0);
         Log(L"PROXY_LOADED arch=x86 api=D3D9");
     }
+    PtDiagStage("Direct3DCreate9_RETURN");
     return d3d;
 }
 
@@ -586,7 +642,10 @@ BOOL WINAPI DllMain(HINSTANCE h,DWORD reason,LPVOID)
     if(reason==DLL_PROCESS_ATTACH)
     {
         g_self=h;
+        PtDiagInit(h);
+        PtDiagStage("DllMain_PROCESS_ATTACH");
         DisableThreadLibraryCalls(h);
+        PtDiagLogA("DLL_ATTACH_COMPLETE");
     }
     return TRUE;
 }
