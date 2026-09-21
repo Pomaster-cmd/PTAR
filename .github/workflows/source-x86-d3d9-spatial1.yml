@@ -277,6 +277,7 @@ jobs:
           } else {
             throw "regular D3D9 to D3D9Ex probe failed unexpectedly rc=$rc"
           }
+          $global:LASTEXITCODE=0
 
       - name: Probe regular D3D9 swapchain Present DONOTWAIT isolation
         shell: pwsh
@@ -296,6 +297,7 @@ jobs:
           } else {
             Write-Host "D3D9_SWAPCHAIN_DONOTWAIT=UNSUITABLE rc=$rc"
           }
+          $global:LASTEXITCODE=0
 
       - name: Probe D3D9Ex managed-pool compatibility
         shell: pwsh
