@@ -1,0 +1,36 @@
+PTAR X86/D3D9 SPATIAL2 HUDCOMPARE1 — FIELD VALIDATION
+=====================================================
+
+Date: 2026-09-21
+Target: Tom Clancy's Splinter Cell: Conviction
+Executable class: x86 / Direct3D 9
+Branch: SOURCE
+
+Validated on real hardware by user:
+- game launches with PTAR x86/D3D9 proxy
+- VTABLEFIX2 prevents prior General Protection Faults
+- PTAR spatial path is active
+- native PTAR HUD is visible
+- FPS display works
+- source/output resolution display works
+- F6 toggles PTAR MoE <-> bilinear reference
+- F8 HUD toggle works
+- A/B comparison is usable in-game
+
+Validated build:
+PTAR_X86_D3D9_SPATIAL2_HUDCOMPARE1_VTABLEFIX2_CRASHLOG1_CONVICTION_TEST.zip
+
+Package SHA-256:
+e76905ab557883692ec22874cba1525cc9014cf986a16734a501e03748cdeb38
+
+Runtime d3d9.dll SHA-256:
+46c6a5c90c954c2a2ce6046d1c7e5ab6c9c198633edea6cd4c522672c7977e97
+
+Scope:
+This validates the x86/D3D9 compatibility frontend and spatial/HUD/A-B path on
+Conviction. It does not yet validate the production frame-generation or recorder
+stack on x86/D3D9.
+
+Next development gate:
+Port frame generation to the x86/D3D9 frontend while preserving this validated
+spatial/HUD baseline and without changing main.
