@@ -228,7 +228,3 @@ static unsigned long PtFgPacerLateSkipCount()
     return g_ptarFgPacer.generatedLateSkips;
 }
 
-static unsigned long PtFgPacerResyncCount()
-{
-    return g_ptarFgPacer.resyncs;
-}
