@@ -11,7 +11,7 @@ struct PTARRollingRate
     bool initialized;
 };
 
-static void PtRollingRateInit(PTARRollingRate* rate)
+inline void PtRollingRateInit(PTARRollingRate* rate)
 {
     if(!rate || rate->initialized)
         return;
@@ -25,7 +25,7 @@ static void PtRollingRateInit(PTARRollingRate* rate)
     rate->initialized=true;
 }
 
-static void PtRollingRateReset(PTARRollingRate* rate)
+inline void PtRollingRateReset(PTARRollingRate* rate)
 {
     if(!rate)
         return;
@@ -37,7 +37,7 @@ static void PtRollingRateReset(PTARRollingRate* rate)
         rate->stamps[i]=0;
 }
 
-static void PtRollingRateRecordAt(PTARRollingRate* rate,LONGLONG qpc)
+inline void PtRollingRateRecordAt(PTARRollingRate* rate,LONGLONG qpc)
 {
     if(!rate)
         return;
@@ -50,19 +50,19 @@ static void PtRollingRateRecordAt(PTARRollingRate* rate,LONGLONG qpc)
         ++rate->count;
 }
 
-static LONGLONG PtRollingRateNow()
+inline LONGLONG PtRollingRateNow()
 {
     LARGE_INTEGER now={};
     QueryPerformanceCounter(&now);
     return now.QuadPart;
 }
 
-static void PtRollingRateRecord(PTARRollingRate* rate)
+inline void PtRollingRateRecord(PTARRollingRate* rate)
 {
     PtRollingRateRecordAt(rate,PtRollingRateNow());
 }
 
-static double PtRollingRateValueAt(
+inline double PtRollingRateValueAt(
     const PTARRollingRate* rate,
     LONGLONG now)
 {
@@ -107,7 +107,7 @@ static double PtRollingRateValueAt(
         (double)elapsed;
 }
 
-static double PtRollingRateValue(const PTARRollingRate* rate)
+inline double PtRollingRateValue(const PTARRollingRate* rate)
 {
     return PtRollingRateValueAt(rate,PtRollingRateNow());
 }
