@@ -163,6 +163,12 @@ static void ReleasePTARResources()
     g_ptar.active=false;
     g_ptar.spatialActive=false;
     g_ptar.previousRealValid=false;
+
+    // The async presenter owns mailbox textures and an AddRef on the real
+    // backbuffer. Stop it before releasing any PTAR/default-pool resources or
+    // issuing Reset.
+    PtAsyncPresenterReleaseResources();
+
     if(g_ptar.stateBlock){g_ptar.stateBlock->Release();g_ptar.stateBlock=0;}
 
     if(g_ptar.fgInterpolateShader){g_ptar.fgInterpolateShader->Release();g_ptar.fgInterpolateShader=0;}
@@ -193,6 +199,9 @@ static void ReleasePTARResources()
     g_ptar.sourceW=g_ptar.sourceH=g_ptar.outputW=g_ptar.outputH=0;
     g_ptar.motionCoarseW=g_ptar.motionCoarseH=0;
     g_ptar.motionFineW=g_ptar.motionFineH=0;
+    g_ptar.outputRefreshHz=0;
+    g_ptar.sourceSequence=0;
+    g_ptar.fgGenerationBudget=0.0;
 }
 
 static HRESULT CreateRenderTexture(
