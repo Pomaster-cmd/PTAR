@@ -40,11 +40,21 @@ static HRESULT DrawOverlay(
     hr=dev->SetViewport(&vp);
     if(FAILED(hr)) return hr;
 
+    // Match the runtime D3D9 adaptation: the production D3D11 HUD owns its
+    // overlay pipeline state, so inherited hostile game state must be neutralized.
     dev->SetRenderState(D3DRS_ZENABLE,FALSE);
     dev->SetRenderState(D3DRS_ZWRITEENABLE,FALSE);
+    dev->SetRenderState(D3DRS_STENCILENABLE,FALSE);
+    dev->SetRenderState(D3DRS_ALPHATESTENABLE,FALSE);
     dev->SetRenderState(D3DRS_ALPHABLENDENABLE,FALSE);
+    dev->SetRenderState(D3DRS_SEPARATEALPHABLENDENABLE,FALSE);
+    dev->SetRenderState(D3DRS_FOGENABLE,FALSE);
+    dev->SetRenderState(D3DRS_CLIPPLANEENABLE,0);
+    dev->SetRenderState(D3DRS_CLIPPING,FALSE);
     dev->SetRenderState(D3DRS_CULLMODE,D3DCULL_NONE);
+    dev->SetRenderState(D3DRS_FILLMODE,D3DFILL_SOLID);
     dev->SetRenderState(D3DRS_SCISSORTESTENABLE,FALSE);
+    dev->SetRenderState(D3DRS_SRGBWRITEENABLE,FALSE);
     dev->SetRenderState(D3DRS_COLORWRITEENABLE,0xF);
 
     hr=dev->SetPixelShaderConstantF(0,constants,constantCount);
