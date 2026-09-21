@@ -289,6 +289,9 @@ static void PtGw16FeedbackPanel(
     D3DCOLOR bg,
     D3DCOLOR fg)
 {
+    (void)b;
+    (void)c;
+
     if(!dev || type==0)
         return;
 
