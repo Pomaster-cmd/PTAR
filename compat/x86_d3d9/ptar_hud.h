@@ -326,136 +326,118 @@ static void PtHudDraw(
     if(!g_ptarHudVisible && !statusActive)
         return;
 
-    const int x=14;
-    const int y=14;
     const int scale=2;
-    const int lineStep=17;
+    const D3DCOLOR bgColor=D3DCOLOR_XRGB(3,3,5);
+    const D3DCOLOR fgColor=D3DCOLOR_XRGB(235,245,255);
     char line[160]={0};
 
-    const bool spatial15=PtResolutionExactScale15(
-        sourceW,sourceH,outputW,outputH);
-
+    // Main HUD mirrors the compact production GW16I HUD contract recovered
+    // from the model runtime: title, one FPS value, game render resolution and
+    // active reconstruction filter. Do not expand this block with debug
+    // counters; detailed diagnostics belong to F8/log telemetry.
     if(g_ptarHudVisible)
     {
-        D3DRECT bg={8,8,700,160};
+        const int x=32;
+        const int y=32;
+        const int lineStep=32;
+
+        D3DRECT bg={16,16,680,176};
         dev->Clear(
             1,&bg,D3DCLEAR_TARGET,
-            D3DCOLOR_XRGB(8,8,8),
-            1.0f,0);
+            bgColor,1.0f,0);
 
         PtHudDrawLine(
             dev,x,y,scale,
-            "PTAR X86 D3D9 PRODPORT",
-            D3DCOLOR_XRGB(240,240,240));
+            "WIN81 USR V0.41",
+            fgColor);
 
         _snprintf_s(
             line,sizeof(line),_TRUNCATE,
-            "MODE: %s",
-            spatial15?
-                (g_ptarHudUseMoe?"PTAR MOE X1.5":"BILINEAR X1.5"):
-                "NATIVE 1X1");
+            "FPS    %.0f",
+            PtHudDisplayFps(fgProducing));
         PtHudDrawLine(
             dev,x,y+lineStep,scale,line,
-            spatial15?
-                (g_ptarHudUseMoe?
-                    D3DCOLOR_XRGB(70,255,120):
-                    D3DCOLOR_XRGB(255,210,70)):
-                D3DCOLOR_XRGB(180,220,255));
+            fgColor);
 
         _snprintf_s(
             line,sizeof(line),_TRUNCATE,
-            "SRC: %uX%u > OUT: %uX%u",
-            sourceW,sourceH,outputW,outputH);
+            "RES.   %uX%u",
+            sourceW,sourceH);
         PtHudDrawLine(
             dev,x,y+lineStep*2,scale,line,
-            D3DCOLOR_XRGB(220,220,220));
+            fgColor);
+
+        const bool spatial=
+            sourceW!=outputW || sourceH!=outputH;
+        const PTARPresentationRect fit=PtResolutionAspectFit(
+            sourceW,sourceH,outputW,outputH);
+        const bool exact15=
+            spatial &&
+            PtResolutionExactScale15(
+                sourceW,sourceH,
+                fit.width,fit.height);
+
+        const char* filterName="COPY 1X1";
+        if(spatial)
+        {
+            if(!g_ptarHudUseMoe)
+                filterName="BILINEAR";
+            else if(exact15)
+                filterName="PTAR X15";
+            else
+                filterName="PTAR";
+        }
 
         _snprintf_s(
             line,sizeof(line),_TRUNCATE,
-            "REAL FPS: %.1f  DISPLAY FPS: %.1f",
-            PtHudRealFps(),PtHudDisplayFps(fgProducing));
+            "FILTER %s",
+            filterName);
         PtHudDrawLine(
             dev,x,y+lineStep*3,scale,line,
-            D3DCOLOR_XRGB(220,220,220));
+            fgColor);
+    }
+
+    // F8 remains a transient production-style notice rather than growing the
+    // permanent HUD. It intentionally carries diagnostics that were removed
+    // from the compact main block.
+    if(statusActive)
+    {
+        const int sx=32;
+        const int sy=g_ptarHudVisible?192:32;
+        const int step=24;
+
+        D3DRECT statusBg={16,sy-8,680,sy+62};
+        dev->Clear(
+            1,&statusBg,D3DCLEAR_TARGET,
+            bgColor,1.0f,0);
 
         _snprintf_s(
             line,sizeof(line),_TRUNCATE,
-            "FG: %s  PROFILE: %d  TARGET: 60",
+            "STATUS FG %s PROFILE %d REAL %.1f VISIBLE %.1f",
             g_ptarHudFgEnabled?"ON":"OFF",
-            g_ptarHudFgProfile);
+            g_ptarHudFgProfile,
+            PtHudRealFps(),
+            PtHudDisplayFps(fgProducing));
         PtHudDrawLine(
-            dev,x,y+lineStep*4,scale,line,
-            g_ptarHudFgEnabled?
-                D3DCOLOR_XRGB(90,235,255):
-                D3DCOLOR_XRGB(190,190,190));
+            dev,sx,sy,scale,line,fgColor);
 
         _snprintf_s(
             line,sizeof(line),_TRUNCATE,
-            "REAL: %lu  GEN: %lu  LATE SKIP: %lu",
+            "RESYNC %lu REAL %lu GEN %lu LATE %lu",
+            g_ptarFgPacer.resyncs,
             PtFgPacerRealCount(),
             PtFgPacerGeneratedCount(),
             PtFgPacerLateSkipCount());
         PtHudDrawLine(
-            dev,x,y+lineStep*5,scale,line,
-            D3DCOLOR_XRGB(210,210,210));
-
-        PtHudDrawLine(
-            dev,x,y+lineStep*6,scale,
-            "F6 FILTER  CTRL+F6 FG  CTRL+F8 PROFILE",
-            D3DCOLOR_XRGB(180,220,255));
-
-        PtHudDrawLine(
-            dev,x,y+lineStep*7,scale,
-            "F8 STATUS  F9 CAPTURE  CTRL+F11 HUD",
-            D3DCOLOR_XRGB(210,210,210));
-    }
-
-    if(statusActive)
-    {
-        const int statusY=g_ptarHudVisible?176:8;
-        D3DRECT statusBg={
-            8,statusY,
-            700,statusY+82};
-        dev->Clear(
-            1,&statusBg,D3DCLEAR_TARGET,
-            D3DCOLOR_XRGB(8,8,8),
-            1.0f,0);
-
-        _snprintf_s(
-            line,sizeof(line),_TRUNCATE,
-            "STATUS: %s  FG %s  PROFILE %d",
-            spatial15?"PTAR X1.5":"NATIVE 1X1",
-            g_ptarHudFgEnabled?"ON":"OFF",
-            g_ptarHudFgProfile);
-        PtHudDrawLine(
-            dev,x,statusY+6,scale,line,
-            D3DCOLOR_XRGB(240,240,240));
-
-        _snprintf_s(
-            line,sizeof(line),_TRUNCATE,
-            "REAL %.1f FPS  VISIBLE %.1f FPS",
-            PtHudRealFps(),PtHudDisplayFps(fgProducing));
-        PtHudDrawLine(
-            dev,x,statusY+6+lineStep,scale,line,
-            D3DCOLOR_XRGB(180,220,255));
-
-        _snprintf_s(
-            line,sizeof(line),_TRUNCATE,
-            "RES %uX%u > %uX%u  RESYNC %lu",
-            sourceW,sourceH,outputW,outputH,
-            g_ptarFgPacer.resyncs);
-        PtHudDrawLine(
-            dev,x,statusY+6+lineStep*2,scale,line,
-            D3DCOLOR_XRGB(210,210,210));
+            dev,sx,sy+step,scale,line,fgColor);
 
         if(g_ptarHudStatusLogPending)
         {
             g_ptarHudStatusLogPending=false;
             PtDiagLogA(
-                "STATUS_RUNTIME mode=%s fg=%s profile=%d src=%ux%u out=%ux%u "
+                "STATUS_RUNTIME fg=%s profile=%d src=%ux%u out=%ux%u "
                 "real_fps=%.3f visible_fps=%.3f real_count=%lu gen_count=%lu "
                 "resyncs=%lu late_skip=%lu",
-                spatial15?"PTAR_X1.5":"NATIVE_1X1",
                 g_ptarHudFgEnabled?"ON":"OFF",
                 g_ptarHudFgProfile,
                 sourceW,sourceH,outputW,outputH,
