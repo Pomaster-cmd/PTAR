@@ -34,6 +34,86 @@ static int Exercise(IDirect3D9* d3d,int index)
     return 0;
 }
 
+static HWND CreateSmokeWindow()
+{
+    HINSTANCE inst=GetModuleHandleW(0);
+    const wchar_t* cls=L"PTAR_D3D9_SMOKE_WINDOW";
+
+    WNDCLASSW wc={};
+    wc.lpfnWndProc=DefWindowProcW;
+    wc.hInstance=inst;
+    wc.lpszClassName=cls;
+    RegisterClassW(&wc);
+
+    return CreateWindowExW(
+        0,cls,L"PTAR D3D9 Smoke",
+        WS_OVERLAPPEDWINDOW,
+        CW_USEDEFAULT,CW_USEDEFAULT,640,480,
+        0,0,inst,0);
+}
+
+static int ExerciseCreateDevice(IDirect3D9* d3d)
+{
+    HWND hwnd=CreateSmokeWindow();
+    if(!hwnd)
+    {
+        std::printf("FAIL CreateSmokeWindow gle=%lu\n",(unsigned long)GetLastError());
+        return 60;
+    }
+
+    D3DPRESENT_PARAMETERS pp={};
+    pp.BackBufferWidth=640;
+    pp.BackBufferHeight=480;
+    pp.BackBufferFormat=D3DFMT_UNKNOWN;
+    pp.BackBufferCount=1;
+    pp.MultiSampleType=D3DMULTISAMPLE_NONE;
+    pp.SwapEffect=D3DSWAPEFFECT_DISCARD;
+    pp.hDeviceWindow=hwnd;
+    pp.Windowed=TRUE;
+    pp.EnableAutoDepthStencil=FALSE;
+    pp.PresentationInterval=D3DPRESENT_INTERVAL_IMMEDIATE;
+
+    IDirect3DDevice9* dev=0;
+    HRESULT hr=d3d->CreateDevice(
+        D3DADAPTER_DEFAULT,
+        D3DDEVTYPE_HAL,
+        hwnd,
+        D3DCREATE_SOFTWARE_VERTEXPROCESSING,
+        &pp,
+        &dev);
+
+    std::printf(
+        "CREATEDEVICE_HAL hr=0x%08lX dev=%p\n",
+        (unsigned long)hr,dev);
+
+    if(FAILED(hr))
+    {
+        hr=d3d->CreateDevice(
+            D3DADAPTER_DEFAULT,
+            D3DDEVTYPE_REF,
+            hwnd,
+            D3DCREATE_SOFTWARE_VERTEXPROCESSING,
+            &pp,
+            &dev);
+        std::printf(
+            "CREATEDEVICE_REF hr=0x%08lX dev=%p\n",
+            (unsigned long)hr,dev);
+    }
+
+    if(dev)
+    {
+        dev->Release();
+        dev=0;
+    }
+    DestroyWindow(hwnd);
+
+    // The regression being guarded is an EIP=0 call through a lost
+    // g_realCreateDevice pointer. Any HRESULT return proves that call target
+    // remained valid; successful device creation is not required on headless CI.
+    std::printf("CREATEDEVICE_CALL_SURVIVED=PASS\n");
+    return 0;
+}
+
 int main()
 {
     HMODULE proxy=LoadLibraryW(L"d3d9.dll");
@@ -78,6 +158,16 @@ int main()
         }
         if(Exercise(live[i],100+i)) return 40+i;
     }
+
+    // Exact field regression: the shared IDirect3D9 vtable is already patched
+    // by earlier objects, then CreateDevice is called through a later object.
+    // The broken build zeroed g_realCreateDevice on VTABLE_PATCH_ALREADY and
+    // crashed with EIP=0 here.
+    {
+        const int rc=ExerciseCreateDevice(live[3]);
+        if(rc) return rc;
+    }
+
     for(int i=3;i>=0;--i)
     {
         const ULONG refs=live[i]->Release();
