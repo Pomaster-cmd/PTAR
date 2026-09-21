@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <d3d9.h>
 #include <cstdio>
+#include <cstring>
 
 // Exact D3D9 raster adaptation of the embedded GW16I HUD.
 // The source D3D11 HUD is procedural HLSL. On the user's Win8.1/D3D9 device
