@@ -23,9 +23,10 @@ static HRESULT DrawPass(
     const float* c0)
 {
     dev->SetTexture(0,0);dev->SetTexture(1,0);dev->SetTexture(2,0);
-    HRESULT hr=dev->SetRenderTarget(0,target);
+    HRESULT hr=dev->SetDepthStencilSurface(0);
     if(FAILED(hr)) return hr;
-    dev->SetDepthStencilSurface(0);
+    hr=dev->SetRenderTarget(0,target);
+    if(FAILED(hr)) return hr;
 
     D3DVIEWPORT9 vp={0,0,w,h,0.0f,1.0f};
     dev->SetViewport(&vp);
