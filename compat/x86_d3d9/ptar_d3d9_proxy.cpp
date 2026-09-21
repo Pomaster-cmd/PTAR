@@ -34,6 +34,7 @@
 #include "ptar_resolution_policy.h"
 #include "ptar_hud.h"
 #include "ptar_gw16i_hud_d3d9.h"
+#include "ptar_async_presenter.h"
 
 static HMODULE g_self=0;
 static HMODULE g_realD3D9=0;
@@ -54,6 +55,10 @@ typedef HRESULT (STDMETHODCALLTYPE *PFN_SetRenderTarget)(
     IDirect3DDevice9*,DWORD,IDirect3DSurface9*);
 typedef HRESULT (STDMETHODCALLTYPE *PFN_GetDisplayMode)(
     IDirect3DDevice9*,UINT,D3DDISPLAYMODE*);
+typedef HRESULT (STDMETHODCALLTYPE *PFN_BeginScene)(
+    IDirect3DDevice9*);
+typedef HRESULT (STDMETHODCALLTYPE *PFN_EndScene)(
+    IDirect3DDevice9*);
 
 static PFN_CreateDevice g_realCreateDevice=0;
 static PFN_Reset g_realReset=0;
@@ -61,6 +66,11 @@ static PFN_Present g_realPresent=0;
 static PFN_GetBackBuffer g_realGetBackBuffer=0;
 static PFN_SetRenderTarget g_realSetRenderTarget=0;
 static PFN_GetDisplayMode g_realGetDisplayMode=0;
+static PFN_BeginScene g_realBeginScene=0;
+static PFN_EndScene g_realEndScene=0;
+
+static volatile LONG g_ptarGameSceneGateHeld=0;
+static DWORD g_ptarGameSceneThread=0;
 
 struct PTARContext
 {
@@ -101,6 +111,9 @@ struct PTARContext
     bool spatialActive;
     bool inPresent;
     bool previousRealValid;
+    UINT outputRefreshHz;
+    unsigned long sourceSequence;
+    double fgGenerationBudget;
 };
 
 static PTARContext g_ptar={};
