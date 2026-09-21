@@ -29,6 +29,7 @@
 #include "ptar_fg_me_refine_ps_bytecode.h"
 #include "ptar_fg_interpolate_ps_bytecode.h"
 #include "ptar_diag.h"
+#include "ptar_fg_pacer.h"
 #include "ptar_hud.h"
 
 static HMODULE g_self=0;
@@ -352,8 +353,9 @@ static HRESULT InitializePTARResources(
     PtDiagLogA("INIT_SetViewport hr=0x%08lX",(unsigned long)hr);
     if(FAILED(hr)) goto fail;
 
+    PtFgPacerReset();
     g_ptar.active=true;
-    Log(L"PTAR_ACTIVE src=%ux%u out=%ux%u shader=MoE_v01_D3D9_PS3 samples=8 hud=ON compare=F6 fg=CTRL_F6 me=/4>/2",
+    Log(L"PTAR_ACTIVE src=%ux%u out=%ux%u shader=MoE_v01_D3D9_PS3 samples=8 hud=ON compare=F6 fg=CTRL_F6 me=/4>/2 targetVisible=60",
         sourceW,sourceH,outputW,outputH);
     return S_OK;
 
@@ -662,6 +664,7 @@ static HRESULT PresentPTARTexture(
     IDirect3DTexture9* texture,
     HWND hwnd,
     const RGNDATA* dirty,
+    bool generatedFrame,
     bool fgProducing)
 {
     HRESULT hr=RenderTextureToBackBuffer(dev,texture);
@@ -674,7 +677,10 @@ static HRESULT PresentPTARTexture(
         g_ptar.outputW,g_ptar.outputH,
         fgProducing);
 
-    return g_realPresent(dev,0,0,hwnd,dirty);
+    hr=g_realPresent(dev,0,0,hwnd,dirty);
+    if(SUCCEEDED(hr))
+        PtFgPacerRecordVisible(generatedFrame);
+    return hr;
 }
 
 static HRESULT STDMETHODCALLTYPE HookPresent(
@@ -717,22 +723,35 @@ static HRESULT STDMETHODCALLTYPE HookPresent(
 
     {
         bool fgProducing=false;
+        bool fgPipelineReady=false;
+        const bool fgSession=
+            PtHudFgEnabled() && g_ptar.previousRealValid;
 
-        if(PtHudFgEnabled() && g_ptar.previousRealValid)
+        if(fgSession)
         {
             HRESULT fgHr=RenderFGMotionAndIntermediate(self);
             if(SUCCEEDED(fgHr))
             {
-                fgProducing=true;
-                PtDiagStage("FG_PRESENT_GENERATED");
-                HRESULT generatedPresent=PresentPTARTexture(
-                    self,g_ptar.generatedTexture,hwnd,dirty,true);
-                if(FAILED(generatedPresent))
+                fgPipelineReady=true;
+
+                // Do expensive FG work before the cadence wait. If the work
+                // itself makes us miss the midpoint by too much, fail soft and
+                // skip GENERATED for this source frame.
+                if(PtFgPacerPrepareGenerated())
                 {
-                    PtDiagLogA(
-                        "FG_PRESENT_GENERATED_FAIL hr=0x%08lX",
-                        (unsigned long)generatedPresent);
-                    fgProducing=false;
+                    PtDiagStage("FG_PRESENT_GENERATED");
+                    HRESULT generatedPresent=PresentPTARTexture(
+                        self,g_ptar.generatedTexture,hwnd,dirty,true,true);
+                    if(SUCCEEDED(generatedPresent))
+                    {
+                        fgProducing=true;
+                    }
+                    else
+                    {
+                        PtDiagLogA(
+                            "FG_PRESENT_GENERATED_FAIL hr=0x%08lX",
+                            (unsigned long)generatedPresent);
+                    }
                 }
             }
             else
@@ -743,9 +762,15 @@ static HRESULT STDMETHODCALLTYPE HookPresent(
             }
         }
 
+        // Keep REAL frames on the 30-Hz half-rate grid whenever the FG
+        // pipeline is healthy, even when a single GENERATED midpoint was
+        // skipped for lateness. If the pipeline failed, return to REAL-only
+        // without imposing FG pacing.
+        PtFgPacerPrepareReal(fgSession && fgPipelineReady);
+
         PtDiagStage("PRESENT_REAL");
         result=PresentPTARTexture(
-            self,g_ptar.currentRealTexture,hwnd,dirty,fgProducing);
+            self,g_ptar.currentRealTexture,hwnd,dirty,false,fgProducing);
 
         if(SUCCEEDED(result))
             RotateRealHistory();
