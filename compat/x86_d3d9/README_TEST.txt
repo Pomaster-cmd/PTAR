@@ -33,15 +33,19 @@ Included:
   - F10 TogglePresenter shortcut contract
   - CTRL+F11 HUD toggle
   - F12 FilterNext
-  - generic GPU frame generation:
-      * previous/current reconstructed REAL history
+  - generic GPU frame generation using the production GW16I architecture:
+      * ordinary D3D9 game/source device retained for compatibility
+      * isolated D3D9Ex presenter device and thread
+      * short REAL-frame CPU bridge between the two devices
+      * previous/current REAL history owned by the isolated presenter
       * coarse motion estimation at /4
       * refinement at /2
       * midpoint interpolation
-      * production-derived fail-soft confidence/clamp rules adapted to D3D9 shader ME
-      * 60-visible-Hz presentation target
-      * local GENERATED -> REAL pacing grid
-      * stall resynchronisation without historical late-skip cascades
+      * GENERATED work completely outside the game Present critical path
+      * explicit GENERATED -> REAL visible ordering on the isolated presenter
+      * Sync1 physical presentation isolated from source rendering
+      * load-shed drops GENERATED work before REAL when the presenter falls behind
+      * GW16I source governor: FG ON up to 30 REAL for ~30+30 visible; FG OFF up to 60 REAL
   - VTABLEFIX2 generic D3D9 COM compatibility model
   - early crash diagnostics and collector
   - generic install / uninstall workflow
@@ -61,7 +65,7 @@ Hotkeys
   CTRL+F8   FG quality/profile control
   F9        Capture (post-overlay BMP from final D3D9 presenter backbuffer)
   CTRL+F9   VideoRecord
-  F10       TogglePresenter
+  F10       TogglePresenter (isolated presenter ON/OFF)
   CTRL+F11  HUD ON/OFF
   F12       FilterNext
 
@@ -92,58 +96,66 @@ The HUD displays:
   - late-generated skip counter (kept for continuity; expected to remain 0 in PRODPORT1)
   - current cadence state
 
-Frame-generation pacing
------------------------
-FG uses a generic 60-visible-Hz target.
+Frame-generation / presenter architecture
+-----------------------------------------
+The x86/D3D9 path now follows the same architectural rules as the supplied
+production D3D11/GW16I model instead of presenting GENERATED and REAL frames
+synchronously from the game's Present hook.
 
-For a healthy 60-Hz path, the intended steady-state cadence is approximately:
-  30 REAL + 30 GENERATED = 60 visible frames/s.
+The game/source device reconstructs the current REAL frame, performs a short
+handoff, and returns. Physical display Present, REAL-history ownership, motion
+estimation, interpolation, HUD composition and GENERATED/REAL ordering all live
+on a separate D3D9Ex presenter device/thread.
 
-PRODPORT1 uses QueryPerformanceCounter but no longer compares a generated frame
-that is already ready against a historical midpoint which may have elapsed while
-CURRENT reconstruction and motion estimation were running.
+This separation matters because D3D9 Present can occupy the calling runtime for
+roughly a VBlank even when called from another thread on the same device. The
+isolated presenter is therefore allowed to block at Sync1 without reducing the
+game's REAL source throughput.
 
-Once a GENERATED frame is ready, the pacer anchors or resumes a local visible
-grid, presents GENERATED, then places REAL on the following visible slot. The
-next GENERATED slot is one visible period after REAL.
+D3D9-specific transport:
+  - a normal D3D9 game device is retained so applications using D3DPOOL_MANAGED
+    are not broken;
+  - regular D3D9 cannot create resources shareable with another D3D9Ex device;
+  - completed REAL output is copied through a preallocated CPU ring and uploaded
+    by the isolated presenter;
+  - CI measured the readback component at roughly 0.4 ms at 1280x720, 0.6 ms at
+    1600x900 and 0.8-0.9 ms at 1920x1080 on the laboratory runner.
 
-If the source, driver or game stalls long enough that the local grid becomes
-stale, PTAR performs a one-step resynchronisation to the current time. It does
-not replay missed deadlines and does not create a cascade of late-generated
-skips.
+Production-derived cadence policy:
+  FG OFF:
+    presenter remains armed, REAL_ONLY, source target up to 60 REAL/s.
 
-The interpolation policy also differs intentionally from the production
-D3D11/NVENC-ME backend: D3D9 currently estimates motion in shaders, so low
-motion confidence is allowed to reject a vector completely. Production-derived
-fail-soft clamping is retained, but the NVENC-specific minimum trust floor is
-not copied blindly.
+  FG ON:
+    HIGH / target60 semantics, source target up to 30 REAL/s, midpoint
+    GENERATED frames presented before their matching REAL frames.
+
+  Under presenter pressure:
+    GENERATED work is load-shed before REAL. Historical deadlines are not
+    replayed and no VBlank wait is inserted into the game Present hook.
+
+The interpolation math remains the D3D9 shader-ME adaptation. NVENC-specific
+motion-vector assumptions from the x64/D3D11 backend are not copied where the
+underlying motion source differs.
 
 Resolution independence / native 1:1
-----------------------------------
-The D3D9 backend follows the production D3D11 separation between PTAR spatial
-reconstruction and the rest of the runtime.
+---------------------------------------
+The D3D9 backend keeps PTAR attached across D3D9 Reset/resolution changes.
 
-With the default model configuration:
-  RenderWidth=1280
-  RenderHeight=720
-  OutputWidth=1920
-  OutputHeight=1080
+With the default output target of 1920x1080:
+  - 1280x720 uses the exact x1.5 PTAR reconstruction;
+  - other game resolutions below the configured output use the universal PTAR
+    reconstruction with aspect-fit geometry;
+  - 1920x1080 uses native 1:1 while HUD/presenter/FG remain active;
+  - resolutions at or above the output that are not valid spatial inputs fail
+    soft to native 1:1 rather than disabling PTAR.
 
-an exact 1280x720 game presentation activates PTAR x1.5 and presents at
-1920x1080.
+Examples validated by the resolution-policy/GPU gates include 1280x720,
+1600x900, 1024x576 and 4:3 aspect-fit input. Returning to another supported
+resolution on Reset rebuilds the spatial and presenter resources without
+requiring reinjection.
 
-If the game changes to another resolution, PTAR itself does NOT deactivate.
-The proxy, HUD, presenter and frame-generation path remain attached. Spatial
-reconstruction is bypassed and the game runs in native 1:1 presentation.
-
-Example:
-  1920x1080 game resolution -> 1920x1080 native 1:1 + FG remains available.
-
-Changing back to the configured RenderWidth/RenderHeight re-enables the x1.5
-spatial path on the next D3D9 Reset.
-
-Windowed D3D9 modes whose requested BackBufferWidth/Height are 0 are resolved
-from the actual created backbuffer and also remain in native 1:1 mode.
+Windowed modes with zero requested BackBuffer dimensions are resolved from the
+actual created backbuffer instead of disabling the backend.
 
 Spatial A/B comparison
 ----------------------
@@ -195,9 +207,10 @@ Logging starts at DLL_PROCESS_ATTACH and includes:
   - Direct3DCreate9 / CreateDevice stages
   - PTAR resource creation
   - vtable patching
-  - spatial / FG passes
+  - spatial passes and isolated REAL handoff
+  - isolated presenter startup/shutdown and bridge timing
   - GENERATED / REAL presentation stages
-  - FG pacing resynchronisation events and continuity counters
+  - mailbox/load-shed counters and visible wall-clock cadence
   - hotkey mode changes
   - serious Win32 exceptions and x86 registers
 
@@ -243,9 +256,12 @@ Before any new hardware request, CI must pass:
   - generic separate-folder install passes;
   - generic in-place install passes;
   - diagnostic collector passes;
-  - PRODPORT1 pacing test verifies GENERATED -> REAL slot ordering;
-  - a simulated long stall is accepted through local-grid resynchronisation;
-  - historical LATE_SKIP remains zero;
+  - same-device Present blocking is explicitly rejected by laboratory probes;
+  - separate-device presenter isolation proves source throughput is preserved;
+  - regular-D3D9/D3D9Ex compatibility probes prevent replacing the game device
+    with an Ex device when that would remove D3DPOOL_MANAGED support;
+  - CPU-bridge readback is benchmarked at 720p, 900p and 1080p;
+  - source-side legacy pacer helpers contain no waits/resync/late-skip path;
   - wall-clock FPS regression proves a synthetic 200 ms hitch lowers the rate;
   - F9 capture smoke creates and validates a 320x180 post-overlay BMP;
   - generic package is produced.
