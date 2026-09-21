@@ -42,6 +42,8 @@ jobs:
           if(-not $fxcPath){throw 'fxc.exe path resolution failed'}
           & $fxcPath /nologo /T ps_3_0 /E main /O3 /Fh build_x86\ptar_ps_bytecode.h /Vn g_ptarPs compat\x86_d3d9\ptar_moe_d3d9_ps.hlsl
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 /Fh build_x86\ptar_universal_ps_bytecode.h /Vn g_ptarUniversalPs compat\x86_d3d9\ptar_moe_universal_d3d9_ps.hlsl
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
           & $fxcPath /nologo /T ps_2_0 /E main /O3 /Fh build_x86\ptar_bilinear_ps_bytecode.h /Vn g_ptarBilinearPs compat\x86_d3d9\ptar_bilinear_ref_ps.hlsl
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
           & $fxcPath /nologo /T ps_3_0 /E main /O3 /Fh build_x86\ptar_fg_me_coarse_ps_bytecode.h /Vn g_ptarFgMeCoarsePs compat\x86_d3d9\ptar_fg_me_coarse_ps.hlsl
@@ -52,6 +54,7 @@ jobs:
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
           foreach($header in @(
             'build_x86\ptar_ps_bytecode.h',
+            'build_x86\ptar_universal_ps_bytecode.h',
             'build_x86\ptar_bilinear_ps_bytecode.h',
             'build_x86\ptar_fg_me_coarse_ps_bytecode.h',
             'build_x86\ptar_fg_me_refine_ps_bytecode.h',
@@ -92,8 +95,9 @@ jobs:
             'PTAR_VARIANT=PTAR_X86_D3D9_PRODPORT1_GENERIC_VTABLEFIX2_CRASHLOG1',
             'PE_MACHINE=I386_0x014C',
             'API=D3D9',
-            'SPATIAL=PTAR_NG_MOE_V01_PS3_PORT',
-            'RESOLUTION_POLICY=CONFIGURED_SPATIAL_ELSE_NATIVE_1X1',
+            'SPATIAL=PTAR_NG_MOE_X15_PLUS_UNIVERSAL_EDGE_PS3',
+            'RESOLUTION_POLICY=ANY_GAME_RESOLUTION_BELOW_OUTPUT_USES_PTAR_ELSE_NATIVE_1X1',
+            'ASPECT_POLICY=PRESENTER_ASPECT_FIT',
             'NATIVE_1X1_FG=SUPPORTED',
             'RESOLUTION_RESET_PERSISTENCE=SUPPORTED',
             'HUD=CTRL_F11_NATIVE_D3D9',
@@ -128,7 +132,42 @@ jobs:
           if($rp -notmatch 'D3D9_RESOLUTION_POLICY_SMOKE=PASS'){throw 'resolution policy PASS marker missing'}
           if($rp -notmatch 'NATIVE_1080_FG_ONLY'){throw 'native 1080/FG-only gate missing'}
           if($rp -notmatch 'SPATIAL_720_TO_1080'){throw '720p spatial gate missing'}
+          if($rp -notmatch 'SPATIAL_900_TO_1080'){throw '1600x900 spatial gate missing'}
+          if($rp -notmatch 'SPATIAL_576_TO_1080'){throw '1024x576 spatial gate missing'}
+          if($rp -notmatch 'ASPECT_FIT_4X3 fit=240,0 1440x1080'){throw '4:3 aspect-fit gate missing'}
           Write-Host 'D3D9_UNIVERSAL_RESOLUTION_POLICY=PASS'
+
+      - name: Validate arbitrary-resolution PTAR GPU reconstruction
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I build_x86 compat\x86_d3d9\d3d9_universal_spatial_gpu_smoke.cpp /link user32.lib /OUT:artifact\d3d9_universal_spatial_gpu_smoke.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          & artifact\d3d9_universal_spatial_gpu_smoke.exe | Tee-Object build_x86\D3D9_UNIVERSAL_SPATIAL_GPU_SMOKE.txt
+          if($LASTEXITCODE -ne 0){throw "D3D9 universal spatial GPU smoke failed rc=$LASTEXITCODE"}
+          $u=Get-Content build_x86\D3D9_UNIVERSAL_SPATIAL_GPU_SMOKE.txt -Raw
+          if($u -notmatch 'D3D9_UNIVERSAL_SPATIAL_GPU_SMOKE=PASS'){throw 'universal spatial GPU PASS marker missing'}
+          if($u -notmatch 'UNIVERSAL_4X3_ASPECT_FIT'){throw 'aspect-fit GPU evidence missing'}
+          Write-Host 'D3D9_UNIVERSAL_SPATIAL_GPU=PASS'
+
+      - name: Validate production HUD contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $hud=Get-Content compat\x86_d3d9\ptar_hud.h -Raw
+          foreach($token in @(
+            'WIN81 USR V0.41',
+            '"FPS    %.0f"',
+            '"RES.   %uX%u"',
+            '"FILTER %s"',
+            'COPY 1X1',
+            'BILINEAR',
+            'PTAR X15'
+          )){
+            if($hud -notmatch [regex]::Escape($token)){throw "production HUD token missing: $token"}
+          }
+          if($hud -match 'REAL FPS: %.1f  DISPLAY FPS: %.1f'){throw 'expanded debug HUD regression returned'}
+          Write-Host 'D3D9_GW16I_HUD_CONTRACT=PASS'
 
       - name: Validate wall-clock FPS metric
         shell: pwsh
@@ -277,6 +316,7 @@ jobs:
           Remove-Item artifact\d3d9_fg_gpu_pipeline_smoke.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\d3d9_fg_pacer_smoke.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\d3d9_resolution_policy_smoke.exe -Force -ErrorAction SilentlyContinue
+          Remove-Item artifact\d3d9_universal_spatial_gpu_smoke.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\d3d9_wallclock_fps_smoke.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\d3d9_f9_capture_smoke.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\PTAR_X86_D3D9.log -Force -ErrorAction SilentlyContinue
@@ -305,6 +345,7 @@ jobs:
             build_x86/DEPENDENTS.txt
             build_x86/D3D9_OBJECT_LIFETIME_SMOKE.txt
             build_x86/D3D9_RESOLUTION_POLICY_SMOKE.txt
+            build_x86/D3D9_UNIVERSAL_SPATIAL_GPU_SMOKE.txt
             build_x86/D3D9_WALLCLOCK_FPS_SMOKE.txt
             build_x86/D3D9_F9_CAPTURE_SMOKE.txt
             build_x86/D3D9_FG_GPU_PIPELINE_SMOKE.txt
