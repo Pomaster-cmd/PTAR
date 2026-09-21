@@ -3,6 +3,8 @@
 #include <windows.h>
 #include <d3d9.h>
 #include <cstdio>
+#include "ptar_runtime_metrics.h"
+#include "ptar_capture.h"
 
 static bool g_ptarHudVisible=true;
 static bool g_ptarHudUseMoe=true;
@@ -16,34 +18,48 @@ static bool g_ptarHudPrevF11=false;
 static bool g_ptarHudPrevF12=false;
 static int g_ptarHudFgProfile=2;
 static LARGE_INTEGER g_ptarHudFreq={0};
-static LARGE_INTEGER g_ptarHudLast={0};
-static double g_ptarHudFps=0.0;
+static PTARRollingRate g_ptarHudRealRate={};
+static LONGLONG g_ptarHudStatusUntilQpc=0;
+static LONGLONG g_ptarHudLastFpsLogQpc=0;
+static bool g_ptarHudStatusLogPending=false;
 
 static void PtHudInitClock()
 {
     if(g_ptarHudFreq.QuadPart==0)
     {
         QueryPerformanceFrequency(&g_ptarHudFreq);
-        QueryPerformanceCounter(&g_ptarHudLast);
+        if(g_ptarHudFreq.QuadPart<=0)
+            g_ptarHudFreq.QuadPart=1;
+        PtRollingRateReset(&g_ptarHudRealRate);
     }
 }
 
-static void PtHudUpdateFps()
+static LONGLONG PtHudNow()
+{
+    LARGE_INTEGER now={};
+    QueryPerformanceCounter(&now);
+    return now.QuadPart;
+}
+
+static void PtHudRecordRealFrame()
 {
     PtHudInitClock();
-    LARGE_INTEGER now={0};
-    QueryPerformanceCounter(&now);
-    if(g_ptarHudLast.QuadPart!=0 && g_ptarHudFreq.QuadPart>0)
-    {
-        const double dt=(double)(now.QuadPart-g_ptarHudLast.QuadPart)/
-                        (double)g_ptarHudFreq.QuadPart;
-        if(dt>0.00001 && dt<1.0)
-        {
-            const double inst=1.0/dt;
-            g_ptarHudFps=(g_ptarHudFps<=0.0)?inst:(g_ptarHudFps*0.90+inst*0.10);
-        }
-    }
-    g_ptarHudLast=now;
+    PtRollingRateRecord(&g_ptarHudRealRate);
+}
+
+static void PtHudRequestStatus()
+{
+    PtHudInitClock();
+    const LONGLONG now=PtHudNow();
+    g_ptarHudStatusUntilQpc=
+        now+g_ptarHudFreq.QuadPart*2;
+    g_ptarHudStatusLogPending=true;
+}
+
+static bool PtHudStatusActive()
+{
+    PtHudInitClock();
+    return PtHudNow()<g_ptarHudStatusUntilQpc;
 }
 
 static void PtHudUpdateInput()
@@ -104,14 +120,11 @@ static void PtHudUpdateInput()
         }
         else
         {
-            // Plain F8 is Status in the production contract. It must never
-            // toggle HUD visibility; CTRL+F11 owns that function.
-            g_ptarHudVisible=true;
-            PtDiagLogA(
-                "HOTKEY F8 Status mode=%s fg=%s profile=%d",
-                g_ptarHudUseMoe?"PTAR_MOE":"BILINEAR_REF",
-                g_ptarHudFgEnabled?"ON":"OFF",
-                g_ptarHudFgProfile);
+            // Production contract: F8 emits a temporary status notice without
+            // changing the permanent HUD state. This notice remains visible
+            // even when CTRL+F11 has hidden the permanent HUD.
+            PtHudRequestStatus();
+            PtDiagLogA("HOTKEY STATUS: USR runtime status");
         }
     }
 
@@ -120,7 +133,10 @@ static void PtHudUpdateInput()
         if(ctrl)
             PtDiagLogA("HOTKEY CTRL+F9 VideoRecord requested");
         else
+        {
+            PtCaptureRequest();
             PtDiagLogA("HOTKEY F9 Capture requested");
+        }
     }
 
     if(f10 && !g_ptarHudPrevF10 && !ctrl)
@@ -154,7 +170,7 @@ static void PtHudUpdateInput()
 static void PtHudFrameTick()
 {
     PtHudUpdateInput();
-    PtHudUpdateFps();
+    PtHudRecordRealFrame();
 }
 
 static bool PtHudUseMoe()
@@ -169,7 +185,7 @@ static bool PtHudFgEnabled()
 
 static double PtHudRealFps()
 {
-    return g_ptarHudFps;
+    return PtRollingRateValue(&g_ptarHudRealRate);
 }
 
 static double PtHudDisplayFps(bool fgProducing)
@@ -177,7 +193,7 @@ static double PtHudDisplayFps(bool fgProducing)
     const double measured=PtFgPacerVisibleFps();
     if(measured>0.0)
         return measured;
-    return g_ptarHudFps*(fgProducing?2.0:1.0);
+    return fgProducing?0.0:PtHudRealFps();
 }
 
 static const BYTE* PtHudGlyph(char c)
@@ -303,89 +319,167 @@ static void PtHudDraw(
     UINT outputH,
     bool fgProducing)
 {
-    if(!g_ptarHudVisible || !dev) return;
+    if(!dev)
+        return;
+
+    const bool statusActive=PtHudStatusActive();
+    if(!g_ptarHudVisible && !statusActive)
+        return;
 
     const int x=14;
     const int y=14;
     const int scale=2;
     const int lineStep=17;
-
-    D3DRECT bg={8,8,700,160};
-    dev->Clear(
-        1,&bg,D3DCLEAR_TARGET,
-        D3DCOLOR_XRGB(8,8,8),
-        1.0f,0);
-
     char line[160]={0};
-
-    PtHudDrawLine(
-        dev,x,y,scale,
-        "PTAR X86 D3D9 PRODPORT",
-        D3DCOLOR_XRGB(240,240,240));
 
     const bool spatial15=PtResolutionExactScale15(
         sourceW,sourceH,outputW,outputH);
 
-    _snprintf_s(
-        line,sizeof(line),_TRUNCATE,
-        "MODE: %s",
-        spatial15?
-            (g_ptarHudUseMoe?"PTAR MOE X1.5":"BILINEAR X1.5"):
-            "NATIVE 1X1");
-    PtHudDrawLine(
-        dev,x,y+lineStep,scale,line,
-        spatial15?
-            (g_ptarHudUseMoe?
-                D3DCOLOR_XRGB(70,255,120):
-                D3DCOLOR_XRGB(255,210,70)):
+    if(g_ptarHudVisible)
+    {
+        D3DRECT bg={8,8,700,160};
+        dev->Clear(
+            1,&bg,D3DCLEAR_TARGET,
+            D3DCOLOR_XRGB(8,8,8),
+            1.0f,0);
+
+        PtHudDrawLine(
+            dev,x,y,scale,
+            "PTAR X86 D3D9 PRODPORT",
+            D3DCOLOR_XRGB(240,240,240));
+
+        _snprintf_s(
+            line,sizeof(line),_TRUNCATE,
+            "MODE: %s",
+            spatial15?
+                (g_ptarHudUseMoe?"PTAR MOE X1.5":"BILINEAR X1.5"):
+                "NATIVE 1X1");
+        PtHudDrawLine(
+            dev,x,y+lineStep,scale,line,
+            spatial15?
+                (g_ptarHudUseMoe?
+                    D3DCOLOR_XRGB(70,255,120):
+                    D3DCOLOR_XRGB(255,210,70)):
+                D3DCOLOR_XRGB(180,220,255));
+
+        _snprintf_s(
+            line,sizeof(line),_TRUNCATE,
+            "SRC: %uX%u > OUT: %uX%u",
+            sourceW,sourceH,outputW,outputH);
+        PtHudDrawLine(
+            dev,x,y+lineStep*2,scale,line,
+            D3DCOLOR_XRGB(220,220,220));
+
+        _snprintf_s(
+            line,sizeof(line),_TRUNCATE,
+            "REAL FPS: %.1f  DISPLAY FPS: %.1f",
+            PtHudRealFps(),PtHudDisplayFps(fgProducing));
+        PtHudDrawLine(
+            dev,x,y+lineStep*3,scale,line,
+            D3DCOLOR_XRGB(220,220,220));
+
+        _snprintf_s(
+            line,sizeof(line),_TRUNCATE,
+            "FG: %s  PROFILE: %d  TARGET: 60",
+            g_ptarHudFgEnabled?"ON":"OFF",
+            g_ptarHudFgProfile);
+        PtHudDrawLine(
+            dev,x,y+lineStep*4,scale,line,
+            g_ptarHudFgEnabled?
+                D3DCOLOR_XRGB(90,235,255):
+                D3DCOLOR_XRGB(190,190,190));
+
+        _snprintf_s(
+            line,sizeof(line),_TRUNCATE,
+            "REAL: %lu  GEN: %lu  LATE SKIP: %lu",
+            PtFgPacerRealCount(),
+            PtFgPacerGeneratedCount(),
+            PtFgPacerLateSkipCount());
+        PtHudDrawLine(
+            dev,x,y+lineStep*5,scale,line,
+            D3DCOLOR_XRGB(210,210,210));
+
+        PtHudDrawLine(
+            dev,x,y+lineStep*6,scale,
+            "F6 FILTER  CTRL+F6 FG  CTRL+F8 PROFILE",
             D3DCOLOR_XRGB(180,220,255));
 
-    _snprintf_s(
-        line,sizeof(line),_TRUNCATE,
-        "SRC: %uX%u > OUT: %uX%u",
-        sourceW,sourceH,outputW,outputH);
-    PtHudDrawLine(
-        dev,x,y+lineStep*2,scale,line,
-        D3DCOLOR_XRGB(220,220,220));
+        PtHudDrawLine(
+            dev,x,y+lineStep*7,scale,
+            "F8 STATUS  F9 CAPTURE  CTRL+F11 HUD",
+            D3DCOLOR_XRGB(210,210,210));
+    }
 
-    _snprintf_s(
-        line,sizeof(line),_TRUNCATE,
-        "REAL FPS: %.1f  DISPLAY FPS: %.1f",
-        PtHudRealFps(),PtHudDisplayFps(fgProducing));
-    PtHudDrawLine(
-        dev,x,y+lineStep*3,scale,line,
-        D3DCOLOR_XRGB(220,220,220));
+    if(statusActive)
+    {
+        const int statusY=g_ptarHudVisible?176:8;
+        D3DRECT statusBg={
+            8,statusY,
+            700,statusY+82};
+        dev->Clear(
+            1,&statusBg,D3DCLEAR_TARGET,
+            D3DCOLOR_XRGB(8,8,8),
+            1.0f,0);
 
-    _snprintf_s(
-        line,sizeof(line),_TRUNCATE,
-        "FG: %s  PROFILE: %d  TARGET: 60",
-        g_ptarHudFgEnabled?"ON":"OFF",
-        g_ptarHudFgProfile);
-    PtHudDrawLine(
-        dev,x,y+lineStep*4,scale,line,
-        g_ptarHudFgEnabled?
-            D3DCOLOR_XRGB(90,235,255):
-            D3DCOLOR_XRGB(190,190,190));
+        _snprintf_s(
+            line,sizeof(line),_TRUNCATE,
+            "STATUS: %s  FG %s  PROFILE %d",
+            spatial15?"PTAR X1.5":"NATIVE 1X1",
+            g_ptarHudFgEnabled?"ON":"OFF",
+            g_ptarHudFgProfile);
+        PtHudDrawLine(
+            dev,x,statusY+6,scale,line,
+            D3DCOLOR_XRGB(240,240,240));
 
-    _snprintf_s(
-        line,sizeof(line),_TRUNCATE,
-        "REAL: %lu  GEN: %lu  LATE SKIP: %lu",
-        PtFgPacerRealCount(),
-        PtFgPacerGeneratedCount(),
-        PtFgPacerLateSkipCount());
-    PtHudDrawLine(
-        dev,x,y+lineStep*5,scale,line,
-        D3DCOLOR_XRGB(210,210,210));
+        _snprintf_s(
+            line,sizeof(line),_TRUNCATE,
+            "REAL %.1f FPS  VISIBLE %.1f FPS",
+            PtHudRealFps(),PtHudDisplayFps(fgProducing));
+        PtHudDrawLine(
+            dev,x,statusY+6+lineStep,scale,line,
+            D3DCOLOR_XRGB(180,220,255));
 
-    PtHudDrawLine(
-        dev,x,y+lineStep*6,scale,
-        "F6 FILTER  CTRL+F6 FG  CTRL+F8 PROFILE",
-        D3DCOLOR_XRGB(180,220,255));
+        _snprintf_s(
+            line,sizeof(line),_TRUNCATE,
+            "RES %uX%u > %uX%u  RESYNC %lu",
+            sourceW,sourceH,outputW,outputH,
+            g_ptarFgPacer.resyncs);
+        PtHudDrawLine(
+            dev,x,statusY+6+lineStep*2,scale,line,
+            D3DCOLOR_XRGB(210,210,210));
 
-    PtHudDrawLine(
-        dev,x,y+lineStep*7,scale,
-        g_ptarHudVisible?
-            (fgProducing?"F8 STATUS  CTRL+F11 HUD  F12 NEXT":"F8 STATUS  CTRL+F11 HUD  F12 NEXT"):
-            "CTRL+F11 HUD",
-        D3DCOLOR_XRGB(210,210,210));
+        if(g_ptarHudStatusLogPending)
+        {
+            g_ptarHudStatusLogPending=false;
+            PtDiagLogA(
+                "STATUS_RUNTIME mode=%s fg=%s profile=%d src=%ux%u out=%ux%u "
+                "real_fps=%.3f visible_fps=%.3f real_count=%lu gen_count=%lu "
+                "resyncs=%lu late_skip=%lu",
+                spatial15?"PTAR_X1.5":"NATIVE_1X1",
+                g_ptarHudFgEnabled?"ON":"OFF",
+                g_ptarHudFgProfile,
+                sourceW,sourceH,outputW,outputH,
+                PtHudRealFps(),PtHudDisplayFps(fgProducing),
+                PtFgPacerRealCount(),
+                PtFgPacerGeneratedCount(),
+                g_ptarFgPacer.resyncs,
+                PtFgPacerLateSkipCount());
+        }
+    }
+
+    const LONGLONG now=PtHudNow();
+    if(g_ptarHudLastFpsLogQpc==0 ||
+       now-g_ptarHudLastFpsLogQpc>=g_ptarHudFreq.QuadPart)
+    {
+        g_ptarHudLastFpsLogQpc=now;
+        PtDiagLogA(
+            "FPS_WALLCLOCK_SAMPLE real_fps=%.3f visible_fps=%.3f "
+            "fg=%s real_count=%lu gen_count=%lu resyncs=%lu",
+            PtHudRealFps(),
+            PtHudDisplayFps(fgProducing),
+            g_ptarHudFgEnabled?"ON":"OFF",
+            PtFgPacerRealCount(),
+            PtFgPacerGeneratedCount(),
+            g_ptarFgPacer.resyncs);
+    }
 }
