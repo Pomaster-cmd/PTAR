@@ -45,14 +45,35 @@ Safety
 - If PTAR cannot create the x1.5 D3D9 presentation path, the proxy retries the
   original D3D9 device creation instead of intentionally preventing launch.
 
+Crash diagnostics
+-----------------
+This build writes PTAR_X86_D3D9.log from DLL_PROCESS_ATTACH onward, before the
+real Direct3D 9 runtime or PTAR resources are initialized.
+
+The log includes:
+  - ordered STAGE markers,
+  - Direct3DCreate9 / CreateDevice parameters and return values,
+  - real backbuffer / texture / depth / shader / state-block creation results,
+  - D3D9 object and device vtable hook stages,
+  - serious Win32 exceptions observed by a vectored exception handler,
+  - exception code/address/module/module offset,
+  - x86 EIP/ESP/EBP/EAX/EBX/ECX/EDX/ESI/EDI/EFLAGS,
+  - access-violation operation and target address when available.
+
+After a General Protection Fault or other crash, run:
+  03-COLLECT_CRASH_DIAGNOSTICS.bat
+
+It creates PTAR_X86_D3D9_DIAG_YYYYMMDD_HHMMSS.zip with the PTAR log, install
+state, executable/DLL hashes and PE type, GPU/OS information, recent Windows
+Application Error / WER events, and recent matching Report.wer files when
+accessible. Collection is read-only apart from creating its own diagnostic ZIP.
+
 Evidence
 --------
-After launch, inspect:
-  PTAR_X86_D3D9.log
-
-Success signature for the 720p -> 1080p path:
+Success signature for the 720p -> 1080p path includes:
   PROXY_LOADED arch=x86 api=D3D9
   CREATEDEVICE_PTAR_TRY src=1280x720 out=1920x1080
   PTAR_ACTIVE src=1280x720 out=1920x1080 ...
 
-If the game launches but PTAR is not active, keep the log intact.
+If the game crashes, do not delete PTAR_X86_D3D9.log before running the
+collector.
