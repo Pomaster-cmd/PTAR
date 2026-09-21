@@ -884,11 +884,24 @@ static HRESULT DrawGW16IOverlayShader(
     hr=dev->SetViewport(&vp);
     if(FAILED(hr)) return hr;
 
+    // D3D9 inherits the game's complete raster state. The D3D11 reference
+    // HUD is rendered with an explicit pipeline state, so the DX9 adapter must
+    // establish the same invariant instead of trusting whatever the game left
+    // active. In particular ALPHATEST=TRUE + ALPHAFUNC=NEVER makes an otherwise
+    // valid HUD shader produce exactly zero visible pixels.
     dev->SetRenderState(D3DRS_ZENABLE,FALSE);
     dev->SetRenderState(D3DRS_ZWRITEENABLE,FALSE);
+    dev->SetRenderState(D3DRS_STENCILENABLE,FALSE);
+    dev->SetRenderState(D3DRS_ALPHATESTENABLE,FALSE);
     dev->SetRenderState(D3DRS_ALPHABLENDENABLE,FALSE);
+    dev->SetRenderState(D3DRS_SEPARATEALPHABLENDENABLE,FALSE);
+    dev->SetRenderState(D3DRS_FOGENABLE,FALSE);
+    dev->SetRenderState(D3DRS_CLIPPLANEENABLE,0);
+    dev->SetRenderState(D3DRS_CLIPPING,FALSE);
     dev->SetRenderState(D3DRS_CULLMODE,D3DCULL_NONE);
+    dev->SetRenderState(D3DRS_FILLMODE,D3DFILL_SOLID);
     dev->SetRenderState(D3DRS_SCISSORTESTENABLE,FALSE);
+    dev->SetRenderState(D3DRS_SRGBWRITEENABLE,FALSE);
     dev->SetRenderState(
         D3DRS_COLORWRITEENABLE,
         D3DCOLORWRITEENABLE_RED|
