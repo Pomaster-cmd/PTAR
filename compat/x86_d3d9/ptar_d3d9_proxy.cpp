@@ -26,8 +26,6 @@
 #include "ptar_ps_bytecode.h"
 #include "ptar_universal_ps_bytecode.h"
 #include "ptar_bilinear_ps_bytecode.h"
-#include "ptar_gw16i_hud_ps_bytecode.h"
-#include "ptar_gw16i_feedback_ps_bytecode.h"
 #include "ptar_fg_me_coarse_ps_bytecode.h"
 #include "ptar_fg_me_refine_ps_bytecode.h"
 #include "ptar_fg_interpolate_ps_bytecode.h"
@@ -35,6 +33,7 @@
 #include "ptar_fg_pacer.h"
 #include "ptar_resolution_policy.h"
 #include "ptar_hud.h"
+#include "ptar_gw16i_hud_d3d9.h"
 
 static HMODULE g_self=0;
 static HMODULE g_realD3D9=0;
@@ -73,8 +72,6 @@ struct PTARContext
     IDirect3DPixelShader9* shader;
     IDirect3DPixelShader9* universalShader;
     IDirect3DPixelShader9* bilinearShader;
-    IDirect3DPixelShader9* hudShader;
-    IDirect3DPixelShader9* feedbackShader;
     IDirect3DPixelShader9* fgMeCoarseShader;
     IDirect3DPixelShader9* fgMeRefineShader;
     IDirect3DPixelShader9* fgInterpolateShader;
@@ -158,8 +155,6 @@ static void ReleasePTARResources()
     if(g_ptar.fgInterpolateShader){g_ptar.fgInterpolateShader->Release();g_ptar.fgInterpolateShader=0;}
     if(g_ptar.fgMeRefineShader){g_ptar.fgMeRefineShader->Release();g_ptar.fgMeRefineShader=0;}
     if(g_ptar.fgMeCoarseShader){g_ptar.fgMeCoarseShader->Release();g_ptar.fgMeCoarseShader=0;}
-    if(g_ptar.feedbackShader){g_ptar.feedbackShader->Release();g_ptar.feedbackShader=0;}
-    if(g_ptar.hudShader){g_ptar.hudShader->Release();g_ptar.hudShader=0;}
     if(g_ptar.bilinearShader){g_ptar.bilinearShader->Release();g_ptar.bilinearShader=0;}
     if(g_ptar.universalShader){g_ptar.universalShader->Release();g_ptar.universalShader=0;}
     if(g_ptar.shader){g_ptar.shader->Release();g_ptar.shader=0;}
@@ -378,16 +373,11 @@ static HRESULT InitializePTARResources(
     PtDiagLogA("INIT_CreateBilinearShader hr=0x%08lX ptr=%p",(unsigned long)hr,g_ptar.bilinearShader);
     if(FAILED(hr) || !g_ptar.bilinearShader) goto fail;
 
-    PtDiagStage("Initialize_CreateGW16IHUDShaders");
-    hr=dev->CreatePixelShader((const DWORD*)g_ptarGw16iHudPs,&g_ptar.hudShader);
-    PtDiagLogA("INIT_CreateGW16IHUD hr=0x%08lX ptr=%p",(unsigned long)hr,g_ptar.hudShader);
-    if(FAILED(hr) || !g_ptar.hudShader) goto fail;
-
-    hr=dev->CreatePixelShader((const DWORD*)g_ptarGw16iFeedbackPs,&g_ptar.feedbackShader);
-    PtDiagLogA("INIT_CreateGW16IFeedback hr=0x%08lX ptr=%p",(unsigned long)hr,g_ptar.feedbackShader);
-    if(FAILED(hr) || !g_ptar.feedbackShader) goto fail;
-
+    // GW16I HUD is raster-ported with D3D9 Clear(rects). The monolithic
+    // ps_3_0 translation is not a runtime dependency: field hardware rejected
+    // it with D3DERR_INVALIDCALL and previously caused all PTAR init to fail.
     PtHudLoadConfig(g_self);
+    PtDiagLogA("INIT_GW16I_HUD renderer=D3D9_CLEAR_RECTS shader_dependency=NONE");
 
     PtDiagStage("Initialize_CreateFGShaders");
     hr=dev->CreatePixelShader((const DWORD*)g_ptarFgMeCoarsePs,&g_ptar.fgMeCoarseShader);
@@ -943,8 +933,28 @@ static HRESULT RenderGW16IProductionHud(
     bool generatedFrame,
     bool fgProducing)
 {
-    if(!dev || !g_ptar.hudShader || !g_ptar.feedbackShader)
+    if(!dev || !g_ptar.realBackBuffer)
         return D3DERR_INVALIDCALL;
+
+    // Make the final presenter backbuffer explicit. Clear(rects) then writes
+    // the exact GW16I panel/glyph raster without depending on PS3 support or
+    // on the game's inherited shader/raster state.
+    HRESULT hr=dev->SetDepthStencilSurface(0);
+    if(FAILED(hr))
+        return hr;
+
+    hr=g_realSetRenderTarget(dev,0,g_ptar.realBackBuffer);
+    if(FAILED(hr))
+        return hr;
+
+    D3DVIEWPORT9 vp={};
+    vp.X=0; vp.Y=0;
+    vp.Width=g_ptar.outputW;
+    vp.Height=g_ptar.outputH;
+    vp.MinZ=0.0f; vp.MaxZ=1.0f;
+    hr=dev->SetViewport(&vp);
+    if(FAILED(hr))
+        return hr;
 
     const PTARPresentationRect fit=PtResolutionAspectFit(
         g_ptar.sourceW,g_ptar.sourceH,
@@ -955,65 +965,30 @@ static HRESULT RenderGW16IProductionHud(
             g_ptar.sourceW,g_ptar.sourceH,
             fit.width,fit.height);
 
-    const int state=PtHudStateNotice();
-    const bool marker=PtHudMarkerEnabled();
-    const bool visible=PtHudVisible();
-
     ++g_ptarHudFrameSequence;
 
-    float hud[20]={0};
-    hud[2]=(float)PtHudDisplayFps(fgProducing);
-    hud[3]=visible?1.0f:0.0f;
+    hr=PtGw16RenderExactHudD3D9(
+        dev,
+        PtHudVisible(),
+        PtHudStateNotice(),
+        PtHudMarkerEnabled(),
+        g_ptarHudFrameSequence&4095ul,
+        generatedFrame,
+        PtHudDisplayFps(fgProducing),
+        g_ptar.sourceW,
+        g_ptar.sourceH,
+        PtHudFilterId(g_ptar.spatialActive,exact15),
+        PtHudFeedbackType(),
+        PtHudFeedbackArgA(),
+        PtHudFeedbackArgB(),
+        PtHudFeedbackArgC());
 
-    hud[4]=(float)g_ptar.sourceW;
-    hud[5]=(float)g_ptar.sourceH;
-    hud[6]=(float)PtHudFilterId(g_ptar.spatialActive,exact15);
-    hud[7]=(float)state;
-
-    // Exact production key display contract:
-    // USR presenter = F10, HUD = CTRL+F11.
-    hud[8]=(float)VK_F10;
-    hud[9]=0.0f;
-    hud[10]=(float)VK_F11;
-    hud[11]=2.0f; // CTRL bit in the GW16I HudParams encoding.
-
-    hud[12]=(float)(g_ptarHudFrameSequence&4095ul);
-    hud[13]=generatedFrame?1.0f:0.0f;
-    hud[14]=marker?1.0f:0.0f;
-
-    HRESULT hr=DrawGW16IOverlayShader(
-        dev,g_ptar.hudShader,hud,5);
     if(FAILED(hr))
     {
         PtDiagLogA(
-            "GW16I_HUD_DRAW_FAIL hr=0x%08lX",
+            "GW16I_HUD_DRAW_FAIL renderer=CLEAR_RECTS hr=0x%08lX",
             (unsigned long)hr);
         return hr;
-    }
-
-    if(PtHudFeedbackActive())
-    {
-        float feedback[8]={0};
-
-        // The production feedback shader is a 440x96 physical-pixel notice.
-        // Keep it immediately below the persistent HUD; when HUD is hidden it
-        // moves to the normal top-left origin.
-        feedback[0]=16.0f;
-        feedback[1]=visible?192.0f:16.0f;
-        feedback[2]=(float)PtHudFeedbackType();
-        feedback[3]=0.0f;
-        feedback[4]=(float)PtHudFeedbackArgA();
-        feedback[5]=(float)PtHudFeedbackArgB();
-        feedback[6]=(float)PtHudFeedbackArgC();
-
-        HRESULT feedbackHr=DrawGW16IOverlayShader(
-            dev,g_ptar.feedbackShader,feedback,2);
-        if(FAILED(feedbackHr))
-        {
-            PtDiagLogA(
-                "GW16I_FEEDBACK_DRAW_FAIL hr=0x%08lX",
-                (unsigned long)feedbackHr);
-        }
     }
 
     if(PtHudConsumeStatusLogPending())
