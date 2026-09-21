@@ -2,23 +2,34 @@
 
 #include <windows.h>
 #include <d3d9.h>
+#include <cstring>
 
-// D3D9 implementation of the production D3D11 presenter principles:
+// Generic D3D9 implementation of the validated D3D11/GW16I presenter model.
 //
-//   game/source device  -> shared REAL ring -> isolated presenter device
-//                                           -> async shader FG
-//                                           -> GENERATED / REAL Sync1 presents
+// Invariants copied from the production model:
+//   - the game/source device never performs the physical display Present while
+//     the isolated presenter is active;
+//   - GENERATED work runs only on the isolated presenter device/thread;
+//   - visible ordering is GENERATED -> REAL for each source pair;
+//   - FG OFF keeps presenter infrastructure alive and routes REAL_ONLY;
+//   - under pressure, GENERATED is shed before REAL;
+//   - the final HUD/F9 surface is the isolated presenter's BackBuffer0.
 //
-// The game thread never performs the physical display Present and never runs
-// the FG motion/interpolation passes. This is the important GW16I invariant:
-// presentation and GENERATED work live off the game's critical render path.
+// D3D9-specific transport:
+// regular IDirect3DDevice9 cannot create cross-device shared resources. The
+// laboratory probe proved that replacing the game's device with D3D9Ex would
+// expose shared handles but would also remove D3DPOOL_MANAGED support. To avoid
+// that compatibility regression, the generic path keeps the game's ordinary
+// D3D9 device unchanged and bridges each completed REAL frame through a short
+// readback into a CPU ring. The isolated D3D9Ex presenter uploads from that
+// ring on its own thread.
 //
-// D3D9 API-specific adaptation:
-// - both devices are IDirect3DDevice9Ex because D3D9 shared handles are an Ex
-//   feature;
-// - the game still receives the base IDirect3DDevice9 interface;
-// - the presenter owns its own swapchain/device and blocks on Sync1 there;
-// - shared-resource producer completion uses D3DQUERYTYPE_EVENT + FLUSH.
+// Measured CI readback cost before integration:
+//   1280x720  ~0.39 ms / frame
+//   1600x900  ~0.56 ms / frame
+//   1920x1080 ~0.79 ms / frame
+// Those measurements are laboratory evidence only; field hardware remains the
+// final gate.
 
 typedef HRESULT (WINAPI *PTARIsoPFN_Direct3DCreate9Ex)(
     UINT,IDirect3D9Ex**);
@@ -34,12 +45,14 @@ enum PTARIsoSlotState
 
 struct PTARIsoSlot
 {
-    IDirect3DTexture9* producerTexture;
-    IDirect3DSurface9* producerSurface;
+    IDirect3DSurface9* producerReadback;
     IDirect3DTexture9* presenterTexture;
     IDirect3DSurface9* presenterSurface;
-    IDirect3DQuery9* producerFence;
-    HANDLE sharedHandle;
+
+    unsigned char* cpuBytes;
+    UINT rowBytes;
+    UINT rows;
+
     PTARIsoSlotState state;
     unsigned long sequence;
 };
@@ -51,7 +64,8 @@ struct PTARIsoVertex
 
 struct PTARIsoPresenter
 {
-    IDirect3DDevice9Ex* producer;
+    IDirect3DDevice9* producer;
+
     IDirect3D9Ex* presenterD3D;
     IDirect3DDevice9Ex* presenter;
     IDirect3DSurface9* presenterBackBuffer;
@@ -91,12 +105,11 @@ struct PTARIsoPresenter
     UINT motionFineW;
     UINT motionFineH;
     UINT refreshHz;
-    D3DFORMAT sharedFormat;
-    bool spatialActive;
-    bool presenterWindowed;
+    D3DFORMAT frameFormat;
 
     volatile LONG running;
     volatile LONG enabled;
+    volatile LONG resetHistoryRequested;
 
     unsigned long submittedReal;
     unsigned long presentedReal;
@@ -105,10 +118,45 @@ struct PTARIsoPresenter
     unsigned long loadShedRealOnly;
     unsigned long fgFailures;
     unsigned long presentFailures;
+    unsigned long bridgeFailures;
     unsigned long frameMarkerSequence;
+
+    LARGE_INTEGER qpcFrequency;
+    LONGLONG bridgeTotalTicks;
+    LONGLONG bridgeMaxTicks;
+    unsigned long bridgeSamples;
 };
 
 static PTARIsoPresenter g_ptarIso={};
+
+static UINT PtIsoBytesPerPixel(D3DFORMAT format)
+{
+    switch(format)
+    {
+    case D3DFMT_R5G6B5:
+    case D3DFMT_X1R5G5B5:
+    case D3DFMT_A1R5G5B5:
+    case D3DFMT_A4R4G4B4:
+        return 2u;
+
+    case D3DFMT_A8R8G8B8:
+    case D3DFMT_X8R8G8B8:
+    case D3DFMT_A2R10G10B10:
+    case D3DFMT_X8B8G8R8:
+    case D3DFMT_A8B8G8R8:
+        return 4u;
+
+    default:
+        return 0u;
+    }
+}
+
+static LONGLONG PtIsoNow()
+{
+    LARGE_INTEGER q={};
+    QueryPerformanceCounter(&q);
+    return q.QuadPart;
+}
 
 static HRESULT PtIsoCreateRenderTexture(
     IDirect3DDevice9* dev,
@@ -127,6 +175,40 @@ static HRESULT PtIsoCreateRenderTexture(
     HRESULT hr=dev->CreateTexture(
         width,height,1,
         D3DUSAGE_RENDERTARGET,
+        format,
+        D3DPOOL_DEFAULT,
+        texture,0);
+    if(FAILED(hr) || !*texture)
+        return FAILED(hr)?hr:E_FAIL;
+
+    hr=(*texture)->GetSurfaceLevel(0,surface);
+    if(FAILED(hr) || !*surface)
+    {
+        (*texture)->Release();
+        *texture=0;
+        return FAILED(hr)?hr:E_FAIL;
+    }
+
+    return S_OK;
+}
+
+static HRESULT PtIsoCreateUploadTexture(
+    IDirect3DDevice9* dev,
+    UINT width,
+    UINT height,
+    D3DFORMAT format,
+    IDirect3DTexture9** texture,
+    IDirect3DSurface9** surface)
+{
+    if(!dev || !width || !height || !texture || !surface)
+        return D3DERR_INVALIDCALL;
+
+    *texture=0;
+    *surface=0;
+
+    HRESULT hr=dev->CreateTexture(
+        width,height,1,
+        D3DUSAGE_DYNAMIC,
         format,
         D3DPOOL_DEFAULT,
         texture,0);
@@ -309,6 +391,69 @@ static int PtIsoFilterId()
         exact15);
 }
 
+static void PtIsoMaybeLogStatus()
+{
+    PTARIsoPresenter& p=g_ptarIso;
+
+    if(PtHudConsumeStatusLogPending())
+    {
+        PtDiagLogA(
+            "STATUS_RUNTIME fg=%s profile=%d src=%ux%u out=%ux%u "
+            "filter=%d real_fps=%.3f visible_fps=%.3f "
+            "real_count=%lu gen_count=%lu mailbox_drop=%lu "
+            "load_shed=%lu bridge_fail=%lu",
+            PtHudFgEnabled()?"ON":"OFF",
+            PtHudFgProfile(),
+            p.sourceW,p.sourceH,
+            p.outputW,p.outputH,
+            PtIsoFilterId(),
+            PtHudRealFps(),
+            PtFgPacerVisibleFps(),
+            p.presentedReal,
+            p.presentedGenerated,
+            p.mailboxDrops,
+            p.loadShedRealOnly,
+            p.bridgeFailures);
+    }
+
+    const LONGLONG now=PtHudNow();
+    if(g_ptarHudLastFpsLogQpc==0 ||
+       now-g_ptarHudLastFpsLogQpc>=g_ptarHudFreq.QuadPart)
+    {
+        g_ptarHudLastFpsLogQpc=now;
+
+        double bridgeAvgMs=0.0;
+        double bridgeMaxMs=0.0;
+        if(p.qpcFrequency.QuadPart>0)
+        {
+            if(p.bridgeSamples)
+            {
+                bridgeAvgMs=
+                    (double)p.bridgeTotalTicks*1000.0/
+                    ((double)p.qpcFrequency.QuadPart*
+                     (double)p.bridgeSamples);
+            }
+            bridgeMaxMs=
+                (double)p.bridgeMaxTicks*1000.0/
+                (double)p.qpcFrequency.QuadPart;
+        }
+
+        PtDiagLogA(
+            "FPS_WALLCLOCK_SAMPLE real_fps=%.3f visible_fps=%.3f "
+            "fg=%s real_count=%lu gen_count=%lu mailbox_drop=%lu "
+            "load_shed=%lu bridge_avg_ms=%.3f bridge_max_ms=%.3f",
+            PtHudRealFps(),
+            PtFgPacerVisibleFps(),
+            PtHudFgEnabled()?"ON":"OFF",
+            p.presentedReal,
+            p.presentedGenerated,
+            p.mailboxDrops,
+            p.loadShedRealOnly,
+            bridgeAvgMs,
+            bridgeMaxMs);
+    }
+}
+
 static HRESULT PtIsoOverlayAndPresent(
     IDirect3DSurface9* frame,
     bool generated)
@@ -336,7 +481,7 @@ static HRESULT PtIsoOverlayAndPresent(
         PtHudMarkerEnabled(),
         p.frameMarkerSequence&4095ul,
         generated,
-        PtHudDisplayFps(PtHudFgEnabled()),
+        PtFgPacerVisibleFps(),
         p.sourceW,p.sourceH,
         PtIsoFilterId(),
         PtHudFeedbackType(),
@@ -350,6 +495,8 @@ static HRESULT PtIsoOverlayAndPresent(
             "GW16I_ISOLATED_HUD_FAIL hr=0x%08lX",
             (unsigned long)hudHr);
     }
+
+    PtIsoMaybeLogStatus();
 
     if(PtCaptureConsumeRequest())
     {
@@ -376,11 +523,11 @@ static HRESULT PtIsoOverlayAndPresent(
         }
     }
 
+    // Sync1 is intentional here. Unlike the rejected same-device design this
+    // call runs on a completely separate D3D9Ex device/thread, so VBlank
+    // residence cannot serialize the game's producer device.
     hr=p.presenter->PresentEx(
-        0,0,
-        p.visibleHwnd,
-        0,
-        0);
+        0,0,0,0,0);
 
     if(SUCCEEDED(hr))
     {
@@ -393,28 +540,39 @@ static HRESULT PtIsoOverlayAndPresent(
     else
     {
         ++p.presentFailures;
+        PtDiagLogA(
+            "ISOLATED_PRESENT_FAIL generated=%d hr=0x%08lX",
+            generated?1:0,
+            (unsigned long)hr);
     }
 
     return hr;
 }
 
-static bool PtIsoFenceReady(PTARIsoSlot& s)
+static HRESULT PtIsoUploadSlot(PTARIsoSlot& s)
 {
-    if(!s.producerFence)
-        return false;
+    if(!s.presenterTexture || !s.cpuBytes ||
+       !s.rowBytes || !s.rows)
+        return D3DERR_INVALIDCALL;
 
-    HRESULT hr=s.producerFence->GetData(0,0,0);
-    if(hr==S_OK)
-        return true;
+    D3DLOCKED_RECT lr={};
+    HRESULT hr=s.presenterTexture->LockRect(
+        0,&lr,0,D3DLOCK_DISCARD);
+    if(FAILED(hr))
+        return hr;
 
-    if(hr!=S_FALSE)
+    const unsigned char* src=s.cpuBytes;
+    unsigned char* dst=(unsigned char*)lr.pBits;
+
+    for(UINT y=0;y<s.rows;++y)
     {
-        PtDiagLogA(
-            "ISOLATED_FENCE_ERROR seq=%lu hr=0x%08lX",
-            s.sequence,
-            (unsigned long)hr);
+        std::memcpy(
+            dst+(size_t)y*(size_t)lr.Pitch,
+            src+(size_t)y*(size_t)s.rowBytes,
+            s.rowBytes);
     }
-    return false;
+
+    return s.presenterTexture->UnlockRect(0);
 }
 
 static int PtIsoCountReadyLocked()
@@ -440,14 +598,32 @@ static int PtIsoFindOldestReadyLocked()
             found=i;
         }
     }
+
     return found;
 }
 
-inline void PtIsoFreeSlotLocked(int index)
+static void PtIsoResetHistoryOnPresenterThread()
 {
-    if(index<0 || index>=6)
+    PTARIsoPresenter& p=g_ptarIso;
+
+    if(InterlockedExchange(
+           &p.resetHistoryRequested,0)==0)
         return;
-    g_ptarIso.slots[index].state=PTAR_ISO_FREE;
+
+    EnterCriticalSection(&p.lock);
+
+    for(int i=0;i<6;++i)
+    {
+        if(p.slots[i].state==PTAR_ISO_READY ||
+           p.slots[i].state==PTAR_ISO_HISTORY)
+            p.slots[i].state=PTAR_ISO_FREE;
+    }
+
+    p.historySlot=-1;
+
+    LeaveCriticalSection(&p.lock);
+
+    PtDiagLogA("ISOLATED_HISTORY_RESET");
 }
 
 static DWORD WINAPI PtIsoPresenterThread(LPVOID)
@@ -455,8 +631,8 @@ static DWORD WINAPI PtIsoPresenterThread(LPVOID)
     PTARIsoPresenter& p=g_ptarIso;
 
     PtDiagLogA(
-        "ISOLATED_PRESENTER_THREAD_START target60_sync1=1 "
-        "separate_device=1 async_fg=1");
+        "ISOLATED_PRESENTER_THREAD_START "
+        "transport=CPU_READBACK separate_device=1 async_fg=1 sync=1");
 
     while(InterlockedCompareExchange(&p.running,1,1)!=0)
     {
@@ -466,6 +642,8 @@ static DWORD WINAPI PtIsoPresenterThread(LPVOID)
 
         if(wr==WAIT_OBJECT_0)
             break;
+
+        PtIsoResetHistoryOnPresenterThread();
 
         if(InterlockedCompareExchange(&p.enabled,1,1)==0)
             continue;
@@ -485,24 +663,15 @@ static DWORD WINAPI PtIsoPresenterThread(LPVOID)
 
         PTARIsoSlot& cur=p.slots[current];
 
-        // Producer already issued D3DGETDATA_FLUSH. Wait on the isolated thread,
-        // never on the game thread.
-        int spins=0;
-        while(!PtIsoFenceReady(cur) &&
-              WaitForSingleObject(p.stopEvent,0)!=WAIT_OBJECT_0)
+        HRESULT uploadHr=PtIsoUploadSlot(cur);
+        if(FAILED(uploadHr))
         {
-            if(++spins>500)
-            {
-                PtDiagLogA(
-                    "ISOLATED_FENCE_TIMEOUT seq=%lu",
-                    cur.sequence);
-                break;
-            }
-            Sleep(0);
-        }
+            ++p.bridgeFailures;
+            PtDiagLogA(
+                "ISOLATED_UPLOAD_FAIL seq=%lu hr=0x%08lX",
+                cur.sequence,
+                (unsigned long)uploadHr);
 
-        if(spins>500)
-        {
             EnterCriticalSection(&p.lock);
             cur.state=PTAR_ISO_FREE;
             LeaveCriticalSection(&p.lock);
@@ -522,15 +691,14 @@ static DWORD WINAPI PtIsoPresenterThread(LPVOID)
             continue;
         }
 
-        int previous=p.historySlot;
+        const int previous=p.historySlot;
         PTARIsoSlot& prev=p.slots[previous];
 
         const bool fgEnabled=PtHudFgEnabled();
         bool generatedPresented=false;
 
-        // Production load-shed principle: when source pressure creates backlog,
-        // skip GENERATED work and preserve REAL delivery. Never stall the game
-        // to maintain a synthetic 1:1 count.
+        // Mirrors the production load-shed principle: pressure can reduce
+        // GENERATED delivery, but it must not slow REAL source production.
         const bool loadShed=
             fgEnabled && readyDepth>1;
 
@@ -542,11 +710,10 @@ static DWORD WINAPI PtIsoPresenterThread(LPVOID)
 
             if(SUCCEEDED(fgHr))
             {
-                HRESULT presentG=
-                    PtIsoOverlayAndPresent(
-                        p.generatedSurface,
-                        true);
-                generatedPresented=SUCCEEDED(presentG);
+                HRESULT gHr=PtIsoOverlayAndPresent(
+                    p.generatedSurface,
+                    true);
+                generatedPresented=SUCCEEDED(gHr);
             }
             else
             {
@@ -570,19 +737,14 @@ static DWORD WINAPI PtIsoPresenterThread(LPVOID)
             cur.presenterSurface,
             false);
 
-        if(FAILED(realHr))
-        {
-            PtDiagLogA(
-                "ISOLATED_REAL_PRESENT_FAIL seq=%lu hr=0x%08lX",
-                cur.sequence,
-                (unsigned long)realHr);
-        }
-
         EnterCriticalSection(&p.lock);
+
         if(previous>=0 && previous<6)
             p.slots[previous].state=PTAR_ISO_FREE;
+
         cur.state=PTAR_ISO_HISTORY;
         p.historySlot=current;
+
         LeaveCriticalSection(&p.lock);
 
         if(fgEnabled)
@@ -599,14 +761,16 @@ static DWORD WINAPI PtIsoPresenterThread(LPVOID)
     PtDiagLogA(
         "ISOLATED_PRESENTER_THREAD_STOP submitted_real=%lu "
         "presented_real=%lu presented_generated=%lu mailbox_drops=%lu "
-        "load_shed=%lu fg_failures=%lu present_failures=%lu",
+        "load_shed=%lu fg_failures=%lu present_failures=%lu "
+        "bridge_failures=%lu",
         p.submittedReal,
         p.presentedReal,
         p.presentedGenerated,
         p.mailboxDrops,
         p.loadShedRealOnly,
         p.fgFailures,
-        p.presentFailures);
+        p.presentFailures,
+        p.bridgeFailures);
 
     return 0;
 }
@@ -630,20 +794,43 @@ static void PtIsoPresenterRelease()
     for(int i=0;i<6;++i)
     {
         PTARIsoSlot& s=p.slots[i];
-        if(s.producerFence){s.producerFence->Release();s.producerFence=0;}
-        if(s.presenterSurface){s.presenterSurface->Release();s.presenterSurface=0;}
-        if(s.presenterTexture){s.presenterTexture->Release();s.presenterTexture=0;}
-        if(s.producerSurface){s.producerSurface->Release();s.producerSurface=0;}
-        if(s.producerTexture){s.producerTexture->Release();s.producerTexture=0;}
-        s.sharedHandle=0;
+
+        if(s.presenterSurface)
+        {
+            s.presenterSurface->Release();
+            s.presenterSurface=0;
+        }
+
+        if(s.presenterTexture)
+        {
+            s.presenterTexture->Release();
+            s.presenterTexture=0;
+        }
+
+        if(s.producerReadback)
+        {
+            s.producerReadback->Release();
+            s.producerReadback=0;
+        }
+
+        if(s.cpuBytes)
+        {
+            VirtualFree(s.cpuBytes,0,MEM_RELEASE);
+            s.cpuBytes=0;
+        }
+
+        s.rowBytes=0;
+        s.rows=0;
         s.state=PTAR_ISO_FREE;
         s.sequence=0;
     }
 
     if(p.generatedSurface){p.generatedSurface->Release();p.generatedSurface=0;}
     if(p.generatedTexture){p.generatedTexture->Release();p.generatedTexture=0;}
+
     if(p.motionFineSurface){p.motionFineSurface->Release();p.motionFineSurface=0;}
     if(p.motionFineTexture){p.motionFineTexture->Release();p.motionFineTexture=0;}
+
     if(p.motionCoarseSurface){p.motionCoarseSurface->Release();p.motionCoarseSurface=0;}
     if(p.motionCoarseTexture){p.motionCoarseTexture->Release();p.motionCoarseTexture=0;}
 
@@ -654,6 +841,7 @@ static void PtIsoPresenterRelease()
     if(p.presenterBackBuffer){p.presenterBackBuffer->Release();p.presenterBackBuffer=0;}
     if(p.presenter){p.presenter->Release();p.presenter=0;}
     if(p.presenterD3D){p.presenterD3D->Release();p.presenterD3D=0;}
+
     if(p.producer){p.producer->Release();p.producer=0;}
 
     if(p.lockInitialized)
@@ -671,9 +859,8 @@ static void PtIsoPresenterRelease()
     p.motionCoarseW=p.motionCoarseH=0;
     p.motionFineW=p.motionFineH=0;
     p.refreshHz=0;
-    p.sharedFormat=D3DFMT_UNKNOWN;
-    p.spatialActive=false;
-    p.presenterWindowed=true;
+    p.frameFormat=D3DFMT_UNKNOWN;
+
     p.submittedReal=0;
     p.presentedReal=0;
     p.presentedGenerated=0;
@@ -681,9 +868,16 @@ static void PtIsoPresenterRelease()
     p.loadShedRealOnly=0;
     p.fgFailures=0;
     p.presentFailures=0;
+    p.bridgeFailures=0;
     p.frameMarkerSequence=0;
 
+    p.qpcFrequency.QuadPart=0;
+    p.bridgeTotalTicks=0;
+    p.bridgeMaxTicks=0;
+    p.bridgeSamples=0;
+
     InterlockedExchange(&p.enabled,0);
+    InterlockedExchange(&p.resetHistoryRequested,0);
 }
 
 static HRESULT PtIsoCreatePresenterDevice(
@@ -691,12 +885,11 @@ static HRESULT PtIsoCreatePresenterDevice(
     UINT adapter,
     D3DDEVTYPE type,
     HWND hwnd,
-    const D3DPRESENT_PARAMETERS& original,
     UINT outputW,
-    UINT outputH,
-    UINT refreshHz)
+    UINT outputH)
 {
     PTARIsoPresenter& p=g_ptarIso;
+
     if(!create9Ex || !hwnd || !outputW || !outputH)
         return D3DERR_INVALIDCALL;
 
@@ -706,80 +899,60 @@ static HRESULT PtIsoCreatePresenterDevice(
     if(FAILED(hr) || !p.presenterD3D)
         return FAILED(hr)?hr:E_FAIL;
 
-    D3DDISPLAYMODEEX desktop={};
-    desktop.Size=sizeof(desktop);
-    D3DDISPLAYROTATION rotation=D3DDISPLAYROTATION_IDENTITY;
-    HRESULT dmHr=p.presenterD3D->GetAdapterDisplayModeEx(
-        adapter,&desktop,&rotation);
-
     D3DPRESENT_PARAMETERS pp={};
     pp.BackBufferWidth=outputW;
     pp.BackBufferHeight=outputH;
+    pp.BackBufferFormat=D3DFMT_UNKNOWN;
     pp.BackBufferCount=1;
     pp.MultiSampleType=D3DMULTISAMPLE_NONE;
     pp.MultiSampleQuality=0;
-    pp.SwapEffect=D3DSWAPEFFECT_DISCARD;
+    pp.SwapEffect=D3DSWAPEFFECT_FLIPEX;
     pp.hDeviceWindow=hwnd;
+    pp.Windowed=TRUE;
     pp.EnableAutoDepthStencil=FALSE;
     pp.Flags=0;
+    pp.FullScreen_RefreshRateInHz=0;
     pp.PresentationInterval=D3DPRESENT_INTERVAL_ONE;
-
-    D3DDISPLAYMODEEX fullscreen={};
-    D3DDISPLAYMODEEX* fullscreenPtr=0;
-
-    p.presenterWindowed=original.Windowed?true:false;
-
-    if(original.Windowed)
-    {
-        pp.Windowed=TRUE;
-        pp.BackBufferFormat=D3DFMT_UNKNOWN;
-        pp.FullScreen_RefreshRateInHz=0;
-
-        // FLIPEX is the closest D3D9Ex analogue to the production flip-model
-        // isolated presenter. Fall back to DISCARD if the driver rejects it.
-        pp.SwapEffect=D3DSWAPEFFECT_FLIPEX;
-    }
-    else
-    {
-        pp.Windowed=FALSE;
-
-        const D3DFORMAT displayFormat=
-            SUCCEEDED(dmHr)?
-                desktop.Format:
-                (original.BackBufferFormat!=D3DFMT_UNKNOWN?
-                    original.BackBufferFormat:D3DFMT_X8R8G8B8);
-
-        pp.BackBufferFormat=displayFormat;
-        pp.FullScreen_RefreshRateInHz=
-            refreshHz>=30u?refreshHz:60u;
-
-        fullscreen.Size=sizeof(fullscreen);
-        fullscreen.Width=outputW;
-        fullscreen.Height=outputH;
-        fullscreen.RefreshRate=pp.FullScreen_RefreshRateInHz;
-        fullscreen.Format=displayFormat;
-        fullscreen.ScanLineOrdering=
-            D3DSCANLINEORDERING_PROGRESSIVE;
-        fullscreenPtr=&fullscreen;
-    }
 
     const DWORD flags=
         D3DCREATE_SOFTWARE_VERTEXPROCESSING|
         D3DCREATE_MULTITHREADED;
 
     hr=p.presenterD3D->CreateDeviceEx(
-        adapter,type,hwnd,
+        adapter,
+        type,
+        hwnd,
         flags,
         &pp,
-        fullscreenPtr,
+        0,
         &p.presenter);
 
-    if(FAILED(hr) && original.Windowed &&
-       pp.SwapEffect==D3DSWAPEFFECT_FLIPEX)
+    if(FAILED(hr) || !p.presenter)
+    {
+        PtDiagLogA(
+            "ISOLATED_FLIPEX_CREATE_FAIL hr=0x%08lX fallback=DISCARD",
+            (unsigned long)hr);
+
+        pp.SwapEffect=D3DSWAPEFFECT_DISCARD;
+
+        hr=p.presenterD3D->CreateDeviceEx(
+            adapter,
+            type,
+            hwnd,
+            flags,
+            &pp,
+            0,
+            &p.presenter);
+    }
+
+    if((FAILED(hr) || !p.presenter) &&
+       type!=D3DDEVTYPE_HAL)
     {
         pp.SwapEffect=D3DSWAPEFFECT_DISCARD;
         hr=p.presenterD3D->CreateDeviceEx(
-            adapter,type,hwnd,
+            adapter,
+            D3DDEVTYPE_HAL,
+            hwnd,
             flags,
             &pp,
             0,
@@ -799,18 +972,17 @@ static HRESULT PtIsoCreatePresenterDevice(
 }
 
 inline HRESULT PtIsoPresenterInitialize(
-    IDirect3DDevice9Ex* producer,
+    IDirect3DDevice9* producer,
     PTARIsoPFN_Direct3DCreate9Ex create9Ex,
     HMODULE selfModule,
     UINT adapter,
     D3DDEVTYPE type,
     HWND visibleHwnd,
-    const D3DPRESENT_PARAMETERS& original,
     UINT sourceW,
     UINT sourceH,
     UINT outputW,
     UINT outputH,
-    D3DFORMAT sharedFormat,
+    D3DFORMAT frameFormat,
     bool spatialActive,
     UINT refreshHz)
 {
@@ -820,10 +992,20 @@ inline HRESULT PtIsoPresenterInitialize(
        !sourceW || !sourceH || !outputW || !outputH)
         return D3DERR_INVALIDCALL;
 
+    const UINT bpp=PtIsoBytesPerPixel(frameFormat);
+    if(!bpp)
+    {
+        PtDiagLogA(
+            "ISOLATED_UNSUPPORTED_FRAME_FORMAT fmt=%u",
+            (unsigned)frameFormat);
+        return D3DERR_NOTAVAILABLE;
+    }
+
     PTARIsoPresenter& p=g_ptarIso;
 
     p.producer=producer;
     p.producer->AddRef();
+
     p.selfModule=selfModule;
     p.adapter=adapter;
     p.deviceType=type;
@@ -832,23 +1014,27 @@ inline HRESULT PtIsoPresenterInitialize(
     p.sourceH=sourceH;
     p.outputW=outputW;
     p.outputH=outputH;
-    p.sharedFormat=sharedFormat;
+    p.frameFormat=frameFormat;
     p.spatialActive=spatialActive;
     p.refreshHz=
         refreshHz>=30u&&refreshHz<=360u?
             refreshHz:60u;
     p.historySlot=-1;
 
+    QueryPerformanceFrequency(&p.qpcFrequency);
+    if(p.qpcFrequency.QuadPart<=0)
+        p.qpcFrequency.QuadPart=1;
+
     InitializeCriticalSection(&p.lock);
     p.lockInitialized=true;
 
     HRESULT hr=PtIsoCreatePresenterDevice(
         create9Ex,
-        adapter,type,
+        adapter,
+        type,
         visibleHwnd,
-        original,
-        outputW,outputH,
-        p.refreshHz);
+        outputW,
+        outputH);
     if(FAILED(hr))
     {
         PtDiagLogA(
@@ -858,85 +1044,67 @@ inline HRESULT PtIsoPresenterInitialize(
         return hr;
     }
 
-    D3DSURFACE_DESC presenterDesc={};
-    hr=p.presenterBackBuffer->GetDesc(&presenterDesc);
-    if(FAILED(hr))
-    {
-        PtIsoPresenterRelease();
-        return hr;
-    }
-
-    // Shared producer/presenter ring.
+    // CPU bridge + upload textures.
     for(int i=0;i<6;++i)
     {
         PTARIsoSlot& s=p.slots[i];
-        s.sharedHandle=0;
 
-        hr=p.producer->CreateTexture(
-            outputW,outputH,1,
-            D3DUSAGE_RENDERTARGET,
-            sharedFormat,
-            D3DPOOL_DEFAULT,
-            &s.producerTexture,
-            &s.sharedHandle);
-        if(FAILED(hr) || !s.producerTexture || !s.sharedHandle)
+        hr=producer->CreateOffscreenPlainSurface(
+            outputW,outputH,
+            frameFormat,
+            D3DPOOL_SYSTEMMEM,
+            &s.producerReadback,
+            0);
+
+        if(FAILED(hr) || !s.producerReadback)
         {
             PtDiagLogA(
-                "ISOLATED_SHARED_CREATE_FAIL index=%d fmt=%u hr=0x%08lX handle=%p",
-                i,(unsigned)sharedFormat,
-                (unsigned long)hr,
-                s.sharedHandle);
-            PtIsoPresenterRelease();
-            return FAILED(hr)?hr:E_FAIL;
-        }
-
-        HANDLE openHandle=s.sharedHandle;
-        hr=p.presenter->CreateTexture(
-            outputW,outputH,1,
-            D3DUSAGE_RENDERTARGET,
-            sharedFormat,
-            D3DPOOL_DEFAULT,
-            &s.presenterTexture,
-            &openHandle);
-        if(FAILED(hr) || !s.presenterTexture)
-        {
-            PtDiagLogA(
-                "ISOLATED_SHARED_OPEN_FAIL index=%d fmt=%u hr=0x%08lX",
-                i,(unsigned)sharedFormat,
+                "ISOLATED_READBACK_SURFACE_FAIL index=%d fmt=%u hr=0x%08lX",
+                i,(unsigned)frameFormat,
                 (unsigned long)hr);
             PtIsoPresenterRelease();
             return FAILED(hr)?hr:E_FAIL;
         }
 
-        hr=s.producerTexture->GetSurfaceLevel(
-            0,&s.producerSurface);
-        if(FAILED(hr) || !s.producerSurface)
+        hr=PtIsoCreateUploadTexture(
+            p.presenter,
+            outputW,outputH,
+            frameFormat,
+            &s.presenterTexture,
+            &s.presenterSurface);
+
+        if(FAILED(hr))
         {
+            PtDiagLogA(
+                "ISOLATED_UPLOAD_TEXTURE_FAIL index=%d fmt=%u hr=0x%08lX",
+                i,(unsigned)frameFormat,
+                (unsigned long)hr);
             PtIsoPresenterRelease();
-            return FAILED(hr)?hr:E_FAIL;
+            return hr;
         }
 
-        hr=s.presenterTexture->GetSurfaceLevel(
-            0,&s.presenterSurface);
-        if(FAILED(hr) || !s.presenterSurface)
-        {
-            PtIsoPresenterRelease();
-            return FAILED(hr)?hr:E_FAIL;
-        }
+        s.rowBytes=outputW*bpp;
+        s.rows=outputH;
 
-        hr=p.producer->CreateQuery(
-            D3DQUERYTYPE_EVENT,
-            &s.producerFence);
-        if(FAILED(hr) || !s.producerFence)
+        const SIZE_T bytes=
+            (SIZE_T)s.rowBytes*(SIZE_T)s.rows;
+
+        s.cpuBytes=(unsigned char*)VirtualAlloc(
+            0,bytes,
+            MEM_COMMIT|MEM_RESERVE,
+            PAGE_READWRITE);
+
+        if(!s.cpuBytes)
         {
+            hr=HRESULT_FROM_WIN32(GetLastError());
             PtIsoPresenterRelease();
-            return FAILED(hr)?hr:E_FAIL;
+            return hr;
         }
 
         s.state=PTAR_ISO_FREE;
     }
 
-    // FG resources live only on the isolated presenter device.
+    // FG shader + render resources exist only on the isolated presenter.
     p.motionCoarseW=(outputW+3u)/4u;
     p.motionCoarseH=(outputH+3u)/4u;
     p.motionFineW=(outputW+1u)/2u;
@@ -996,7 +1164,7 @@ inline HRESULT PtIsoPresenterInitialize(
     hr=PtIsoCreateRenderTexture(
         p.presenter,
         outputW,outputH,
-        sharedFormat,
+        frameFormat,
         &p.generatedTexture,
         &p.generatedSurface);
     if(FAILED(hr))
@@ -1007,6 +1175,7 @@ inline HRESULT PtIsoPresenterInitialize(
 
     p.stopEvent=CreateEventW(0,TRUE,FALSE,0);
     p.wakeEvent=CreateEventW(0,FALSE,FALSE,0);
+
     if(!p.stopEvent || !p.wakeEvent)
     {
         hr=HRESULT_FROM_WIN32(GetLastError());
@@ -1021,6 +1190,7 @@ inline HRESULT PtIsoPresenterInitialize(
         0,0,
         PtIsoPresenterThread,
         0,0,0);
+
     if(!p.thread)
     {
         hr=HRESULT_FROM_WIN32(GetLastError());
@@ -1030,14 +1200,13 @@ inline HRESULT PtIsoPresenterInitialize(
     }
 
     PtDiagLogA(
-        "ISOLATED_PRESENTER_READY separate_device=1 async_fg=1 "
-        "src=%ux%u out=%ux%u fmt=%u refresh=%u windowed=%d "
-        "swap=SYNC1 slots=6",
+        "ISOLATED_PRESENTER_READY transport=CPU_READBACK "
+        "separate_device=1 async_fg=1 src=%ux%u out=%ux%u fmt=%u "
+        "refresh=%u sync=1 slots=6",
         sourceW,sourceH,
         outputW,outputH,
-        (unsigned)sharedFormat,
-        p.refreshHz,
-        p.presenterWindowed?1:0);
+        (unsigned)frameFormat,
+        p.refreshHz);
 
     return S_OK;
 }
@@ -1055,31 +1224,16 @@ static bool PtIsoPresenterIsActive()
             &g_ptarIso.enabled,1,1)!=0;
 }
 
-static void PtIsoPresenterClearQueue()
-{
-    PTARIsoPresenter& p=g_ptarIso;
-    if(!p.lockInitialized)
-        return;
-
-    EnterCriticalSection(&p.lock);
-    for(int i=0;i<6;++i)
-    {
-        if(p.slots[i].state!=PTAR_ISO_PROCESSING)
-            p.slots[i].state=PTAR_ISO_FREE;
-    }
-    p.historySlot=-1;
-    LeaveCriticalSection(&p.lock);
-}
-
 static void PtIsoPresenterSetEnabled(bool enabled)
 {
     InterlockedExchange(
         &g_ptarIso.enabled,
         enabled?1:0);
 
-    PtIsoPresenterClearQueue();
+    InterlockedExchange(
+        &g_ptarIso.resetHistoryRequested,1);
 
-    if(enabled && g_ptarIso.wakeEvent)
+    if(g_ptarIso.wakeEvent)
         SetEvent(g_ptarIso.wakeEvent);
 
     PtDiagLogA(
@@ -1090,28 +1244,30 @@ static void PtIsoPresenterSetEnabled(bool enabled)
 static int PtIsoAcquireProducerSlot()
 {
     PTARIsoPresenter& p=g_ptarIso;
+
     if(!p.lockInitialized)
         return -1;
 
     EnterCriticalSection(&p.lock);
 
-    int freeSlot=-1;
+    int result=-1;
+
     for(int i=0;i<6;++i)
     {
         if(p.slots[i].state==PTAR_ISO_FREE)
         {
-            freeSlot=i;
+            result=i;
             break;
         }
     }
 
-    if(freeSlot<0)
+    if(result<0)
     {
-        // Production load-shed philosophy: preserve the newest REAL source
-        // frame. Reclaim the oldest queued REAL, never the history currently
-        // used for the next interpolation.
+        // Reclaim only an unconsumed READY frame. Never touch the HISTORY frame
+        // currently required for the next midpoint.
         int oldest=-1;
         unsigned long seq=0xFFFFFFFFul;
+
         for(int i=0;i<6;++i)
         {
             const PTARIsoSlot& s=p.slots[i];
@@ -1124,16 +1280,17 @@ static int PtIsoAcquireProducerSlot()
 
         if(oldest>=0)
         {
-            freeSlot=oldest;
+            result=oldest;
             ++p.mailboxDrops;
         }
     }
 
-    if(freeSlot>=0)
-        p.slots[freeSlot].state=PTAR_ISO_WRITING;
+    if(result>=0)
+        p.slots[result].state=PTAR_ISO_WRITING;
 
     LeaveCriticalSection(&p.lock);
-    return freeSlot;
+
+    return result;
 }
 
 inline HRESULT PtIsoSubmitReal(
@@ -1157,40 +1314,69 @@ inline HRESULT PtIsoSubmitReal(
     }
 
     PTARIsoSlot& s=p.slots[slotIndex];
-    s.sequence=sequence;
 
-    HRESULT hr=p.producer->StretchRect(
-        sourceSurface,0,
-        s.producerSurface,0,
-        D3DTEXF_NONE);
+    const LONGLONG t0=PtIsoNow();
 
-    if(SUCCEEDED(hr))
-        hr=s.producerFence->Issue(D3DISSUE_END);
+    HRESULT hr=p.producer->GetRenderTargetData(
+        sourceSurface,
+        s.producerReadback);
 
     if(SUCCEEDED(hr))
     {
-        // Flush producer commands without waiting for completion. The isolated
-        // thread waits on the EVENT query.
-        s.producerFence->GetData(
-            0,0,D3DGETDATA_FLUSH);
+        D3DLOCKED_RECT lr={};
+        hr=s.producerReadback->LockRect(
+            &lr,0,D3DLOCK_READONLY);
+
+        if(SUCCEEDED(hr))
+        {
+            const unsigned char* src=
+                (const unsigned char*)lr.pBits;
+
+            for(UINT y=0;y<s.rows;++y)
+            {
+                std::memcpy(
+                    s.cpuBytes+
+                        (size_t)y*(size_t)s.rowBytes,
+                    src+
+                        (size_t)y*(size_t)lr.Pitch,
+                    s.rowBytes);
+            }
+
+            HRESULT unlockHr=
+                s.producerReadback->UnlockRect();
+
+            if(FAILED(unlockHr))
+                hr=unlockHr;
+        }
     }
 
+    const LONGLONG dt=PtIsoNow()-t0;
+
+    ++p.bridgeSamples;
+    p.bridgeTotalTicks+=dt;
+    if(dt>p.bridgeMaxTicks)
+        p.bridgeMaxTicks=dt;
+
     EnterCriticalSection(&p.lock);
+
     if(SUCCEEDED(hr))
     {
+        s.sequence=sequence;
         s.state=PTAR_ISO_READY;
         ++p.submittedReal;
     }
     else
     {
         s.state=PTAR_ISO_FREE;
+        ++p.bridgeFailures;
     }
+
     LeaveCriticalSection(&p.lock);
 
     if(FAILED(hr))
     {
         PtDiagLogA(
-            "ISOLATED_SUBMIT_REAL_FAIL seq=%lu hr=0x%08lX",
+            "ISOLATED_READBACK_FAIL seq=%lu hr=0x%08lX",
             sequence,
             (unsigned long)hr);
         return hr;
