@@ -530,6 +530,15 @@ static HRESULT DrawFullscreenPass(
     dev->SetTexture(1,texture1);
     dev->SetTexture(2,texture2);
 
+    hr=dev->BeginScene();
+    if(FAILED(hr))
+    {
+        dev->SetTexture(0,0);
+        dev->SetTexture(1,0);
+        dev->SetTexture(2,0);
+        return hr;
+    }
+
     const float w=(float)targetW;
     const float h=(float)targetH;
     QuadVertex q[4]={
@@ -542,10 +551,15 @@ static HRESULT DrawFullscreenPass(
     hr=dev->DrawPrimitiveUP(
         D3DPT_TRIANGLESTRIP,2,q,sizeof(QuadVertex));
 
+    HRESULT endHr=dev->EndScene();
+
     dev->SetTexture(0,0);
     dev->SetTexture(1,0);
     dev->SetTexture(2,0);
-    return hr;
+
+    if(FAILED(hr))
+        return hr;
+    return endHr;
 }
 
 static HRESULT RenderSpatialToCurrent(IDirect3DDevice9* dev)
