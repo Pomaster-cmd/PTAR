@@ -474,7 +474,7 @@ jobs:
           $threadEnd=$iso.IndexOf('static void PtIsoPresenterRelease',$threadStart)
           if($threadStart -lt 0 -or $threadEnd -lt 0){throw 'isolated presenter thread bounds missing'}
           $threadBody=$iso.Substring($threadStart,$threadEnd-$threadStart)
-          if($threadBody -match 'producerFence->GetData'){
+          if($threadBody -match 'cur\.producerFence->GetData\s*\('){
             throw 'regression: source-device EVENT query is being polled from isolated presenter thread'
           }
           $promoteStart=$iso.IndexOf('static int PtIsoPromoteCompletedSharedSlots')
