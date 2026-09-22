@@ -45,7 +45,16 @@ enum PTARIsoSlotState
 
 struct PTARIsoSlot
 {
+    // GPU_SHARED transport members.
+    IDirect3DTexture9* producerTexture;
+    IDirect3DSurface9* producerSurface;
+    IDirect3DQuery9* producerFence;
+    HANDLE sharedHandle;
+
+    // CPU_READBACK fallback member.
     IDirect3DSurface9* producerReadback;
+
+    // Presenter-side texture/surface are used by both transports.
     IDirect3DTexture9* presenterTexture;
     IDirect3DSurface9* presenterSurface;
 
@@ -65,6 +74,7 @@ struct PTARIsoVertex
 struct PTARIsoPresenter
 {
     IDirect3DDevice9* producer;
+    IDirect3DDevice9Ex* producerEx;
 
     IDirect3D9Ex* presenterD3D;
     IDirect3DDevice9Ex* presenter;
@@ -107,6 +117,7 @@ struct PTARIsoPresenter
     UINT refreshHz;
     D3DFORMAT frameFormat;
     bool spatialActive;
+    bool sharedGpuTransport;
 
     volatile LONG running;
     volatile LONG enabled;
@@ -632,8 +643,9 @@ static DWORD WINAPI PtIsoPresenterThread(LPVOID)
     PTARIsoPresenter& p=g_ptarIso;
 
     PtDiagLogA(
-        "ISOLATED_PRESENTER_THREAD_START "
-        "transport=CPU_READBACK separate_device=1 async_fg=1 sync=1");
+        "ISOLATED_PRESENTER_THREAD_START transport=%s "
+        "separate_device=1 async_fg=1 sync=1",
+        p.sharedGpuTransport?"GPU_SHARED":"CPU_READBACK");
 
     while(InterlockedCompareExchange(&p.running,1,1)!=0)
     {
@@ -664,14 +676,50 @@ static DWORD WINAPI PtIsoPresenterThread(LPVOID)
 
         PTARIsoSlot& cur=p.slots[current];
 
-        HRESULT uploadHr=PtIsoUploadSlot(cur);
-        if(FAILED(uploadHr))
+        HRESULT transportHr=S_OK;
+
+        if(p.sharedGpuTransport)
+        {
+            if(!cur.producerFence)
+            {
+                transportHr=E_FAIL;
+            }
+            else
+            {
+                // Producer submitted + flushed the copy. Completion wait lives
+                // only on the isolated thread, never on the game's Present.
+                HRESULT q=S_FALSE;
+                int spins=0;
+                while(q==S_FALSE &&
+                      WaitForSingleObject(p.stopEvent,0)!=WAIT_OBJECT_0)
+                {
+                    q=cur.producerFence->GetData(0,0,0);
+                    if(q==S_FALSE)
+                    {
+                        if(++spins>2000)
+                        {
+                            q=E_FAIL;
+                            break;
+                        }
+                        SwitchToThread();
+                    }
+                }
+                transportHr=q==S_OK?S_OK:q;
+            }
+        }
+        else
+        {
+            transportHr=PtIsoUploadSlot(cur);
+        }
+
+        if(FAILED(transportHr))
         {
             ++p.bridgeFailures;
             PtDiagLogA(
-                "ISOLATED_UPLOAD_FAIL seq=%lu hr=0x%08lX",
+                "ISOLATED_TRANSPORT_FAIL transport=%s seq=%lu hr=0x%08lX",
+                p.sharedGpuTransport?"GPU_SHARED":"CPU_READBACK",
                 cur.sequence,
-                (unsigned long)uploadHr);
+                (unsigned long)transportHr);
 
             EnterCriticalSection(&p.lock);
             cur.state=PTAR_ISO_FREE;
@@ -796,6 +844,26 @@ static void PtIsoPresenterRelease()
     {
         PTARIsoSlot& s=p.slots[i];
 
+        if(s.producerFence)
+        {
+            s.producerFence->Release();
+            s.producerFence=0;
+        }
+
+        if(s.producerSurface)
+        {
+            s.producerSurface->Release();
+            s.producerSurface=0;
+        }
+
+        if(s.producerTexture)
+        {
+            s.producerTexture->Release();
+            s.producerTexture=0;
+        }
+
+        s.sharedHandle=0;
+
         if(s.presenterSurface)
         {
             s.presenterSurface->Release();
@@ -843,6 +911,7 @@ static void PtIsoPresenterRelease()
     if(p.presenter){p.presenter->Release();p.presenter=0;}
     if(p.presenterD3D){p.presenterD3D->Release();p.presenterD3D=0;}
 
+    if(p.producerEx){p.producerEx->Release();p.producerEx=0;}
     if(p.producer){p.producer->Release();p.producer=0;}
 
     if(p.lockInitialized)
@@ -862,6 +931,7 @@ static void PtIsoPresenterRelease()
     p.refreshHz=0;
     p.frameFormat=D3DFMT_UNKNOWN;
     p.spatialActive=false;
+    p.sharedGpuTransport=false;
 
     p.submittedReal=0;
     p.presentedReal=0;
@@ -1008,6 +1078,18 @@ inline HRESULT PtIsoPresenterInitialize(
     p.producer=producer;
     p.producer->AddRef();
 
+    HRESULT producerExHr=producer->QueryInterface(
+        __uuidof(IDirect3DDevice9Ex),
+        (void**)&p.producerEx);
+    p.sharedGpuTransport=
+        SUCCEEDED(producerExHr) &&
+        p.producerEx!=0;
+
+    PtDiagLogA(
+        "ISOLATED_TRANSPORT_SELECT producer_ex_hr=0x%08lX transport=%s",
+        (unsigned long)producerExHr,
+        p.sharedGpuTransport?"GPU_SHARED":"CPU_READBACK");
+
     p.selfModule=selfModule;
     p.adapter=adapter;
     p.deviceType=type;
@@ -1046,61 +1128,132 @@ inline HRESULT PtIsoPresenterInitialize(
         return hr;
     }
 
-    // CPU bridge + upload textures.
+    // Prefer direct GPU shared resources whenever the source device is
+    // D3D9Ex. Keep the measured CPU bridge as a generic fallback.
     for(int i=0;i<6;++i)
     {
         PTARIsoSlot& s=p.slots[i];
 
-        hr=producer->CreateOffscreenPlainSurface(
-            outputW,outputH,
-            frameFormat,
-            D3DPOOL_SYSTEMMEM,
-            &s.producerReadback,
-            0);
-
-        if(FAILED(hr) || !s.producerReadback)
+        if(p.sharedGpuTransport)
         {
-            PtDiagLogA(
-                "ISOLATED_READBACK_SURFACE_FAIL index=%d fmt=%u hr=0x%08lX",
-                i,(unsigned)frameFormat,
-                (unsigned long)hr);
-            PtIsoPresenterRelease();
-            return FAILED(hr)?hr:E_FAIL;
+            s.sharedHandle=0;
+
+            hr=p.producerEx->CreateTexture(
+                outputW,outputH,1,
+                D3DUSAGE_RENDERTARGET,
+                frameFormat,
+                D3DPOOL_DEFAULT,
+                &s.producerTexture,
+                &s.sharedHandle);
+
+            if(FAILED(hr) || !s.producerTexture || !s.sharedHandle)
+            {
+                PtDiagLogA(
+                    "ISOLATED_SHARED_CREATE_FAIL index=%d fmt=%u hr=0x%08lX handle=%p",
+                    i,(unsigned)frameFormat,
+                    (unsigned long)hr,
+                    s.sharedHandle);
+                PtIsoPresenterRelease();
+                return FAILED(hr)?hr:E_FAIL;
+            }
+
+            HANDLE openHandle=s.sharedHandle;
+            hr=p.presenter->CreateTexture(
+                outputW,outputH,1,
+                D3DUSAGE_RENDERTARGET,
+                frameFormat,
+                D3DPOOL_DEFAULT,
+                &s.presenterTexture,
+                &openHandle);
+
+            if(FAILED(hr) || !s.presenterTexture)
+            {
+                PtDiagLogA(
+                    "ISOLATED_SHARED_OPEN_FAIL index=%d fmt=%u hr=0x%08lX",
+                    i,(unsigned)frameFormat,
+                    (unsigned long)hr);
+                PtIsoPresenterRelease();
+                return FAILED(hr)?hr:E_FAIL;
+            }
+
+            hr=s.producerTexture->GetSurfaceLevel(
+                0,&s.producerSurface);
+            if(FAILED(hr) || !s.producerSurface)
+            {
+                PtIsoPresenterRelease();
+                return FAILED(hr)?hr:E_FAIL;
+            }
+
+            hr=s.presenterTexture->GetSurfaceLevel(
+                0,&s.presenterSurface);
+            if(FAILED(hr) || !s.presenterSurface)
+            {
+                PtIsoPresenterRelease();
+                return FAILED(hr)?hr:E_FAIL;
+            }
+
+            hr=p.producerEx->CreateQuery(
+                D3DQUERYTYPE_EVENT,
+                &s.producerFence);
+            if(FAILED(hr) || !s.producerFence)
+            {
+                PtIsoPresenterRelease();
+                return FAILED(hr)?hr:E_FAIL;
+            }
         }
-
-        hr=PtIsoCreateUploadTexture(
-            p.presenter,
-            outputW,outputH,
-            frameFormat,
-            &s.presenterTexture,
-            &s.presenterSurface);
-
-        if(FAILED(hr))
+        else
         {
-            PtDiagLogA(
-                "ISOLATED_UPLOAD_TEXTURE_FAIL index=%d fmt=%u hr=0x%08lX",
-                i,(unsigned)frameFormat,
-                (unsigned long)hr);
-            PtIsoPresenterRelease();
-            return hr;
-        }
+            hr=producer->CreateOffscreenPlainSurface(
+                outputW,outputH,
+                frameFormat,
+                D3DPOOL_SYSTEMMEM,
+                &s.producerReadback,
+                0);
 
-        s.rowBytes=outputW*bpp;
-        s.rows=outputH;
+            if(FAILED(hr) || !s.producerReadback)
+            {
+                PtDiagLogA(
+                    "ISOLATED_READBACK_SURFACE_FAIL index=%d fmt=%u hr=0x%08lX",
+                    i,(unsigned)frameFormat,
+                    (unsigned long)hr);
+                PtIsoPresenterRelease();
+                return FAILED(hr)?hr:E_FAIL;
+            }
 
-        const SIZE_T bytes=
-            (SIZE_T)s.rowBytes*(SIZE_T)s.rows;
+            hr=PtIsoCreateUploadTexture(
+                p.presenter,
+                outputW,outputH,
+                frameFormat,
+                &s.presenterTexture,
+                &s.presenterSurface);
 
-        s.cpuBytes=(unsigned char*)VirtualAlloc(
-            0,bytes,
-            MEM_COMMIT|MEM_RESERVE,
-            PAGE_READWRITE);
+            if(FAILED(hr))
+            {
+                PtDiagLogA(
+                    "ISOLATED_UPLOAD_TEXTURE_FAIL index=%d fmt=%u hr=0x%08lX",
+                    i,(unsigned)frameFormat,
+                    (unsigned long)hr);
+                PtIsoPresenterRelease();
+                return hr;
+            }
 
-        if(!s.cpuBytes)
-        {
-            hr=HRESULT_FROM_WIN32(GetLastError());
-            PtIsoPresenterRelease();
-            return hr;
+            s.rowBytes=outputW*bpp;
+            s.rows=outputH;
+
+            const SIZE_T bytes=
+                (SIZE_T)s.rowBytes*(SIZE_T)s.rows;
+
+            s.cpuBytes=(unsigned char*)VirtualAlloc(
+                0,bytes,
+                MEM_COMMIT|MEM_RESERVE,
+                PAGE_READWRITE);
+
+            if(!s.cpuBytes)
+            {
+                hr=HRESULT_FROM_WIN32(GetLastError());
+                PtIsoPresenterRelease();
+                return hr;
+            }
         }
 
         s.state=PTAR_ISO_FREE;
@@ -1202,9 +1355,10 @@ inline HRESULT PtIsoPresenterInitialize(
     }
 
     PtDiagLogA(
-        "ISOLATED_PRESENTER_READY transport=CPU_READBACK "
+        "ISOLATED_PRESENTER_READY transport=%s "
         "separate_device=1 async_fg=1 src=%ux%u out=%ux%u fmt=%u "
         "refresh=%u sync=1 slots=6",
+        p.sharedGpuTransport?"GPU_SHARED":"CPU_READBACK",
         sourceW,sourceH,
         outputW,outputH,
         (unsigned)frameFormat,
@@ -1316,44 +1470,73 @@ inline HRESULT PtIsoSubmitReal(
     }
 
     PTARIsoSlot& s=p.slots[slotIndex];
-
     const LONGLONG t0=PtIsoNow();
 
-    HRESULT hr=p.producer->GetRenderTargetData(
-        sourceSurface,
-        s.producerReadback);
+    HRESULT hr=S_OK;
 
-    if(SUCCEEDED(hr))
+    if(p.sharedGpuTransport)
     {
-        D3DLOCKED_RECT lr={};
-        hr=s.producerReadback->LockRect(
-            &lr,0,D3DLOCK_READONLY);
+        if(!s.producerSurface || !s.producerFence)
+        {
+            hr=E_FAIL;
+        }
+        else
+        {
+            hr=p.producer->StretchRect(
+                sourceSurface,0,
+                s.producerSurface,0,
+                D3DTEXF_NONE);
+
+            if(SUCCEEDED(hr))
+                hr=s.producerFence->Issue(D3DISSUE_END);
+
+            if(SUCCEEDED(hr))
+            {
+                // Submit commands only. The isolated thread owns completion
+                // waiting, so the game thread never waits for the cross-device
+                // handoff.
+                s.producerFence->GetData(
+                    0,0,D3DGETDATA_FLUSH);
+            }
+        }
+    }
+    else
+    {
+        hr=p.producer->GetRenderTargetData(
+            sourceSurface,
+            s.producerReadback);
 
         if(SUCCEEDED(hr))
         {
-            const unsigned char* src=
-                (const unsigned char*)lr.pBits;
+            D3DLOCKED_RECT lr={};
+            hr=s.producerReadback->LockRect(
+                &lr,0,D3DLOCK_READONLY);
 
-            for(UINT y=0;y<s.rows;++y)
+            if(SUCCEEDED(hr))
             {
-                std::memcpy(
-                    s.cpuBytes+
-                        (size_t)y*(size_t)s.rowBytes,
-                    src+
-                        (size_t)y*(size_t)lr.Pitch,
-                    s.rowBytes);
+                const unsigned char* src=
+                    (const unsigned char*)lr.pBits;
+
+                for(UINT y=0;y<s.rows;++y)
+                {
+                    std::memcpy(
+                        s.cpuBytes+
+                            (size_t)y*(size_t)s.rowBytes,
+                        src+
+                            (size_t)y*(size_t)lr.Pitch,
+                        s.rowBytes);
+                }
+
+                HRESULT unlockHr=
+                    s.producerReadback->UnlockRect();
+
+                if(FAILED(unlockHr))
+                    hr=unlockHr;
             }
-
-            HRESULT unlockHr=
-                s.producerReadback->UnlockRect();
-
-            if(FAILED(unlockHr))
-                hr=unlockHr;
         }
     }
 
     const LONGLONG dt=PtIsoNow()-t0;
-
     ++p.bridgeSamples;
     p.bridgeTotalTicks+=dt;
     if(dt>p.bridgeMaxTicks)
@@ -1378,7 +1561,8 @@ inline HRESULT PtIsoSubmitReal(
     if(FAILED(hr))
     {
         PtDiagLogA(
-            "ISOLATED_READBACK_FAIL seq=%lu hr=0x%08lX",
+            "ISOLATED_SUBMIT_REAL_FAIL transport=%s seq=%lu hr=0x%08lX",
+            p.sharedGpuTransport?"GPU_SHARED":"CPU_READBACK",
             sequence,
             (unsigned long)hr);
         return hr;
