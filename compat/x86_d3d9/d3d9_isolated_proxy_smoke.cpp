@@ -56,9 +56,59 @@ static int DrawAndPresent(
             1.0f,0);
         if(FAILED(hr))
         {
+            HRESULT coop=dev->TestCooperativeLevel();
+
+            IDirect3DDevice9Ex* ex=0;
+            HRESULT qiex=dev->QueryInterface(
+                __uuidof(IDirect3DDevice9Ex),
+                (void**)&ex);
+            HRESULT state=ex?
+                ex->CheckDeviceState(GetFocus()):
+                E_NOINTERFACE;
+
+            IDirect3DSurface9* rt=0;
+            HRESULT rtHr=dev->GetRenderTarget(0,&rt);
+            D3DSURFACE_DESC rd={};
+            HRESULT rdHr=rt?
+                rt->GetDesc(&rd):
+                E_FAIL;
+
+            D3DVIEWPORT9 vp={};
+            HRESULT vpHr=dev->GetViewport(&vp);
+
             std::printf(
-                "PROXY_CLEAR_FAIL frame=%d hr=0x%08lX\n",
-                i,(unsigned long)hr);
+                "PROXY_CLEAR_FAIL frame=%d hr=0x%08lX "
+                "coop=0x%08lX qiex=0x%08lX state=0x%08lX "
+                "getrt=0x%08lX rt=%p desc=0x%08lX %ux%u fmt=%u "
+                "viewport=0x%08lX %u,%u %ux%u\n",
+                i,(unsigned long)hr,
+                (unsigned long)coop,
+                (unsigned long)qiex,
+                (unsigned long)state,
+                (unsigned long)rtHr,rt,
+                (unsigned long)rdHr,
+                rd.Width,rd.Height,(unsigned)rd.Format,
+                (unsigned long)vpHr,
+                vp.X,vp.Y,vp.Width,vp.Height);
+
+            if(rt) rt->Release();
+            if(ex) ex->Release();
+
+            // Diagnostic only: determine whether this is a transient device
+            // state caused by concurrent presenter activity. The test still
+            // fails even when retry succeeds; we do not mask the first failure.
+            Sleep(20);
+            HRESULT retry=dev->Clear(
+                0,0,D3DCLEAR_TARGET,
+                D3DCOLOR_XRGB(
+                    (i*13)&255,
+                    (i*7)&255,
+                    (i*3)&255),
+                1.0f,0);
+            std::printf(
+                "PROXY_CLEAR_RETRY frame=%d hr=0x%08lX\n",
+                i,(unsigned long)retry);
+
             return 11;
         }
 
