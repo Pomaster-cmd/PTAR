@@ -326,6 +326,30 @@ jobs:
           }
           $global:LASTEXITCODE=0
 
+      - name: Validate D3D9Ex managed-resource translation candidate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 compat\x86_d3d9\d3d9_ex_managed_translation_probe.cpp /link user32.lib /OUT:artifact\d3d9_ex_managed_translation_probe.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          & artifact\d3d9_ex_managed_translation_probe.exe | Tee-Object build_x86\D3D9_EX_MANAGED_TRANSLATION_PROBE.txt
+          if($LASTEXITCODE -ne 0){throw "D3D9Ex managed-translation probe failed rc=$LASTEXITCODE"}
+          $mt=Get-Content build_x86\D3D9_EX_MANAGED_TRANSLATION_PROBE.txt -Raw
+          if($mt -notmatch 'D3D9EX_MANAGED_TRANSLATION_PROBE=PASS'){throw 'managed translation PASS marker missing'}
+          foreach($token in @(
+            'TRANSLATE_TEXTURE_CREATE=0x00000000',
+            'TRANSLATE_CUBE_CREATE=0x00000000',
+            'TRANSLATE_VOLUME_CREATE=0x00000000',
+            'TRANSLATE_VB_CREATE=0x00000000',
+            'TRANSLATE_IB_CREATE=0x00000000',
+            'TRANSLATE_BASE_RESET=0x00000000',
+            'TRANSLATE_POST_RESET_VB_LOCK=0x00000000',
+            'TRANSLATE_POST_RESET_IB_LOCK=0x00000000'
+          )){
+            if($mt -notmatch [regex]::Escape($token)){throw "managed translation evidence missing: $token"}
+          }
+          Write-Host 'D3D9EX_MANAGED_TRANSLATION=PASS'
+
       - name: Probe D3D9Ex managed-pool compatibility
         shell: pwsh
         run: |
@@ -708,6 +732,7 @@ jobs:
           Remove-Item artifact\d3d9_regular_to_ex_shared_smoke.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\d3d9_swapchain_donotwait_smoke.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\d3d9_ex_to_regular_shared_probe.exe -Force -ErrorAction SilentlyContinue
+          Remove-Item artifact\d3d9_ex_managed_translation_probe.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\d3d9_ex_managed_pool_probe.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\d3d9_ex_factory_base_device_probe.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\d3d9_regular_readback_probe.exe -Force -ErrorAction SilentlyContinue
@@ -746,6 +771,7 @@ jobs:
             build_x86/D3D9_REGULAR_TO_EX_SHARED_SMOKE.txt
             build_x86/D3D9_SWAPCHAIN_DONOTWAIT_SMOKE.txt
             build_x86/D3D9_EX_TO_REGULAR_SHARED_PROBE.txt
+            build_x86/D3D9_EX_MANAGED_TRANSLATION_PROBE.txt
             build_x86/D3D9_EX_MANAGED_POOL_PROBE.txt
             build_x86/D3D9_EX_FACTORY_BASE_DEVICE_PROBE.txt
             build_x86/D3D9_REGULAR_READBACK_PROBE.txt
