@@ -98,7 +98,7 @@ jobs:
           }
           $sha=(Get-FileHash artifact\d3d9.dll -Algorithm SHA256).Hash.ToLowerInvariant()
           @(
-            'PTAR_VARIANT=PTAR_X86_D3D9_GW16I_GPU_SHARED1',
+            'PTAR_VARIANT=PTAR_X86_D3D9_GW16I_GPU_SHARED2',
             'PE_MACHINE=I386_0x014C',
             'API=D3D9',
             'SPATIAL=PTAR_NG_MOE_X15_PLUS_UNIVERSAL_EDGE_PS3',
@@ -121,6 +121,8 @@ jobs:
             'FG_LATE_POLICY=LOAD_SHED_GENERATED_BEFORE_REAL',
             'PRESENTER_ARCH=D3D11_MODEL_SEPARATE_DEVICE_GPU_SHARED_RING',
             'PRESENTER_TRANSPORT=D3D9EX_SHARED_GPU_WITH_CPU_READBACK_FALLBACK',
+            'SHARED_SYNC=EVENT_QUERY_PRODUCER_THREAD_ONLY',
+            'SHARED_READY_POLICY=PRODUCER_POLL_THEN_WAKE_PRESENTER',
             'PRODUCER_DEVICE=D3D9EX_BASE_INTERFACE_MANAGED_TRANSLATION',
             'MANAGED_COMPAT=D3DPOOL_MANAGED_TO_DEFAULT_DYNAMIC',
             'PRODUCER_SWAP=WINDOWED_IMMEDIATE_NONVISIBLE',
@@ -450,6 +452,9 @@ jobs:
             'sharedHandle',
             'CreateQuery',
             'D3DQUERYTYPE_EVENT',
+            'PTAR_ISO_GPU_PENDING',
+            'PtIsoPromoteCompletedSharedSlots',
+            'producer_thread=1',
             'GetRenderTargetData',
             'D3DPOOL_SYSTEMMEM',
             'CPU_READBACK',
@@ -464,6 +469,23 @@ jobs:
               throw "isolated presenter contract missing: $required"
             }
           }
+
+          $threadStart=$iso.IndexOf('static DWORD WINAPI PtIsoPresenterThread')
+          $threadEnd=$iso.IndexOf('static void PtIsoPresenterRelease',$threadStart)
+          if($threadStart -lt 0 -or $threadEnd -lt 0){throw 'isolated presenter thread bounds missing'}
+          $threadBody=$iso.Substring($threadStart,$threadEnd-$threadStart)
+          if($threadBody -match 'producerFence->GetData'){
+            throw 'regression: source-device EVENT query is being polled from isolated presenter thread'
+          }
+          $promoteStart=$iso.IndexOf('static int PtIsoPromoteCompletedSharedSlots')
+          $promoteEnd=$iso.IndexOf('static int PtIsoCountReadyLocked',$promoteStart)
+          if($promoteStart -lt 0 -or $promoteEnd -lt 0){throw 'producer fence retirement helper bounds missing'}
+          $promoteBody=$iso.Substring($promoteStart,$promoteEnd-$promoteStart)
+          if($promoteBody -notmatch 'producerFence->GetData' -or
+             $promoteBody -notmatch 'D3DGETDATA_FLUSH'){
+            throw 'producer-thread fence retirement contract incomplete'
+          }
+          Write-Host 'D3D9_SHARED_FENCE_THREAD_OWNERSHIP=PASS'
 
           foreach($required in @(
             'source_factory=D3D9Ex',
@@ -672,6 +694,12 @@ jobs:
             if($rt -match 'PRESENT_RESTORE_FAIL'){
               throw "producer state restoration failure pass $pass"
             }
+            if($rt -match 'fence_errors=[1-9][0-9]*' -or
+               $rt -match 'fence_drops=[1-9][0-9]*' -or
+               $rt -match 'fence_error=[1-9][0-9]*' -or
+               $rt -match 'fence_drop=[1-9][0-9]*'){
+              throw "shared producer-fence regression pass $pass"
+            }
             if($rt -match 'INIT_AsyncPresenter' -or $rt -match 'FG_QUEUE_GENERATED'){
               throw "superseded same-device presenter path executed pass $pass"
             }
@@ -754,8 +782,12 @@ jobs:
           }
           if($rt -match 'fg_failures=[1-9][0-9]*' -or
              $rt -match 'present_failures=[1-9][0-9]*' -or
-             $rt -match 'bridge_failures=[1-9][0-9]*'){
-            throw 'integrated isolated FG runtime reported failures'
+             $rt -match 'bridge_failures=[1-9][0-9]*' -or
+             $rt -match 'fence_errors=[1-9][0-9]*' -or
+             $rt -match 'fence_drops=[1-9][0-9]*' -or
+             $rt -match 'fence_error=[1-9][0-9]*' -or
+             $rt -match 'fence_drop=[1-9][0-9]*'){
+            throw 'integrated isolated FG runtime reported transport/fence failures'
           }
 
           Write-Host 'D3D9_ISOLATED_FG_END_TO_END=PASS'
