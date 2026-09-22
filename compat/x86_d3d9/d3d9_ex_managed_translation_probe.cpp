@@ -46,6 +46,23 @@ static bool FillTexture(IDirect3DTexture9* t,DWORD value)
     return true;
 }
 
+static bool CheckTextureTop(IDirect3DTexture9* t,DWORD expected)
+{
+    if(!t) return false;
+    D3DLOCKED_RECT lr={};
+    HRESULT hr=t->LockRect(0,&lr,0,0);
+    if(FAILED(hr))
+    {
+        std::printf("TEXTURE_CHECK_LOCK_FAIL hr=0x%08lX\n",(unsigned long)hr);
+        return false;
+    }
+    DWORD got=*(const DWORD*)lr.pBits;
+    t->UnlockRect(0);
+    std::printf("TRANSLATE_TEXTURE_PERSIST got=0x%08lX expected=0x%08lX\n",
+        (unsigned long)got,(unsigned long)expected);
+    return got==expected;
+}
+
 static bool FillCube(IDirect3DCubeTexture9* t,DWORD value)
 {
     if(!t) return false;
@@ -147,6 +164,7 @@ int main()
     IDirect3DDevice9* dev=(IDirect3DDevice9*)ex;
 
     IDirect3DTexture9* tex=0;
+    IDirect3DTexture9* autoTex=0;
     IDirect3DCubeTexture9* cube=0;
     IDirect3DVolumeTexture9* volume=0;
     IDirect3DVertexBuffer9* vb=0;
@@ -155,6 +173,9 @@ int main()
     HRESULT texHr=dev->CreateTexture(
         128,128,4,D3DUSAGE_DYNAMIC,
         D3DFMT_A8R8G8B8,D3DPOOL_DEFAULT,&tex,0);
+    HRESULT autoHr=dev->CreateTexture(
+        128,128,0,D3DUSAGE_DYNAMIC|D3DUSAGE_AUTOGENMIPMAP,
+        D3DFMT_A8R8G8B8,D3DPOOL_DEFAULT,&autoTex,0);
     HRESULT cubeHr=dev->CreateCubeTexture(
         64,3,D3DUSAGE_DYNAMIC,
         D3DFMT_A8R8G8B8,D3DPOOL_DEFAULT,&cube,0);
@@ -169,6 +190,8 @@ int main()
         D3DFMT_INDEX16,D3DPOOL_DEFAULT,&ib,0);
 
     std::printf("TRANSLATE_TEXTURE_CREATE=0x%08lX ptr=%p\n",(unsigned long)texHr,tex);
+    std::printf("TRANSLATE_AUTOGEN_CREATE=0x%08lX ptr=%p levels=%u\n",
+        (unsigned long)autoHr,autoTex,autoTex?autoTex->GetLevelCount():0u);
     std::printf("TRANSLATE_CUBE_CREATE=0x%08lX ptr=%p\n",(unsigned long)cubeHr,cube);
     std::printf("TRANSLATE_VOLUME_CREATE=0x%08lX ptr=%p\n",(unsigned long)volHr,volume);
     std::printf("TRANSLATE_VB_CREATE=0x%08lX ptr=%p\n",(unsigned long)vbHr,vb);
@@ -178,6 +201,26 @@ int main()
         return 7;
 
     if(!FillTexture(tex,0xFF112233u)) return 8;
+
+    // AUTOGEN is a legal managed-texture use case. Probe whether native
+    // DEFAULT|DYNAMIC can preserve it without introducing a wrapper.
+    if(SUCCEEDED(autoHr) && autoTex)
+    {
+        D3DLOCKED_RECT alr={};
+        HRESULT alock=autoTex->LockRect(0,&alr,0,0);
+        std::printf("TRANSLATE_AUTOGEN_LOCK0=0x%08lX ptr=%p\n",
+            (unsigned long)alock,alr.pBits);
+        if(SUCCEEDED(alock) && alr.pBits)
+        {
+            for(UINT y=0;y<128;++y)
+            {
+                DWORD* row=(DWORD*)((BYTE*)alr.pBits+y*alr.Pitch);
+                for(UINT x=0;x<128;++x) row[x]=0xFF2468ACu;
+            }
+            autoTex->UnlockRect(0);
+            autoTex->GenerateMipSubLevels();
+        }
+    }
     if(!FillCube(cube,0xFF334455u)) return 9;
     if(!FillVolume(volume,0x66u)) return 10;
 
@@ -219,22 +262,27 @@ int main()
         (unsigned long)descHr,td.Width,td.Height);
     if(FAILED(descHr)||td.Width!=128||td.Height!=128) return 15;
 
-    // Re-lock/write after Reset validates the practical managed-resource use case.
-    if(!FillTexture(tex,0xFF556677u)) return 16;
-    if(!FillCube(cube,0xFF778899u)) return 17;
-    if(!FillVolume(volume,0x99u)) return 18;
+    // Managed semantics require content persistence across Reset. D3D9Ex is
+    // expected to keep DEFAULT resources alive; verify content rather than
+    // merely proving the COM object still exists.
+    if(!CheckTextureTop(tex,0xFF112233u)) return 16;
+
+    // Re-lock/write after Reset validates continued mutability.
+    if(!FillTexture(tex,0xFF556677u)) return 22;
+    if(!FillCube(cube,0xFF778899u)) return 23;
+    if(!FillVolume(volume,0x99u)) return 24;
 
     vp=0;
     hr=vb->Lock(0,4096,&vp,D3DLOCK_DISCARD);
     std::printf("TRANSLATE_POST_RESET_VB_LOCK=0x%08lX ptr=%p\n",(unsigned long)hr,vp);
-    if(FAILED(hr)||!vp) return 19;
+    if(FAILED(hr)||!vp) return 25;
     std::memset(vp,0x3C,4096);
     vb->Unlock();
 
     ip=0;
     hr=ib->Lock(0,4096,&ip,D3DLOCK_DISCARD);
     std::printf("TRANSLATE_POST_RESET_IB_LOCK=0x%08lX ptr=%p\n",(unsigned long)hr,ip);
-    if(FAILED(hr)||!ip) return 20;
+    if(FAILED(hr)||!ip) return 26;
     std::memset(ip,0xC3,4096);
     ib->Unlock();
 
@@ -245,10 +293,11 @@ int main()
     std::printf(
         "TRANSLATE_POST_RESET_BIND tex=0x%08lX vb=0x%08lX ib=0x%08lX\n",
         (unsigned long)bindTex,(unsigned long)bindVb,(unsigned long)bindIb);
-    if(FAILED(bindTex)||FAILED(bindVb)||FAILED(bindIb)) return 21;
+    if(FAILED(bindTex)||FAILED(bindVb)||FAILED(bindIb)) return 27;
 
     ib->Release();
     vb->Release();
+    if(autoTex) autoTex->Release();
     volume->Release();
     cube->Release();
     tex->Release();
