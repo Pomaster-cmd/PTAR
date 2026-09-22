@@ -40,7 +40,8 @@ enum PTARIsoSlotState
     PTAR_ISO_WRITING=1,
     PTAR_ISO_READY=2,
     PTAR_ISO_HISTORY=3,
-    PTAR_ISO_PROCESSING=4
+    PTAR_ISO_PROCESSING=4,
+    PTAR_ISO_GPU_PENDING=5
 };
 
 struct PTARIsoSlot
@@ -64,6 +65,7 @@ struct PTARIsoSlot
 
     PTARIsoSlotState state;
     unsigned long sequence;
+    unsigned long fencePolls;
 };
 
 struct PTARIsoVertex
@@ -131,6 +133,10 @@ struct PTARIsoPresenter
     unsigned long fgFailures;
     unsigned long presentFailures;
     unsigned long bridgeFailures;
+    unsigned long sharedFenceReady;
+    unsigned long sharedFencePending;
+    unsigned long sharedFenceErrors;
+    unsigned long sharedFenceDrops;
     unsigned long frameMarkerSequence;
 
     LARGE_INTEGER qpcFrequency;
@@ -413,7 +419,8 @@ static void PtIsoMaybeLogStatus()
             "STATUS_RUNTIME fg=%s profile=%d src=%ux%u out=%ux%u "
             "filter=%d real_fps=%.3f visible_fps=%.3f "
             "real_count=%lu gen_count=%lu mailbox_drop=%lu "
-            "load_shed=%lu bridge_fail=%lu",
+            "load_shed=%lu bridge_fail=%lu "
+            "fence_ready=%lu fence_pending=%lu fence_error=%lu fence_drop=%lu",
             PtHudFgEnabled()?"ON":"OFF",
             PtHudFgProfile(),
             p.sourceW,p.sourceH,
@@ -425,7 +432,11 @@ static void PtIsoMaybeLogStatus()
             p.presentedGenerated,
             p.mailboxDrops,
             p.loadShedRealOnly,
-            p.bridgeFailures);
+            p.bridgeFailures,
+            p.sharedFenceReady,
+            p.sharedFencePending,
+            p.sharedFenceErrors,
+            p.sharedFenceDrops);
     }
 
     const LONGLONG now=PtHudNow();
@@ -453,7 +464,8 @@ static void PtIsoMaybeLogStatus()
         PtDiagLogA(
             "FPS_WALLCLOCK_SAMPLE real_fps=%.3f visible_fps=%.3f "
             "fg=%s real_count=%lu gen_count=%lu mailbox_drop=%lu "
-            "load_shed=%lu bridge_avg_ms=%.3f bridge_max_ms=%.3f",
+            "load_shed=%lu bridge_avg_ms=%.3f bridge_max_ms=%.3f "
+            "fence_ready=%lu fence_pending=%lu fence_error=%lu fence_drop=%lu",
             PtHudRealFps(),
             PtFgPacerVisibleFps(),
             PtHudFgEnabled()?"ON":"OFF",
@@ -462,7 +474,11 @@ static void PtIsoMaybeLogStatus()
             p.mailboxDrops,
             p.loadShedRealOnly,
             bridgeAvgMs,
-            bridgeMaxMs);
+            bridgeMaxMs,
+            p.sharedFenceReady,
+            p.sharedFencePending,
+            p.sharedFenceErrors,
+            p.sharedFenceDrops);
     }
 }
 
@@ -587,6 +603,158 @@ static HRESULT PtIsoUploadSlot(PTARIsoSlot& s)
     return s.presenterTexture->UnlockRect(0);
 }
 
+static HRESULT PtIsoRecreateProducerFence(
+    PTARIsoSlot& s)
+{
+    PTARIsoPresenter& p=g_ptarIso;
+
+    if(s.producerFence)
+    {
+        s.producerFence->Release();
+        s.producerFence=0;
+    }
+
+    if(!p.producerEx)
+        return D3DERR_NOTAVAILABLE;
+
+    return p.producerEx->CreateQuery(
+        D3DQUERYTYPE_EVENT,
+        &s.producerFence);
+}
+
+// IMPORTANT D3D9Ex field rule:
+// Event queries are issued AND polled only from the game's producer thread.
+// The previous build polled producerFence from the isolated presenter thread.
+// On older Nvidia/D3D9Ex drivers that returned E_FAIL repeatedly, especially
+// after the 30 Hz FG governor engaged, which dropped almost every REAL frame.
+// We now retire shared GPU copies on later producer Presents and wake the
+// presenter only after the source-device query is signaled.
+static int PtIsoPromoteCompletedSharedSlots()
+{
+    PTARIsoPresenter& p=g_ptarIso;
+
+    if(!p.sharedGpuTransport ||
+       !p.producerEx ||
+       !p.lockInitialized)
+        return 0;
+
+    int promoted=0;
+    bool wake=false;
+
+    for(int i=0;i<6;++i)
+    {
+        bool pending=false;
+
+        EnterCriticalSection(&p.lock);
+        pending=
+            p.slots[i].state==
+                PTAR_ISO_GPU_PENDING;
+        LeaveCriticalSection(&p.lock);
+
+        if(!pending)
+            continue;
+
+        PTARIsoSlot& s=p.slots[i];
+
+        if(!s.producerFence)
+        {
+            ++p.sharedFenceErrors;
+            ++p.sharedFenceDrops;
+
+            HRESULT recreateHr=
+                PtIsoRecreateProducerFence(s);
+
+            EnterCriticalSection(&p.lock);
+            if(s.state==PTAR_ISO_GPU_PENDING)
+                s.state=PTAR_ISO_FREE;
+            LeaveCriticalSection(&p.lock);
+
+            PtDiagLogA(
+                "ISOLATED_SHARED_FENCE_MISSING seq=%lu "
+                "recreate_hr=0x%08lX drop=1",
+                s.sequence,
+                (unsigned long)recreateHr);
+            continue;
+        }
+
+        HRESULT q=s.producerFence->GetData(
+            0,0,D3DGETDATA_FLUSH);
+
+        if(q==S_OK)
+        {
+            EnterCriticalSection(&p.lock);
+            if(s.state==PTAR_ISO_GPU_PENDING)
+            {
+                s.state=PTAR_ISO_READY;
+                s.fencePolls=0;
+                ++promoted;
+                ++p.sharedFenceReady;
+                wake=true;
+            }
+            LeaveCriticalSection(&p.lock);
+        }
+        else if(q==S_FALSE)
+        {
+            ++s.fencePolls;
+            ++p.sharedFencePending;
+
+            // Six source Presents are a deliberately conservative upper
+            // bound. A 1080p StretchRect fence should complete far sooner.
+            // Recycle a pathological fence rather than exhausting the ring.
+            if(s.fencePolls>6)
+            {
+                ++p.sharedFenceDrops;
+
+                HRESULT recreateHr=
+                    PtIsoRecreateProducerFence(s);
+
+                EnterCriticalSection(&p.lock);
+                if(s.state==PTAR_ISO_GPU_PENDING)
+                    s.state=PTAR_ISO_FREE;
+                LeaveCriticalSection(&p.lock);
+
+                PtDiagLogA(
+                    "ISOLATED_SHARED_FENCE_TIMEOUT seq=%lu polls=%lu "
+                    "recreate_hr=0x%08lX drop=1",
+                    s.sequence,
+                    s.fencePolls,
+                    (unsigned long)recreateHr);
+
+                s.fencePolls=0;
+            }
+        }
+        else
+        {
+            ++p.sharedFenceErrors;
+            ++p.sharedFenceDrops;
+
+            // Microsoft documents an error result as a terminal query state:
+            // recreate the query before this slot is reused.
+            HRESULT recreateHr=
+                PtIsoRecreateProducerFence(s);
+
+            EnterCriticalSection(&p.lock);
+            if(s.state==PTAR_ISO_GPU_PENDING)
+                s.state=PTAR_ISO_FREE;
+            LeaveCriticalSection(&p.lock);
+
+            PtDiagLogA(
+                "ISOLATED_SHARED_FENCE_ERROR producer_thread=1 "
+                "seq=%lu hr=0x%08lX recreate_hr=0x%08lX drop=1",
+                s.sequence,
+                (unsigned long)q,
+                (unsigned long)recreateHr);
+
+            s.fencePolls=0;
+        }
+    }
+
+    if(wake && p.wakeEvent)
+        SetEvent(p.wakeEvent);
+
+    return promoted;
+}
+
 static int PtIsoCountReadyLocked()
 {
     int count=0;
@@ -627,8 +795,12 @@ static void PtIsoResetHistoryOnPresenterThread()
     for(int i=0;i<6;++i)
     {
         if(p.slots[i].state==PTAR_ISO_READY ||
-           p.slots[i].state==PTAR_ISO_HISTORY)
+           p.slots[i].state==PTAR_ISO_HISTORY ||
+           p.slots[i].state==PTAR_ISO_GPU_PENDING)
+        {
             p.slots[i].state=PTAR_ISO_FREE;
+            p.slots[i].fencePolls=0;
+        }
     }
 
     p.historySlot=-1;
@@ -680,32 +852,13 @@ static DWORD WINAPI PtIsoPresenterThread(LPVOID)
 
         if(p.sharedGpuTransport)
         {
-            if(!cur.producerFence)
-            {
-                transportHr=E_FAIL;
-            }
-            else
-            {
-                // Producer submitted + flushed the copy. Completion wait lives
-                // only on the isolated thread, never on the game's Present.
-                HRESULT q=S_FALSE;
-                int spins=0;
-                while(q==S_FALSE &&
-                      WaitForSingleObject(p.stopEvent,0)!=WAIT_OBJECT_0)
-                {
-                    q=cur.producerFence->GetData(0,0,0);
-                    if(q==S_FALSE)
-                    {
-                        if(++spins>2000)
-                        {
-                            q=E_FAIL;
-                            break;
-                        }
-                        SwitchToThread();
-                    }
-                }
-                transportHr=q==S_OK?S_OK:q;
-            }
+            // READY means the producer thread already observed S_OK from the
+            // source-device EVENT query. Never call producerFence->GetData
+            // from this isolated thread: old D3D9Ex/Nvidia drivers can return
+            // E_FAIL for that cross-thread polling pattern.
+            transportHr=
+                cur.presenterSurface?
+                    S_OK:E_FAIL;
         }
         else
         {
@@ -716,7 +869,7 @@ static DWORD WINAPI PtIsoPresenterThread(LPVOID)
         {
             ++p.bridgeFailures;
             PtDiagLogA(
-                "ISOLATED_TRANSPORT_FAIL transport=%s seq=%lu hr=0x%08lX",
+                "ISOLATED_TRANSPORT_FAIL transport=%s seq=%lu hr=0x%08lX producer_fence_retired=1",
                 p.sharedGpuTransport?"GPU_SHARED":"CPU_READBACK",
                 cur.sequence,
                 (unsigned long)transportHr);
@@ -811,7 +964,8 @@ static DWORD WINAPI PtIsoPresenterThread(LPVOID)
         "ISOLATED_PRESENTER_THREAD_STOP submitted_real=%lu "
         "presented_real=%lu presented_generated=%lu mailbox_drops=%lu "
         "load_shed=%lu fg_failures=%lu present_failures=%lu "
-        "bridge_failures=%lu",
+        "bridge_failures=%lu fence_ready=%lu fence_pending=%lu "
+        "fence_errors=%lu fence_drops=%lu",
         p.submittedReal,
         p.presentedReal,
         p.presentedGenerated,
@@ -819,7 +973,11 @@ static DWORD WINAPI PtIsoPresenterThread(LPVOID)
         p.loadShedRealOnly,
         p.fgFailures,
         p.presentFailures,
-        p.bridgeFailures);
+        p.bridgeFailures,
+        p.sharedFenceReady,
+        p.sharedFencePending,
+        p.sharedFenceErrors,
+        p.sharedFenceDrops);
 
     return 0;
 }
@@ -892,6 +1050,7 @@ static void PtIsoPresenterRelease()
         s.rows=0;
         s.state=PTAR_ISO_FREE;
         s.sequence=0;
+        s.fencePolls=0;
     }
 
     if(p.generatedSurface){p.generatedSurface->Release();p.generatedSurface=0;}
@@ -941,6 +1100,10 @@ static void PtIsoPresenterRelease()
     p.fgFailures=0;
     p.presentFailures=0;
     p.bridgeFailures=0;
+    p.sharedFenceReady=0;
+    p.sharedFencePending=0;
+    p.sharedFenceErrors=0;
+    p.sharedFenceDrops=0;
     p.frameMarkerSequence=0;
 
     p.qpcFrequency.QuadPart=0;
@@ -1257,6 +1420,7 @@ inline HRESULT PtIsoPresenterInitialize(
         }
 
         s.state=PTAR_ISO_FREE;
+        s.fencePolls=0;
     }
 
     // FG shader + render resources exist only on the isolated presenter.
@@ -1459,6 +1623,9 @@ inline HRESULT PtIsoSubmitReal(
        !p.producer || !sourceSurface)
         return D3DERR_NOTAVAILABLE;
 
+    if(p.sharedGpuTransport)
+        PtIsoPromoteCompletedSharedSlots();
+
     const int slotIndex=PtIsoAcquireProducerSlot();
     if(slotIndex<0)
     {
@@ -1473,6 +1640,8 @@ inline HRESULT PtIsoSubmitReal(
     const LONGLONG t0=PtIsoNow();
 
     HRESULT hr=S_OK;
+
+    HRESULT sourceFenceState=S_OK;
 
     if(p.sharedGpuTransport)
     {
@@ -1492,11 +1661,34 @@ inline HRESULT PtIsoSubmitReal(
 
             if(SUCCEEDED(hr))
             {
-                // Submit commands only. The isolated thread owns completion
-                // waiting, so the game thread never waits for the cross-device
-                // handoff.
-                s.producerFence->GetData(
-                    0,0,D3DGETDATA_FLUSH);
+                // Flush without waiting. Query status is sampled on THIS
+                // producer thread only. If not ready yet, a later game Present
+                // retires it through PtIsoPromoteCompletedSharedSlots().
+                sourceFenceState=
+                    s.producerFence->GetData(
+                        0,0,D3DGETDATA_FLUSH);
+
+                if(sourceFenceState!=S_OK &&
+                   sourceFenceState!=S_FALSE)
+                {
+                    ++p.sharedFenceErrors;
+
+                    HRESULT recreateHr=
+                        PtIsoRecreateProducerFence(s);
+
+                    PtDiagLogA(
+                        "ISOLATED_SHARED_FENCE_SUBMIT_ERROR "
+                        "producer_thread=1 seq=%lu hr=0x%08lX "
+                        "recreate_hr=0x%08lX drop=1",
+                        sequence,
+                        (unsigned long)sourceFenceState,
+                        (unsigned long)recreateHr);
+
+                    // The copy itself was submitted successfully; drop only
+                    // this transport frame and keep the game running.
+                    ++p.sharedFenceDrops;
+                    sourceFenceState=E_FAIL;
+                }
             }
         }
     }
@@ -1542,12 +1734,39 @@ inline HRESULT PtIsoSubmitReal(
     if(dt>p.bridgeMaxTicks)
         p.bridgeMaxTicks=dt;
 
+    bool readyNow=false;
+
     EnterCriticalSection(&p.lock);
 
     if(SUCCEEDED(hr))
     {
         s.sequence=sequence;
-        s.state=PTAR_ISO_READY;
+        s.fencePolls=0;
+
+        if(p.sharedGpuTransport)
+        {
+            if(sourceFenceState==S_OK)
+            {
+                s.state=PTAR_ISO_READY;
+                ++p.sharedFenceReady;
+                readyNow=true;
+            }
+            else if(sourceFenceState==S_FALSE)
+            {
+                s.state=PTAR_ISO_GPU_PENDING;
+                ++p.sharedFencePending;
+            }
+            else
+            {
+                s.state=PTAR_ISO_FREE;
+            }
+        }
+        else
+        {
+            s.state=PTAR_ISO_READY;
+            readyNow=true;
+        }
+
         ++p.submittedReal;
     }
     else
@@ -1568,7 +1787,7 @@ inline HRESULT PtIsoSubmitReal(
         return hr;
     }
 
-    if(p.wakeEvent)
+    if(readyNow && p.wakeEvent)
         SetEvent(p.wakeEvent);
 
     return S_OK;
