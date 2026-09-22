@@ -121,6 +121,7 @@ static PFN_IndexBufferGetDesc g_realIndexBufferGetDesc=0;
 static UINT g_ptarAdapter=D3DADAPTER_DEFAULT;
 static D3DDEVTYPE g_ptarDeviceType=D3DDEVTYPE_HAL;
 static HWND g_ptarFocusWindow=0;
+static HWND g_ptarSourceSwapWindow=0;
 
 struct PTARContext
 {
@@ -261,6 +262,60 @@ static HRESULT SetVirtualViewport(IDirect3DDevice9* dev)
     return dev->SetViewport(&vp);
 }
 
+static HWND PtEnsureSourceSwapWindow()
+{
+    if(g_ptarSourceSwapWindow &&
+       IsWindow(g_ptarSourceSwapWindow))
+        return g_ptarSourceSwapWindow;
+
+    HINSTANCE inst=
+        (HINSTANCE)GetModuleHandleW(0);
+
+    const wchar_t* cls=
+        L"PTAR_D3D9_SOURCE_SWAP_HIDDEN";
+
+    WNDCLASSW wc={};
+    wc.lpfnWndProc=DefWindowProcW;
+    wc.hInstance=inst;
+    wc.lpszClassName=cls;
+
+    ATOM a=RegisterClassW(&wc);
+    if(!a && GetLastError()!=ERROR_CLASS_ALREADY_EXISTS)
+    {
+        PtDiagLogA(
+            "SOURCE_SWAP_WINDOW_REGISTER_FAIL gle=%lu",
+            (unsigned long)GetLastError());
+        return 0;
+    }
+
+    HWND hwnd=CreateWindowExW(
+        WS_EX_TOOLWINDOW|WS_EX_NOACTIVATE,
+        cls,
+        L"PTAR D3D9 Source Swap",
+        WS_POPUP,
+        -32000,-32000,
+        16,16,
+        0,0,inst,0);
+
+    if(!hwnd)
+    {
+        PtDiagLogA(
+            "SOURCE_SWAP_WINDOW_CREATE_FAIL gle=%lu",
+            (unsigned long)GetLastError());
+        return 0;
+    }
+
+    g_ptarSourceSwapWindow=hwnd;
+
+    PtDiagLogA(
+        "SOURCE_SWAP_WINDOW_READY hwnd=%p visible=%d focus=%p",
+        hwnd,
+        IsWindowVisible(hwnd)?1:0,
+        g_ptarFocusWindow);
+
+    return hwnd;
+}
+
 static void PreparePTARPresentationParameters(
     const D3DPRESENT_PARAMETERS& original,
     const PTARResolutionPlan& plan,
@@ -289,8 +344,16 @@ static void PreparePTARPresentationParameters(
     actual->FullScreen_RefreshRateInHz=0;
     actual->SwapEffect=D3DSWAPEFFECT_DISCARD;
     actual->PresentationInterval=D3DPRESENT_INTERVAL_IMMEDIATE;
-    if(!actual->hDeviceWindow)
-        actual->hDeviceWindow=g_ptarFocusWindow;
+
+    // Production-style ownership split: the source swapchain must not compete
+    // with the isolated Sync1 presenter for the game's visible HWND. A hidden
+    // private window owns the producer swapchain; the presenter alone owns the
+    // game's visible window. This also removes a D3D9Ex driver race where a
+    // healthy source device could transiently return E_FAIL from Clear while
+    // the second device was presenting to the same HWND.
+    HWND sourceWindow=PtEnsureSourceSwapWindow();
+    actual->hDeviceWindow=
+        sourceWindow?sourceWindow:g_ptarFocusWindow;
 }
 
 static HRESULT QueryRealBackBufferGeometry(
@@ -1894,7 +1957,7 @@ static HRESULT STDMETHODCALLTYPE HookCreateDevice(
         "CREATEDEVICE_PLAN requested=%ux%u plannedDevice=%ux%u spatialRequested=%d "
         "windowed=%ld game_flags=0x%08lX "
         "game_interval=0x%08lX producer_interval=0x%08lX "
-        "producer_windowed=%ld",
+        "producer_windowed=%ld producer_hwnd=%p visible_hwnd=%p",
         original.BackBufferWidth,original.BackBufferHeight,
         plan.deviceW,plan.deviceH,
         plan.spatialRequested?1:0,
@@ -1902,7 +1965,9 @@ static HRESULT STDMETHODCALLTYPE HookCreateDevice(
         (unsigned long)flags,
         (unsigned long)original.PresentationInterval,
         (unsigned long)actual.PresentationInterval,
-        (long)actual.Windowed);
+        (long)actual.Windowed,
+        actual.hDeviceWindow,
+        g_ptarFocusWindow);
 
     HRESULT hr=g_realCreateDevice(
         self,adapter,type,focus,flags,&actual,out);
