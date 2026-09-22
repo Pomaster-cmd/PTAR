@@ -121,10 +121,14 @@ D3D9-specific transport:
     is internally share-capable through IDirect3DDevice9Ex;
   - completed REAL output is copied GPU-to-GPU into a shared ring and opened by
     the isolated presenter through shared D3D9Ex handles;
-  - producer completion uses EVENT queries; waiting happens on the isolated
-    presenter thread, never in the game's Present path;
-  - CI currently measures the GPU-shared handoff around 0.06-0.10 ms in the
-    integrated path, versus the older CPU bridge's substantially higher cost;
+  - producer completion uses EVENT queries owned entirely by the producer
+    thread: a copy that is not complete immediately becomes GPU_PENDING and is
+    polled on a later game Present; only a signaled slot wakes the presenter;
+  - the isolated presenter thread never calls GetData on a source-device query,
+    avoiding the field-observed old-driver E_FAIL loop;
+  - CI currently measures the source-side GPU-shared submission around
+    0.04-0.10 ms in normal integrated samples; the event fence is retired on a
+    later producer Present without a source-thread busy wait;
   - the preallocated CPU readback/upload ring remains a fallback if an Ex source
     device cannot be obtained.
 
@@ -290,9 +294,11 @@ Before any new hardware request, CI must pass:
   - D3D9Ex source compatibility probes validate legacy MANAGED resource
     translation, descriptor fidelity, Reset persistence and native binding;
   - GPU-shared source-to-presenter transport is required by the integrated
-    runtime gate, with CPU readback retained only as fallback;
+    runtime gate, with EVENT-query Issue/GetData ownership restricted to the
+    producer thread and CPU readback retained only as fallback;
   - the isolated proxy create/present/reset lifecycle is repeated three times
-    with no source Clear or state-restore failure;
+    with no source Clear, state-restore, shared-fence error or shared-fence
+    drop;
   - CPU fallback readback remains benchmarked at 720p, 900p and 1080p;
   - source-side legacy pacer helpers contain no waits/resync/late-skip path;
   - wall-clock FPS regression proves a synthetic 200 ms hitch lowers the rate;
