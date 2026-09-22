@@ -16,20 +16,20 @@
 //   - the final HUD/F9 surface is the isolated presenter's BackBuffer0.
 //
 // D3D9-specific transport:
-// regular IDirect3DDevice9 cannot create cross-device shared resources. The
-// laboratory probe proved that replacing the game's device with D3D9Ex would
-// expose shared handles but would also remove D3DPOOL_MANAGED support. To avoid
-// that compatibility regression, the generic path keeps the game's ordinary
-// D3D9 device unchanged and bridges each completed REAL frame through a short
-// readback into a CPU ring. The isolated D3D9Ex presenter uploads from that
-// ring on its own thread.
+// Direct3DCreate9 is exposed to the game as the legacy base interface while the
+// source object is D3D9Ex-backed. Legacy D3DPOOL_MANAGED behavior is translated
+// by the proxy, allowing the completed REAL frame to stay on the GPU and enter
+// a shared D3D9Ex ring consumed by a separate presenter device/thread.
 //
-// Measured CI readback cost before integration:
-//   1280x720  ~0.39 ms / frame
-//   1600x900  ~0.56 ms / frame
-//   1920x1080 ~0.79 ms / frame
-// Those measurements are laboratory evidence only; field hardware remains the
-// final gate.
+// Shared-resource synchronization is deliberately producer-thread-owned. The
+// source thread issues the EVENT query and either marks the slot READY
+// immediately or GPU_PENDING. Later source Presents poll pending fences with
+// D3DGETDATA_FLUSH and wake the presenter only after S_OK. The presenter thread
+// never polls a producer-device query. This avoids the field-observed E_FAIL
+// storm on older Nvidia/D3D9Ex drivers when FG's 30 Hz source governor is active.
+//
+// A CPU readback/upload ring remains the generic fallback when a D3D9Ex-backed
+// source device cannot be obtained.
 
 typedef HRESULT (WINAPI *PTARIsoPFN_Direct3DCreate9Ex)(
     UINT,IDirect3D9Ex**);
