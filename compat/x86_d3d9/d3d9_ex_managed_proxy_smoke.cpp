@@ -141,6 +141,43 @@ int main()
     if(FAILED(th)||FAILED(ch)||FAILED(vh)||FAILED(vbh)||FAILED(ibh))
         return 9;
 
+    D3DSURFACE_DESC td={};
+    D3DSURFACE_DESC cd={};
+    D3DVOLUME_DESC vd={};
+    D3DVERTEXBUFFER_DESC vbd={};
+    D3DINDEXBUFFER_DESC ibd={};
+
+    HRESULT tdh=tex->GetLevelDesc(0,&td);
+    HRESULT cdh=cube->GetLevelDesc(0,&cd);
+    HRESULT vdh=volume->GetLevelDesc(0,&vd);
+    HRESULT vbdh=vb->GetDesc(&vbd);
+    HRESULT ibdh=ib->GetDesc(&ibd);
+
+    std::printf(
+        "PROXY_MANAGED_DESC tex=%u/%lu cube=%u/%lu volume=%u/%lu vb=%u/%lu ib=%u/%lu\n",
+        (unsigned)td.Pool,(unsigned long)td.Usage,
+        (unsigned)cd.Pool,(unsigned long)cd.Usage,
+        (unsigned)vd.Pool,(unsigned long)vd.Usage,
+        (unsigned)vbd.Pool,(unsigned long)vbd.Usage,
+        (unsigned)ibd.Pool,(unsigned long)ibd.Usage);
+
+    if(FAILED(tdh)||FAILED(cdh)||FAILED(vdh)||FAILED(vbdh)||FAILED(ibdh))
+        return 19;
+
+    if(td.Pool!=D3DPOOL_MANAGED ||
+       cd.Pool!=D3DPOOL_MANAGED ||
+       vd.Pool!=D3DPOOL_MANAGED ||
+       vbd.Pool!=D3DPOOL_MANAGED ||
+       ibd.Pool!=D3DPOOL_MANAGED)
+        return 20;
+
+    if(td.Usage!=0 ||
+       cd.Usage!=0 ||
+       vd.Usage!=0 ||
+       vbd.Usage!=D3DUSAGE_WRITEONLY ||
+       ibd.Usage!=D3DUSAGE_WRITEONLY)
+        return 21;
+
     if(!FillTexture(tex,0xFF123456u))
         return 10;
 
