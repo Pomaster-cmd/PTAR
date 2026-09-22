@@ -53,6 +53,14 @@ typedef HRESULT (WINAPI *PFN_Direct3DCreate9Ex)(UINT,IDirect3D9Ex**);
 static PFN_Direct3DCreate9 g_sysDirect3DCreate9=0;
 static PFN_Direct3DCreate9Ex g_sysDirect3DCreate9Ex=0;
 
+static bool g_ptarSourceFactoryEx=false;
+static bool g_ptarSourceDeviceEx=false;
+static unsigned long g_ptarManagedTextureTranslations=0;
+static unsigned long g_ptarManagedCubeTranslations=0;
+static unsigned long g_ptarManagedVolumeTranslations=0;
+static unsigned long g_ptarManagedVbTranslations=0;
+static unsigned long g_ptarManagedIbTranslations=0;
+
 typedef HRESULT (STDMETHODCALLTYPE *PFN_CreateDevice)(
     IDirect3D9*,UINT,D3DDEVTYPE,HWND,DWORD,D3DPRESENT_PARAMETERS*,IDirect3DDevice9**);
 typedef HRESULT (STDMETHODCALLTYPE *PFN_Reset)(IDirect3DDevice9*,D3DPRESENT_PARAMETERS*);
@@ -64,6 +72,23 @@ typedef HRESULT (STDMETHODCALLTYPE *PFN_SetRenderTarget)(
     IDirect3DDevice9*,DWORD,IDirect3DSurface9*);
 typedef HRESULT (STDMETHODCALLTYPE *PFN_GetDisplayMode)(
     IDirect3DDevice9*,UINT,D3DDISPLAYMODE*);
+typedef HRESULT (STDMETHODCALLTYPE *PFN_EvictManagedResources)(
+    IDirect3DDevice9*);
+typedef HRESULT (STDMETHODCALLTYPE *PFN_CreateTexture)(
+    IDirect3DDevice9*,UINT,UINT,UINT,DWORD,D3DFORMAT,D3DPOOL,
+    IDirect3DTexture9**,HANDLE*);
+typedef HRESULT (STDMETHODCALLTYPE *PFN_CreateVolumeTexture)(
+    IDirect3DDevice9*,UINT,UINT,UINT,UINT,DWORD,D3DFORMAT,D3DPOOL,
+    IDirect3DVolumeTexture9**,HANDLE*);
+typedef HRESULT (STDMETHODCALLTYPE *PFN_CreateCubeTexture)(
+    IDirect3DDevice9*,UINT,UINT,DWORD,D3DFORMAT,D3DPOOL,
+    IDirect3DCubeTexture9**,HANDLE*);
+typedef HRESULT (STDMETHODCALLTYPE *PFN_CreateVertexBuffer)(
+    IDirect3DDevice9*,UINT,DWORD,DWORD,D3DPOOL,
+    IDirect3DVertexBuffer9**,HANDLE*);
+typedef HRESULT (STDMETHODCALLTYPE *PFN_CreateIndexBuffer)(
+    IDirect3DDevice9*,UINT,DWORD,D3DFORMAT,D3DPOOL,
+    IDirect3DIndexBuffer9**,HANDLE*);
 
 static PFN_CreateDevice g_realCreateDevice=0;
 static PFN_Reset g_realReset=0;
@@ -71,6 +96,12 @@ static PFN_Present g_realPresent=0;
 static PFN_GetBackBuffer g_realGetBackBuffer=0;
 static PFN_SetRenderTarget g_realSetRenderTarget=0;
 static PFN_GetDisplayMode g_realGetDisplayMode=0;
+static PFN_EvictManagedResources g_realEvictManagedResources=0;
+static PFN_CreateTexture g_realCreateTexture=0;
+static PFN_CreateVolumeTexture g_realCreateVolumeTexture=0;
+static PFN_CreateCubeTexture g_realCreateCubeTexture=0;
+static PFN_CreateVertexBuffer g_realCreateVertexBuffer=0;
+static PFN_CreateIndexBuffer g_realCreateIndexBuffer=0;
 
 static UINT g_ptarAdapter=D3DADAPTER_DEFAULT;
 static D3DDEVTYPE g_ptarDeviceType=D3DDEVTYPE_HAL;
@@ -1205,6 +1236,240 @@ static HRESULT STDMETHODCALLTYPE HookReset(
     return S_OK;
 }
 
+static DWORD PtManagedTextureUsage(DWORD usage)
+{
+    // D3D9Ex rejects D3DPOOL_MANAGED. Laboratory validation shows that
+    // DEFAULT|DYNAMIC preserves multi-mip Lock/Unlock, AUTOGEN level-0 writes,
+    // binding and resource contents across base-interface Reset.
+    return usage|D3DUSAGE_DYNAMIC;
+}
+
+static HRESULT STDMETHODCALLTYPE HookEvictManagedResources(
+    IDirect3DDevice9* self)
+{
+    if(g_ptarSourceDeviceEx &&
+       self==g_ptar.device)
+    {
+        PtDiagLogA(
+            "D3D9EX_MANAGED_EVICT emulated=S_OK "
+            "tex=%lu cube=%lu volume=%lu vb=%lu ib=%lu",
+            g_ptarManagedTextureTranslations,
+            g_ptarManagedCubeTranslations,
+            g_ptarManagedVolumeTranslations,
+            g_ptarManagedVbTranslations,
+            g_ptarManagedIbTranslations);
+        return S_OK;
+    }
+
+    return g_realEvictManagedResources?
+        g_realEvictManagedResources(self):
+        D3DERR_INVALIDCALL;
+}
+
+static HRESULT STDMETHODCALLTYPE HookCreateTexture(
+    IDirect3DDevice9* self,
+    UINT width,UINT height,UINT levels,
+    DWORD usage,D3DFORMAT format,D3DPOOL pool,
+    IDirect3DTexture9** out,HANDLE* shared)
+{
+    if(g_ptarSourceDeviceEx &&
+       self==g_ptar.device &&
+       pool==D3DPOOL_MANAGED)
+    {
+        const DWORD translatedUsage=
+            PtManagedTextureUsage(usage);
+
+        HRESULT hr=g_realCreateTexture(
+            self,width,height,levels,
+            translatedUsage,format,
+            D3DPOOL_DEFAULT,
+            out,shared);
+
+        PtDiagLogA(
+            "D3D9EX_MANAGED_TEXTURE w=%u h=%u levels=%u "
+            "usage=0x%08lX translated=0x%08lX fmt=%u hr=0x%08lX",
+            width,height,levels,
+            (unsigned long)usage,
+            (unsigned long)translatedUsage,
+            (unsigned)format,
+            (unsigned long)hr);
+
+        if(SUCCEEDED(hr) && out && *out)
+            ++g_ptarManagedTextureTranslations;
+
+        return hr;
+    }
+
+    return g_realCreateTexture(
+        self,width,height,levels,
+        usage,format,pool,out,shared);
+}
+
+static HRESULT STDMETHODCALLTYPE HookCreateVolumeTexture(
+    IDirect3DDevice9* self,
+    UINT width,UINT height,UINT depth,UINT levels,
+    DWORD usage,D3DFORMAT format,D3DPOOL pool,
+    IDirect3DVolumeTexture9** out,HANDLE* shared)
+{
+    if(g_ptarSourceDeviceEx &&
+       self==g_ptar.device &&
+       pool==D3DPOOL_MANAGED)
+    {
+        const DWORD translatedUsage=
+            PtManagedTextureUsage(usage);
+
+        HRESULT hr=g_realCreateVolumeTexture(
+            self,width,height,depth,levels,
+            translatedUsage,format,
+            D3DPOOL_DEFAULT,
+            out,shared);
+
+        PtDiagLogA(
+            "D3D9EX_MANAGED_VOLUME w=%u h=%u d=%u levels=%u "
+            "usage=0x%08lX translated=0x%08lX fmt=%u hr=0x%08lX",
+            width,height,depth,levels,
+            (unsigned long)usage,
+            (unsigned long)translatedUsage,
+            (unsigned)format,
+            (unsigned long)hr);
+
+        if(SUCCEEDED(hr) && out && *out)
+            ++g_ptarManagedVolumeTranslations;
+
+        return hr;
+    }
+
+    return g_realCreateVolumeTexture(
+        self,width,height,depth,levels,
+        usage,format,pool,out,shared);
+}
+
+static HRESULT STDMETHODCALLTYPE HookCreateCubeTexture(
+    IDirect3DDevice9* self,
+    UINT edgeLength,UINT levels,
+    DWORD usage,D3DFORMAT format,D3DPOOL pool,
+    IDirect3DCubeTexture9** out,HANDLE* shared)
+{
+    if(g_ptarSourceDeviceEx &&
+       self==g_ptar.device &&
+       pool==D3DPOOL_MANAGED)
+    {
+        const DWORD translatedUsage=
+            PtManagedTextureUsage(usage);
+
+        HRESULT hr=g_realCreateCubeTexture(
+            self,edgeLength,levels,
+            translatedUsage,format,
+            D3DPOOL_DEFAULT,
+            out,shared);
+
+        PtDiagLogA(
+            "D3D9EX_MANAGED_CUBE edge=%u levels=%u "
+            "usage=0x%08lX translated=0x%08lX fmt=%u hr=0x%08lX",
+            edgeLength,levels,
+            (unsigned long)usage,
+            (unsigned long)translatedUsage,
+            (unsigned)format,
+            (unsigned long)hr);
+
+        if(SUCCEEDED(hr) && out && *out)
+            ++g_ptarManagedCubeTranslations;
+
+        return hr;
+    }
+
+    return g_realCreateCubeTexture(
+        self,edgeLength,levels,
+        usage,format,pool,out,shared);
+}
+
+static HRESULT STDMETHODCALLTYPE HookCreateVertexBuffer(
+    IDirect3DDevice9* self,
+    UINT length,DWORD usage,DWORD fvf,D3DPOOL pool,
+    IDirect3DVertexBuffer9** out,HANDLE* shared)
+{
+    if(g_ptarSourceDeviceEx &&
+       self==g_ptar.device &&
+       pool==D3DPOOL_MANAGED)
+    {
+        const DWORD translatedUsage=
+            usage|D3DUSAGE_DYNAMIC;
+
+        HRESULT hr=g_realCreateVertexBuffer(
+            self,length,translatedUsage,fvf,
+            D3DPOOL_DEFAULT,out,shared);
+
+        if(FAILED(hr))
+        {
+            // Some drivers reject a particular legacy usage bit combined with
+            // DYNAMIC. DEFAULT without DYNAMIC is still native/bindable and
+            // remains the compatibility retry.
+            hr=g_realCreateVertexBuffer(
+                self,length,usage,fvf,
+                D3DPOOL_DEFAULT,out,shared);
+        }
+
+        PtDiagLogA(
+            "D3D9EX_MANAGED_VB len=%u usage=0x%08lX "
+            "translated=0x%08lX fvf=0x%08lX hr=0x%08lX",
+            length,
+            (unsigned long)usage,
+            (unsigned long)translatedUsage,
+            (unsigned long)fvf,
+            (unsigned long)hr);
+
+        if(SUCCEEDED(hr) && out && *out)
+            ++g_ptarManagedVbTranslations;
+
+        return hr;
+    }
+
+    return g_realCreateVertexBuffer(
+        self,length,usage,fvf,pool,out,shared);
+}
+
+static HRESULT STDMETHODCALLTYPE HookCreateIndexBuffer(
+    IDirect3DDevice9* self,
+    UINT length,DWORD usage,D3DFORMAT format,D3DPOOL pool,
+    IDirect3DIndexBuffer9** out,HANDLE* shared)
+{
+    if(g_ptarSourceDeviceEx &&
+       self==g_ptar.device &&
+       pool==D3DPOOL_MANAGED)
+    {
+        const DWORD translatedUsage=
+            usage|D3DUSAGE_DYNAMIC;
+
+        HRESULT hr=g_realCreateIndexBuffer(
+            self,length,translatedUsage,format,
+            D3DPOOL_DEFAULT,out,shared);
+
+        if(FAILED(hr))
+        {
+            hr=g_realCreateIndexBuffer(
+                self,length,usage,format,
+                D3DPOOL_DEFAULT,out,shared);
+        }
+
+        PtDiagLogA(
+            "D3D9EX_MANAGED_IB len=%u usage=0x%08lX "
+            "translated=0x%08lX fmt=%u hr=0x%08lX",
+            length,
+            (unsigned long)usage,
+            (unsigned long)translatedUsage,
+            (unsigned)format,
+            (unsigned long)hr);
+
+        if(SUCCEEDED(hr) && out && *out)
+            ++g_ptarManagedIbTranslations;
+
+        return hr;
+    }
+
+    return g_realCreateIndexBuffer(
+        self,length,usage,format,pool,out,shared);
+}
+
 static bool HookDevice(IDirect3DDevice9* dev)
 {
     PtDiagStage("HookDevice_ENTER");
@@ -1246,6 +1511,42 @@ static bool HookDevice(IDirect3DDevice9* dev)
     if(!PatchVtableSlot(dev,37,(void*)&HookSetRenderTarget,&old,"Device.SetRenderTarget"))
         return false;
     if(old!=(void*)&HookSetRenderTarget) g_realSetRenderTarget=(PFN_SetRenderTarget)old;
+
+    old=0;
+    if(!PatchVtableSlot(dev,5,(void*)&HookEvictManagedResources,&old,"Device.EvictManagedResources"))
+        return false;
+    if(old!=(void*)&HookEvictManagedResources)
+        g_realEvictManagedResources=(PFN_EvictManagedResources)old;
+
+    old=0;
+    if(!PatchVtableSlot(dev,23,(void*)&HookCreateTexture,&old,"Device.CreateTexture"))
+        return false;
+    if(old!=(void*)&HookCreateTexture)
+        g_realCreateTexture=(PFN_CreateTexture)old;
+
+    old=0;
+    if(!PatchVtableSlot(dev,24,(void*)&HookCreateVolumeTexture,&old,"Device.CreateVolumeTexture"))
+        return false;
+    if(old!=(void*)&HookCreateVolumeTexture)
+        g_realCreateVolumeTexture=(PFN_CreateVolumeTexture)old;
+
+    old=0;
+    if(!PatchVtableSlot(dev,25,(void*)&HookCreateCubeTexture,&old,"Device.CreateCubeTexture"))
+        return false;
+    if(old!=(void*)&HookCreateCubeTexture)
+        g_realCreateCubeTexture=(PFN_CreateCubeTexture)old;
+
+    old=0;
+    if(!PatchVtableSlot(dev,26,(void*)&HookCreateVertexBuffer,&old,"Device.CreateVertexBuffer"))
+        return false;
+    if(old!=(void*)&HookCreateVertexBuffer)
+        g_realCreateVertexBuffer=(PFN_CreateVertexBuffer)old;
+
+    old=0;
+    if(!PatchVtableSlot(dev,27,(void*)&HookCreateIndexBuffer,&old,"Device.CreateIndexBuffer"))
+        return false;
+    if(old!=(void*)&HookCreateIndexBuffer)
+        g_realCreateIndexBuffer=(PFN_CreateIndexBuffer)old;
 
     PtDiagStage("HookDevice_DONE");
     PtDiagLogA(
@@ -1360,6 +1661,23 @@ static HRESULT STDMETHODCALLTYPE HookCreateDevice(
     }
 
     IDirect3DDevice9* dev=*out;
+
+    IDirect3DDevice9Ex* sourceExProbe=0;
+    HRESULT sourceExHr=dev->QueryInterface(
+        __uuidof(IDirect3DDevice9Ex),
+        (void**)&sourceExProbe);
+    g_ptarSourceDeviceEx=
+        SUCCEEDED(sourceExHr) &&
+        sourceExProbe!=0;
+    if(sourceExProbe)
+        sourceExProbe->Release();
+
+    PtDiagLogA(
+        "SOURCE_DEVICE_API ex=%d qi_hr=0x%08lX factory_ex=%d",
+        g_ptarSourceDeviceEx?1:0,
+        (unsigned long)sourceExHr,
+        g_ptarSourceFactoryEx?1:0);
+
     void** vt=*(void***)dev;
     if(!vt)
     {
@@ -1367,10 +1685,16 @@ static HRESULT STDMETHODCALLTYPE HookCreateDevice(
         return S_OK;
     }
 
+    g_realEvictManagedResources=(PFN_EvictManagedResources)vt[5];
     g_realGetDisplayMode=(PFN_GetDisplayMode)vt[8];
     g_realReset=(PFN_Reset)vt[16];
     g_realPresent=(PFN_Present)vt[17];
     g_realGetBackBuffer=(PFN_GetBackBuffer)vt[18];
+    g_realCreateTexture=(PFN_CreateTexture)vt[23];
+    g_realCreateVolumeTexture=(PFN_CreateVolumeTexture)vt[24];
+    g_realCreateCubeTexture=(PFN_CreateCubeTexture)vt[25];
+    g_realCreateVertexBuffer=(PFN_CreateVertexBuffer)vt[26];
+    g_realCreateIndexBuffer=(PFN_CreateIndexBuffer)vt[27];
     g_realSetRenderTarget=(PFN_SetRenderTarget)vt[37];
 
     UINT sourceW=0,sourceH=0,outputW=0,outputH=0;
@@ -1491,14 +1815,46 @@ extern "C" __declspec(dllexport) IDirect3D9* WINAPI Direct3DCreate9(UINT sdk)
         return 0;
     }
     PtDiagStage("Direct3DCreate9_CallReal");
-    IDirect3D9* d3d=g_sysDirect3DCreate9(sdk);
-    PtDiagLogA("Direct3DCreate9 real returned=%p",d3d);
+
+    IDirect3D9* d3d=0;
+    g_ptarSourceFactoryEx=false;
+
+    if(g_sysDirect3DCreate9Ex)
+    {
+        IDirect3D9Ex* exFactory=0;
+        HRESULT exHr=g_sysDirect3DCreate9Ex(
+            sdk,&exFactory);
+
+        if(SUCCEEDED(exHr) && exFactory)
+        {
+            d3d=(IDirect3D9*)exFactory;
+            g_ptarSourceFactoryEx=true;
+            PtDiagLogA(
+                "Direct3DCreate9 source_factory=D3D9Ex base_interface=%p",
+                d3d);
+        }
+        else
+        {
+            PtDiagLogA(
+                "Direct3DCreate9 D3D9Ex factory unavailable hr=0x%08lX fallback=REGULAR_D3D9",
+                (unsigned long)exHr);
+        }
+    }
+
+    if(!d3d)
+        d3d=g_sysDirect3DCreate9(sdk);
+
+    PtDiagLogA(
+        "Direct3DCreate9 real returned=%p source_factory_ex=%d",
+        d3d,
+        g_ptarSourceFactoryEx?1:0);
     if(d3d)
     {
         PtDiagStage("Direct3DCreate9_HookObject");
         const bool hooked=HookD3D9(d3d);
         PtDiagLogA("Direct3DCreate9 hook_result=%d",hooked?1:0);
-        Log(L"PROXY_LOADED arch=x86 api=D3D9");
+        Log(L"PROXY_LOADED arch=x86 api=D3D9 source_factory=%s",
+            g_ptarSourceFactoryEx?L"D3D9Ex_BASE":L"D3D9");
     }
     PtDiagStage("Direct3DCreate9_RETURN");
     return d3d;
