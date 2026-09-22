@@ -553,6 +553,82 @@ jobs:
           Copy-Item artifact\PTAR_X86_D3D9.log build_x86\D3D9_ISOLATED_PROXY_RUNTIME.log -Force
           Write-Host 'D3D9_ISOLATED_PROXY_RUNTIME=PASS'
 
+      - name: Validate integrated CTRL+F6 FG on isolated presenter
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 compat\x86_d3d9\d3d9_isolated_fg_proxy_smoke.cpp /link user32.lib /OUT:artifact\d3d9_isolated_fg_proxy_smoke.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+
+          @(
+            '[WIN81_NIS]',
+            'Enabled=1',
+            'UniversalSpatialPresenter=1',
+            'RenderWidth=426',
+            'RenderHeight=240',
+            'OutputWidth=640',
+            'OutputHeight=360',
+            'Overlay=1',
+            'VBlankDiagnostics=1',
+            'FrameGenerationQuality=2'
+          ) | Set-Content artifact\win81_nis.ini -Encoding ASCII
+
+          Remove-Item artifact\PTAR_X86_D3D9.log -Force -ErrorAction SilentlyContinue
+
+          Push-Location artifact
+          try{
+            & .\d3d9_isolated_fg_proxy_smoke.exe | Tee-Object ..\build_x86\D3D9_ISOLATED_FG_PROXY_SMOKE.txt
+            $fgProxyRc=$LASTEXITCODE
+          } finally {
+            Pop-Location
+          }
+
+          if(Test-Path artifact\PTAR_X86_D3D9.log){
+            Copy-Item artifact\PTAR_X86_D3D9.log build_x86\D3D9_ISOLATED_FG_PROXY_RUNTIME.log -Force
+            Write-Host '--- ISOLATED FG RUNTIME LOG TAIL ---'
+            Get-Content artifact\PTAR_X86_D3D9.log -Tail 220
+            Write-Host '--- END ISOLATED FG RUNTIME LOG TAIL ---'
+          }
+
+          Remove-Item artifact\win81_nis.ini -Force -ErrorAction SilentlyContinue
+
+          if($fgProxyRc -ne 0){throw "integrated isolated FG proxy smoke failed rc=$fgProxyRc"}
+
+          $sm=Get-Content build_x86\D3D9_ISOLATED_FG_PROXY_SMOKE.txt -Raw
+          if($sm -notmatch 'D3D9_ISOLATED_FG_PROXY_SMOKE=PASS'){throw 'integrated isolated FG PASS marker missing'}
+          if($sm -notmatch 'HOTKEY_SYNTH ctrl=1 f6=1'){throw 'production CTRL+F6 key state was not observed'}
+          if($sm -notmatch 'FG_PROXY_16_REAL_FGON_MS='){throw 'FG-on source timing evidence missing'}
+          if($sm -notmatch 'FG_PROXY_FLUSH_RESET hr=0x00000000'){throw 'FG presenter flush/reset failed'}
+
+          if(-not(Test-Path build_x86\D3D9_ISOLATED_FG_PROXY_RUNTIME.log)){
+            throw 'integrated FG runtime log missing'
+          }
+          $rt=Get-Content build_x86\D3D9_ISOLATED_FG_PROXY_RUNTIME.log -Raw
+
+          foreach($required in @(
+            'HOTKEY CTRL+F6 FrameGeneration=ON',
+            'REAL_GOVERNOR_MODE fg=ON target_real_hz=30',
+            'ISOLATED_PAIR',
+            'generated=1 real=1',
+            'HOTKEY CTRL+F6 FrameGeneration=OFF',
+            'REAL_GOVERNOR_MODE fg=OFF target_real_hz=60'
+          )){
+            if($rt -notmatch [regex]::Escape($required)){
+              throw "integrated FG runtime evidence missing: $required"
+            }
+          }
+
+          if($rt -notmatch 'presented_generated=[1-9][0-9]*'){
+            throw 'isolated presenter delivered no GENERATED frame'
+          }
+          if($rt -match 'fg_failures=[1-9][0-9]*' -or
+             $rt -match 'present_failures=[1-9][0-9]*' -or
+             $rt -match 'bridge_failures=[1-9][0-9]*'){
+            throw 'integrated isolated FG runtime reported failures'
+          }
+
+          Write-Host 'D3D9_ISOLATED_FG_END_TO_END=PASS'
+
       - name: Installer path, in-place and diagnostic collector smoke tests
         shell: pwsh
         run: |
@@ -636,6 +712,7 @@ jobs:
           Remove-Item artifact\d3d9_ex_factory_base_device_probe.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\d3d9_regular_readback_probe.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\d3d9_isolated_proxy_smoke.exe -Force -ErrorAction SilentlyContinue
+          Remove-Item artifact\d3d9_isolated_fg_proxy_smoke.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\PTAR_X86_D3D9.log -Force -ErrorAction SilentlyContinue
           Copy-Item compat\x86_d3d9\01-INSTALL_PTAR_X86_D3D9.bat artifact\
           Copy-Item compat\x86_d3d9\02-UNINSTALL_PTAR_X86_D3D9.bat artifact\
@@ -675,5 +752,7 @@ jobs:
             build_x86/D3D9_SEPARATE_DEVICE_PRESENTER_SMOKE.txt
             build_x86/D3D9_ISOLATED_PROXY_SMOKE.txt
             build_x86/D3D9_ISOLATED_PROXY_RUNTIME.log
+            build_x86/D3D9_ISOLATED_FG_PROXY_SMOKE.txt
+            build_x86/D3D9_ISOLATED_FG_PROXY_RUNTIME.log
             build_x86/D3D9_FG_GPU_PIPELINE_SMOKE.txt
             build_x86/D3D9_FG_PACER_SMOKE.txt
