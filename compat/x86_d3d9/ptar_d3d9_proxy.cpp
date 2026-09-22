@@ -89,6 +89,16 @@ typedef HRESULT (STDMETHODCALLTYPE *PFN_CreateVertexBuffer)(
 typedef HRESULT (STDMETHODCALLTYPE *PFN_CreateIndexBuffer)(
     IDirect3DDevice9*,UINT,DWORD,D3DFORMAT,D3DPOOL,
     IDirect3DIndexBuffer9**,HANDLE*);
+typedef HRESULT (STDMETHODCALLTYPE *PFN_TextureGetLevelDesc)(
+    IDirect3DTexture9*,UINT,D3DSURFACE_DESC*);
+typedef HRESULT (STDMETHODCALLTYPE *PFN_CubeGetLevelDesc)(
+    IDirect3DCubeTexture9*,UINT,D3DSURFACE_DESC*);
+typedef HRESULT (STDMETHODCALLTYPE *PFN_VolumeGetLevelDesc)(
+    IDirect3DVolumeTexture9*,UINT,D3DVOLUME_DESC*);
+typedef HRESULT (STDMETHODCALLTYPE *PFN_VertexBufferGetDesc)(
+    IDirect3DVertexBuffer9*,D3DVERTEXBUFFER_DESC*);
+typedef HRESULT (STDMETHODCALLTYPE *PFN_IndexBufferGetDesc)(
+    IDirect3DIndexBuffer9*,D3DINDEXBUFFER_DESC*);
 
 static PFN_CreateDevice g_realCreateDevice=0;
 static PFN_Reset g_realReset=0;
@@ -102,6 +112,11 @@ static PFN_CreateVolumeTexture g_realCreateVolumeTexture=0;
 static PFN_CreateCubeTexture g_realCreateCubeTexture=0;
 static PFN_CreateVertexBuffer g_realCreateVertexBuffer=0;
 static PFN_CreateIndexBuffer g_realCreateIndexBuffer=0;
+static PFN_TextureGetLevelDesc g_realTextureGetLevelDesc=0;
+static PFN_CubeGetLevelDesc g_realCubeGetLevelDesc=0;
+static PFN_VolumeGetLevelDesc g_realVolumeGetLevelDesc=0;
+static PFN_VertexBufferGetDesc g_realVertexBufferGetDesc=0;
+static PFN_IndexBufferGetDesc g_realIndexBufferGetDesc=0;
 
 static UINT g_ptarAdapter=D3DADAPTER_DEFAULT;
 static D3DDEVTYPE g_ptarDeviceType=D3DDEVTYPE_HAL;
@@ -1238,6 +1253,230 @@ static HRESULT STDMETHODCALLTYPE HookReset(
     return S_OK;
 }
 
+struct PTARManagedCompatTag
+{
+    DWORD magic;
+    DWORD originalUsage;
+    DWORD originalPool;
+};
+
+static const DWORD PTAR_MANAGED_COMPAT_MAGIC=0x4D414E39u; // "MAN9"
+static const GUID PTAR_MANAGED_COMPAT_GUID=
+{0x9a9f8c41,0xc6d8,0x4dc1,{0x9d,0x39,0x50,0x54,0x41,0x52,0x4d,0x39}};
+
+template<class T>
+static void PtManagedTagResource(
+    T* resource,
+    DWORD originalUsage)
+{
+    if(!resource)
+        return;
+
+    PTARManagedCompatTag tag={};
+    tag.magic=PTAR_MANAGED_COMPAT_MAGIC;
+    tag.originalUsage=originalUsage;
+    tag.originalPool=(DWORD)D3DPOOL_MANAGED;
+
+    resource->SetPrivateData(
+        PTAR_MANAGED_COMPAT_GUID,
+        &tag,
+        sizeof(tag),
+        0);
+}
+
+template<class T>
+static bool PtManagedReadTag(
+    T* resource,
+    PTARManagedCompatTag* tag)
+{
+    if(!resource || !tag)
+        return false;
+
+    DWORD size=sizeof(*tag);
+    HRESULT hr=resource->GetPrivateData(
+        PTAR_MANAGED_COMPAT_GUID,
+        tag,
+        &size);
+
+    return
+        SUCCEEDED(hr) &&
+        size==sizeof(*tag) &&
+        tag->magic==PTAR_MANAGED_COMPAT_MAGIC;
+}
+
+static HRESULT STDMETHODCALLTYPE HookTextureGetLevelDesc(
+    IDirect3DTexture9* self,
+    UINT level,
+    D3DSURFACE_DESC* desc)
+{
+    HRESULT hr=g_realTextureGetLevelDesc?
+        g_realTextureGetLevelDesc(self,level,desc):
+        D3DERR_INVALIDCALL;
+
+    PTARManagedCompatTag tag={};
+    if(SUCCEEDED(hr) && desc &&
+       PtManagedReadTag(self,&tag))
+    {
+        desc->Usage=tag.originalUsage;
+        desc->Pool=D3DPOOL_MANAGED;
+    }
+
+    return hr;
+}
+
+static HRESULT STDMETHODCALLTYPE HookCubeGetLevelDesc(
+    IDirect3DCubeTexture9* self,
+    UINT level,
+    D3DSURFACE_DESC* desc)
+{
+    HRESULT hr=g_realCubeGetLevelDesc?
+        g_realCubeGetLevelDesc(self,level,desc):
+        D3DERR_INVALIDCALL;
+
+    PTARManagedCompatTag tag={};
+    if(SUCCEEDED(hr) && desc &&
+       PtManagedReadTag(self,&tag))
+    {
+        desc->Usage=tag.originalUsage;
+        desc->Pool=D3DPOOL_MANAGED;
+    }
+
+    return hr;
+}
+
+static HRESULT STDMETHODCALLTYPE HookVolumeGetLevelDesc(
+    IDirect3DVolumeTexture9* self,
+    UINT level,
+    D3DVOLUME_DESC* desc)
+{
+    HRESULT hr=g_realVolumeGetLevelDesc?
+        g_realVolumeGetLevelDesc(self,level,desc):
+        D3DERR_INVALIDCALL;
+
+    PTARManagedCompatTag tag={};
+    if(SUCCEEDED(hr) && desc &&
+       PtManagedReadTag(self,&tag))
+    {
+        desc->Usage=tag.originalUsage;
+        desc->Pool=D3DPOOL_MANAGED;
+    }
+
+    return hr;
+}
+
+static HRESULT STDMETHODCALLTYPE HookVertexBufferGetDesc(
+    IDirect3DVertexBuffer9* self,
+    D3DVERTEXBUFFER_DESC* desc)
+{
+    HRESULT hr=g_realVertexBufferGetDesc?
+        g_realVertexBufferGetDesc(self,desc):
+        D3DERR_INVALIDCALL;
+
+    PTARManagedCompatTag tag={};
+    if(SUCCEEDED(hr) && desc &&
+       PtManagedReadTag(self,&tag))
+    {
+        desc->Usage=tag.originalUsage;
+        desc->Pool=D3DPOOL_MANAGED;
+    }
+
+    return hr;
+}
+
+static HRESULT STDMETHODCALLTYPE HookIndexBufferGetDesc(
+    IDirect3DIndexBuffer9* self,
+    D3DINDEXBUFFER_DESC* desc)
+{
+    HRESULT hr=g_realIndexBufferGetDesc?
+        g_realIndexBufferGetDesc(self,desc):
+        D3DERR_INVALIDCALL;
+
+    PTARManagedCompatTag tag={};
+    if(SUCCEEDED(hr) && desc &&
+       PtManagedReadTag(self,&tag))
+    {
+        desc->Usage=tag.originalUsage;
+        desc->Pool=D3DPOOL_MANAGED;
+    }
+
+    return hr;
+}
+
+static void PtHookManagedTextureDesc(IDirect3DTexture9* resource)
+{
+    void* old=0;
+    if(PatchVtableSlot(
+        resource,17,
+        (void*)&HookTextureGetLevelDesc,
+        &old,
+        "ManagedTexture.GetLevelDesc") &&
+       old!=(void*)&HookTextureGetLevelDesc)
+    {
+        g_realTextureGetLevelDesc=
+            (PFN_TextureGetLevelDesc)old;
+    }
+}
+
+static void PtHookManagedCubeDesc(IDirect3DCubeTexture9* resource)
+{
+    void* old=0;
+    if(PatchVtableSlot(
+        resource,17,
+        (void*)&HookCubeGetLevelDesc,
+        &old,
+        "ManagedCube.GetLevelDesc") &&
+       old!=(void*)&HookCubeGetLevelDesc)
+    {
+        g_realCubeGetLevelDesc=
+            (PFN_CubeGetLevelDesc)old;
+    }
+}
+
+static void PtHookManagedVolumeDesc(IDirect3DVolumeTexture9* resource)
+{
+    void* old=0;
+    if(PatchVtableSlot(
+        resource,17,
+        (void*)&HookVolumeGetLevelDesc,
+        &old,
+        "ManagedVolume.GetLevelDesc") &&
+       old!=(void*)&HookVolumeGetLevelDesc)
+    {
+        g_realVolumeGetLevelDesc=
+            (PFN_VolumeGetLevelDesc)old;
+    }
+}
+
+static void PtHookManagedVbDesc(IDirect3DVertexBuffer9* resource)
+{
+    void* old=0;
+    if(PatchVtableSlot(
+        resource,13,
+        (void*)&HookVertexBufferGetDesc,
+        &old,
+        "ManagedVB.GetDesc") &&
+       old!=(void*)&HookVertexBufferGetDesc)
+    {
+        g_realVertexBufferGetDesc=
+            (PFN_VertexBufferGetDesc)old;
+    }
+}
+
+static void PtHookManagedIbDesc(IDirect3DIndexBuffer9* resource)
+{
+    void* old=0;
+    if(PatchVtableSlot(
+        resource,13,
+        (void*)&HookIndexBufferGetDesc,
+        &old,
+        "ManagedIB.GetDesc") &&
+       old!=(void*)&HookIndexBufferGetDesc)
+    {
+        g_realIndexBufferGetDesc=
+            (PFN_IndexBufferGetDesc)old;
+    }
+}
+
 static DWORD PtManagedTextureUsage(DWORD usage)
 {
     // D3D9Ex rejects D3DPOOL_MANAGED. Laboratory validation shows that
@@ -1297,7 +1536,11 @@ static HRESULT STDMETHODCALLTYPE HookCreateTexture(
             (unsigned long)hr);
 
         if(SUCCEEDED(hr) && out && *out)
+        {
+            PtManagedTagResource(*out,usage);
+            PtHookManagedTextureDesc(*out);
             ++g_ptarManagedTextureTranslations;
+        }
 
         return hr;
     }
@@ -1336,7 +1579,11 @@ static HRESULT STDMETHODCALLTYPE HookCreateVolumeTexture(
             (unsigned long)hr);
 
         if(SUCCEEDED(hr) && out && *out)
+        {
+            PtManagedTagResource(*out,usage);
+            PtHookManagedVolumeDesc(*out);
             ++g_ptarManagedVolumeTranslations;
+        }
 
         return hr;
     }
@@ -1375,7 +1622,11 @@ static HRESULT STDMETHODCALLTYPE HookCreateCubeTexture(
             (unsigned long)hr);
 
         if(SUCCEEDED(hr) && out && *out)
+        {
+            PtManagedTagResource(*out,usage);
+            PtHookManagedCubeDesc(*out);
             ++g_ptarManagedCubeTranslations;
+        }
 
         return hr;
     }
@@ -1421,7 +1672,11 @@ static HRESULT STDMETHODCALLTYPE HookCreateVertexBuffer(
             (unsigned long)hr);
 
         if(SUCCEEDED(hr) && out && *out)
+        {
+            PtManagedTagResource(*out,usage);
+            PtHookManagedVbDesc(*out);
             ++g_ptarManagedVbTranslations;
+        }
 
         return hr;
     }
@@ -1463,7 +1718,11 @@ static HRESULT STDMETHODCALLTYPE HookCreateIndexBuffer(
             (unsigned long)hr);
 
         if(SUCCEEDED(hr) && out && *out)
+        {
+            PtManagedTagResource(*out,usage);
+            PtHookManagedIbDesc(*out);
             ++g_ptarManagedIbTranslations;
+        }
 
         return hr;
     }
