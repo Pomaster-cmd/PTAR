@@ -1097,17 +1097,37 @@ static HRESULT STDMETHODCALLTYPE HookPresent(
     }
 
 restore_game_state:
+    HRESULT restoreStateHr=S_OK;
     if(g_ptar.stateBlock)
-        g_ptar.stateBlock->Apply();
+        restoreStateHr=g_ptar.stateBlock->Apply();
 
+    HRESULT restoreRtHr=S_OK;
     if(g_ptar.sourceSurface)
-        g_realSetRenderTarget(
+        restoreRtHr=g_realSetRenderTarget(
             self,0,g_ptar.sourceSurface);
 
-    self->SetDepthStencilSurface(
-        g_ptar.virtualDepth);
+    HRESULT restoreDepthHr=
+        self->SetDepthStencilSurface(
+            g_ptar.virtualDepth);
 
-    SetVirtualViewport(self);
+    HRESULT restoreVpHr=
+        SetVirtualViewport(self);
+
+    if(FAILED(restoreStateHr) ||
+       FAILED(restoreRtHr) ||
+       FAILED(restoreDepthHr) ||
+       FAILED(restoreVpHr))
+    {
+        PtDiagLogA(
+            "PRESENT_RESTORE_FAIL state=0x%08lX rt=0x%08lX "
+            "depth=0x%08lX viewport=0x%08lX source=%p depthsurf=%p",
+            (unsigned long)restoreStateHr,
+            (unsigned long)restoreRtHr,
+            (unsigned long)restoreDepthHr,
+            (unsigned long)restoreVpHr,
+            g_ptar.sourceSurface,
+            g_ptar.virtualDepth);
+    }
 
     PtDiagStage("PRESENT_RETURN_TO_GAME");
     g_ptar.inPresent=false;
