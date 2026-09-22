@@ -34,9 +34,11 @@ Included:
   - CTRL+F11 HUD toggle
   - F12 FilterNext
   - generic GPU frame generation using the production GW16I architecture:
-      * ordinary D3D9 game/source device retained for compatibility
+      * Direct3DCreate9 compatibility surface backed by a D3D9Ex source device
+      * legacy game still receives the base IDirect3D9 / IDirect3DDevice9 API
       * isolated D3D9Ex presenter device and thread
-      * short REAL-frame CPU bridge between the two devices
+      * GPU-shared REAL ring between source and presenter
+      * CPU readback/upload bridge retained only as a fallback transport
       * previous/current REAL history owned by the isolated presenter
       * coarse motion estimation at /4
       * refinement at /2
@@ -113,13 +115,40 @@ isolated presenter is therefore allowed to block at Sync1 without reducing the
 game's REAL source throughput.
 
 D3D9-specific transport:
-  - a normal D3D9 game device is retained so applications using D3DPOOL_MANAGED
-    are not broken;
-  - regular D3D9 cannot create resources shareable with another D3D9Ex device;
-  - completed REAL output is copied through a preallocated CPU ring and uploaded
-    by the isolated presenter;
-  - CI measured the readback component at roughly 0.4 ms at 1280x720, 0.6 ms at
-    1600x900 and 0.8-0.9 ms at 1920x1080 on the laboratory runner.
+  - Direct3DCreate9 now prefers a Direct3DCreate9Ex factory while returning its
+    legacy IDirect3D9 base interface to the application;
+  - the resulting source device is exposed to the game as IDirect3DDevice9 but
+    is internally share-capable through IDirect3DDevice9Ex;
+  - completed REAL output is copied GPU-to-GPU into a shared ring and opened by
+    the isolated presenter through shared D3D9Ex handles;
+  - producer completion uses EVENT queries; waiting happens on the isolated
+    presenter thread, never in the game's Present path;
+  - CI currently measures the GPU-shared handoff around 0.06-0.10 ms in the
+    integrated path, versus the older CPU bridge's substantially higher cost;
+  - the preallocated CPU readback/upload ring remains a fallback if an Ex source
+    device cannot be obtained.
+
+Legacy D3DPOOL_MANAGED compatibility:
+  - D3D9Ex rejects D3DPOOL_MANAGED directly;
+  - PTAR translates managed textures, cube textures and volume textures to
+    native DEFAULT/DYNAMIC D3D9Ex resources;
+  - managed vertex/index buffers are translated to DEFAULT/DYNAMIC with a
+    DEFAULT compatibility retry;
+  - Lock/Unlock, binding, multiple mip levels, AUTOGEN level-0 writes, base
+    Reset and post-Reset content/lifetime behavior are laboratory-gated;
+  - resource GetDesc/GetLevelDesc is virtualized back to the original
+    D3DPOOL_MANAGED pool and original Usage flags;
+  - EvictManagedResources keeps the legacy S_OK contract for translated
+    resources.
+
+Swapchain ownership:
+  - the source device uses a private hidden window and an IMMEDIATE producer
+    swapchain;
+  - only the isolated presenter owns the game's visible HWND;
+  - this separation eliminated the transient source Clear(E_FAIL) race observed
+    when both D3D9Ex devices targeted the same visible HWND;
+  - the complete create/present/reset/recreate lifecycle is repeated three times
+    in CI to catch this race rather than accepting a one-off successful run.
 
 Production-derived cadence policy:
   FG OFF:
@@ -258,9 +287,13 @@ Before any new hardware request, CI must pass:
   - diagnostic collector passes;
   - same-device Present blocking is explicitly rejected by laboratory probes;
   - separate-device presenter isolation proves source throughput is preserved;
-  - regular-D3D9/D3D9Ex compatibility probes prevent replacing the game device
-    with an Ex device when that would remove D3DPOOL_MANAGED support;
-  - CPU-bridge readback is benchmarked at 720p, 900p and 1080p;
+  - D3D9Ex source compatibility probes validate legacy MANAGED resource
+    translation, descriptor fidelity, Reset persistence and native binding;
+  - GPU-shared source-to-presenter transport is required by the integrated
+    runtime gate, with CPU readback retained only as fallback;
+  - the isolated proxy create/present/reset lifecycle is repeated three times
+    with no source Clear or state-restore failure;
+  - CPU fallback readback remains benchmarked at 720p, 900p and 1080p;
   - source-side legacy pacer helpers contain no waits/resync/late-skip path;
   - wall-clock FPS regression proves a synthetic 200 ms hitch lowers the rate;
   - F9 capture smoke creates and validates a 320x180 post-overlay BMP;
