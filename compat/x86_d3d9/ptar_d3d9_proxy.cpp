@@ -467,9 +467,10 @@ static HRESULT InitializePTARResources(
 
         PtDiagLogA(
             "INIT_IsolatedPresenter hr=0x%08lX active=%d "
-            "transport=CPU_READBACK target_hz=%u",
+            "transport=%s target_hz=%u",
             (unsigned long)presenterHr,
             PtIsoPresenterIsActive()?1:0,
+            g_ptarIso.sharedGpuTransport?"GPU_SHARED":"CPU_READBACK",
             g_ptar.outputRefreshHz);
 
         // Fail-open: spatial PTAR remains usable even if the isolated display
@@ -491,10 +492,11 @@ static HRESULT InitializePTARResources(
     PtFgPacerReset();
     PtRealGovernorReset(false);
     g_ptar.active=true;
-    Log(L"PTAR_ACTIVE src=%ux%u out=%ux%u spatial=%s shader=MoE_v01_D3D9_PS3 samples=8 hud=CTRL_F11 fg=CTRL_F6 presenter=%s transport=CPU_READBACK targetVisible=%u",
+    Log(L"PTAR_ACTIVE src=%ux%u out=%ux%u spatial=%s shader=MoE_v01_D3D9_PS3 samples=8 hud=CTRL_F11 fg=CTRL_F6 presenter=%s transport=%s targetVisible=%u",
         sourceW,sourceH,outputW,outputH,
         spatialActive?L"PTAR_X1.5":L"NATIVE_1X1",
         PtIsoPresenterIsActive()?L"ISOLATED":L"DIRECT_FALLBACK",
+        g_ptarIso.sharedGpuTransport?L"GPU_SHARED":L"CPU_READBACK",
         g_ptar.outputRefreshHz);
     return S_OK;
 
