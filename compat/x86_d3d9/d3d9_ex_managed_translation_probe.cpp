@@ -27,7 +27,7 @@ static bool FillTexture(IDirect3DTexture9* t,DWORD value)
     for(UINT level=0;level<levels;++level)
     {
         D3DLOCKED_RECT lr={};
-        HRESULT hr=t->LockRect(level,&lr,0,D3DLOCK_DISCARD);
+        HRESULT hr=t->LockRect(level,&lr,0,0);
         if(FAILED(hr))
         {
             std::printf("TEXTURE_LOCK_FAIL level=%u hr=0x%08lX\n",level,(unsigned long)hr);
@@ -56,7 +56,7 @@ static bool FillCube(IDirect3DCubeTexture9* t,DWORD value)
         {
             D3DLOCKED_RECT lr={};
             HRESULT hr=t->LockRect(
-                (D3DCUBEMAP_FACES)face,level,&lr,0,D3DLOCK_DISCARD);
+                (D3DCUBEMAP_FACES)face,level,&lr,0,0);
             if(FAILED(hr))
             {
                 std::printf("CUBE_LOCK_FAIL face=%d level=%u hr=0x%08lX\n",face,level,(unsigned long)hr);
@@ -83,7 +83,7 @@ static bool FillVolume(IDirect3DVolumeTexture9* t,BYTE value)
     for(UINT level=0;level<levels;++level)
     {
         D3DLOCKED_BOX lb={};
-        HRESULT hr=t->LockBox(level,&lb,0,D3DLOCK_DISCARD);
+        HRESULT hr=t->LockBox(level,&lb,0,0);
         if(FAILED(hr))
         {
             std::printf("VOLUME_LOCK_FAIL level=%u hr=0x%08lX\n",level,(unsigned long)hr);
