@@ -98,7 +98,7 @@ jobs:
           }
           $sha=(Get-FileHash artifact\d3d9.dll -Algorithm SHA256).Hash.ToLowerInvariant()
           @(
-            'PTAR_VARIANT=PTAR_X86_D3D9_GW16I_ISOLATED_CPU_BRIDGE1',
+            'PTAR_VARIANT=PTAR_X86_D3D9_GW16I_GPU_SHARED1',
             'PE_MACHINE=I386_0x014C',
             'API=D3D9',
             'SPATIAL=PTAR_NG_MOE_X15_PLUS_UNIVERSAL_EDGE_PS3',
@@ -119,9 +119,10 @@ jobs:
             'FG_VISIBLE_TARGET_HZ=60',
             'FG_PACING=GW16I_ISOLATED_PRESENTER_SYNC1',
             'FG_LATE_POLICY=LOAD_SHED_GENERATED_BEFORE_REAL',
-            'PRESENTER_ARCH=D3D11_MODEL_SEPARATE_DEVICE_CPU_RING',
-            'PRESENTER_TRANSPORT=REGULAR_D3D9_READBACK_TO_D3D9EX',
-            'PRODUCER_DEVICE=REGULAR_D3D9_MANAGED_COMPAT',
+            'PRESENTER_ARCH=D3D11_MODEL_SEPARATE_DEVICE_GPU_SHARED_RING',
+            'PRESENTER_TRANSPORT=D3D9EX_SHARED_GPU_WITH_CPU_READBACK_FALLBACK',
+            'PRODUCER_DEVICE=D3D9EX_BASE_INTERFACE_MANAGED_TRANSLATION',
+            'MANAGED_COMPAT=D3DPOOL_MANAGED_TO_DEFAULT_DYNAMIC',
             'PRODUCER_SWAP=WINDOWED_IMMEDIATE_NONVISIBLE',
             'PRESENTER_SWAP=FLIPEX_OR_DISCARD_SYNC1',
             'FG_WORK=ISOLATED_PRESENTER_THREAD',
@@ -445,9 +446,13 @@ jobs:
           }
 
           foreach($required in @(
+            'GPU_SHARED',
+            'sharedHandle',
+            'CreateQuery',
+            'D3DQUERYTYPE_EVENT',
             'GetRenderTargetData',
             'D3DPOOL_SYSTEMMEM',
-            'D3DUSAGE_DYNAMIC',
+            'CPU_READBACK',
             'PtIsoRenderGenerated',
             'ISOLATED_LOAD_SHED_REAL_ONLY',
             'PresentEx',
@@ -457,6 +462,23 @@ jobs:
           )){
             if($iso -notmatch [regex]::Escape($required)){
               throw "isolated presenter contract missing: $required"
+            }
+          }
+
+          foreach($required in @(
+            'source_factory=D3D9Ex',
+            'SOURCE_DEVICE_API',
+            'D3DPOOL_MANAGED',
+            'HookCreateTexture',
+            'HookCreateVolumeTexture',
+            'HookCreateCubeTexture',
+            'HookCreateVertexBuffer',
+            'HookCreateIndexBuffer',
+            'HookEvictManagedResources',
+            'D3D9EX_MANAGED_TEXTURE'
+          )){
+            if($proxy -notmatch [regex]::Escape($required)){
+              throw "D3D9Ex managed compatibility contract missing: $required"
             }
           }
 
@@ -502,6 +524,76 @@ jobs:
           if($p -notmatch 'FG_PRODUCER_GENERATED_PREP_MS='){throw 'producer generated prep evidence missing'}
           if($p -notmatch 'FG_PRODUCER_REAL_PREP_MS='){throw 'producer real prep evidence missing'}
           Write-Host 'D3D9_FG_PRODUCER_NO_WAIT=PASS'
+
+      - name: Validate proxy D3D9Ex source and managed compatibility
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 compat\x86_d3d9\d3d9_ex_managed_proxy_smoke.cpp /link user32.lib /OUT:artifact\d3d9_ex_managed_proxy_smoke.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+
+          @(
+            '[WIN81_NIS]',
+            'Enabled=1',
+            'UniversalSpatialPresenter=1',
+            'RenderWidth=640',
+            'RenderHeight=360',
+            'OutputWidth=640',
+            'OutputHeight=360',
+            'Overlay=1',
+            'FrameGeneration=0'
+          ) | Set-Content artifact\win81_nis.ini -Encoding ASCII
+
+          Remove-Item artifact\PTAR_X86_D3D9.log -Force -ErrorAction SilentlyContinue
+
+          Push-Location artifact
+          try{
+            & .\d3d9_ex_managed_proxy_smoke.exe | Tee-Object ..\build_x86\D3D9_EX_MANAGED_PROXY_SMOKE.txt
+            $managedRc=$LASTEXITCODE
+          } finally {
+            Pop-Location
+          }
+
+          Remove-Item artifact\win81_nis.ini -Force -ErrorAction SilentlyContinue
+
+          if($managedRc -ne 0){throw "proxy managed compatibility smoke failed rc=$managedRc"}
+
+          $sm=Get-Content build_x86\D3D9_EX_MANAGED_PROXY_SMOKE.txt -Raw
+          foreach($token in @(
+            'D3D9EX_MANAGED_PROXY_SMOKE=PASS',
+            'PROXY_FACTORY_QI_EX=0x00000000',
+            'PROXY_DEVICE_QI_EX=0x00000000',
+            'PROXY_MANAGED_CREATE tex=0x00000000 cube=0x00000000 volume=0x00000000 vb=0x00000000 ib=0x00000000',
+            'PROXY_MANAGED_EVICT=0x00000000',
+            'PROXY_MANAGED_RESET=0x00000000'
+          )){
+            if($sm -notmatch [regex]::Escape($token)){
+              throw "managed proxy evidence missing: $token"
+            }
+          }
+
+          if(-not(Test-Path artifact\PTAR_X86_D3D9.log)){
+            throw 'managed proxy runtime log missing'
+          }
+          $rt=Get-Content artifact\PTAR_X86_D3D9.log -Raw
+          foreach($token in @(
+            'source_factory=D3D9Ex',
+            'SOURCE_DEVICE_API ex=1',
+            'ISOLATED_PRESENTER_READY transport=GPU_SHARED',
+            'D3D9EX_MANAGED_TEXTURE',
+            'D3D9EX_MANAGED_CUBE',
+            'D3D9EX_MANAGED_VOLUME',
+            'D3D9EX_MANAGED_VB',
+            'D3D9EX_MANAGED_IB',
+            'D3D9EX_MANAGED_EVICT emulated=S_OK'
+          )){
+            if($rt -notmatch [regex]::Escape($token)){
+              throw "managed runtime evidence missing: $token"
+            }
+          }
+
+          Copy-Item artifact\PTAR_X86_D3D9.log build_x86\D3D9_EX_MANAGED_PROXY_RUNTIME.log -Force
+          Write-Host 'D3D9EX_MANAGED_PROXY_RUNTIME=PASS'
 
       - name: Reproduce Direct3DCreate9 object lifetime sequence
         shell: pwsh
@@ -557,8 +649,8 @@ jobs:
           $rt=Get-Content artifact\PTAR_X86_D3D9.log -Raw
 
           foreach($required in @(
-            'ISOLATED_PRESENTER_READY transport=CPU_READBACK',
-            'ISOLATED_PRESENTER_THREAD_START transport=CPU_READBACK',
+            'ISOLATED_PRESENTER_READY transport=GPU_SHARED',
+            'ISOLATED_PRESENTER_THREAD_START transport=GPU_SHARED',
             'ISOLATED_SUBMIT_REAL',
             'ISOLATED_PRESENTER_THREAD_STOP'
           )){
@@ -718,6 +810,7 @@ jobs:
       - name: Package generic x86 D3D9 PRODPORT1 test build
         shell: pwsh
         run: |
+          Remove-Item artifact\d3d9_ex_managed_proxy_smoke.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\d3d9_object_lifetime_smoke.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\d3d9_fg_gpu_pipeline_smoke.exe -Force -ErrorAction SilentlyContinue
           Remove-Item artifact\d3d9_fg_pacer_smoke.exe -Force -ErrorAction SilentlyContinue
@@ -762,6 +855,8 @@ jobs:
             build_x86/HEADERS.txt
             build_x86/EXPORTS.txt
             build_x86/DEPENDENTS.txt
+            build_x86/D3D9_EX_MANAGED_PROXY_SMOKE.txt
+            build_x86/D3D9_EX_MANAGED_PROXY_RUNTIME.log
             build_x86/D3D9_OBJECT_LIFETIME_SMOKE.txt
             build_x86/D3D9_RESOLUTION_POLICY_SMOKE.txt
             build_x86/D3D9_UNIVERSAL_SPATIAL_GPU_SMOKE.txt
