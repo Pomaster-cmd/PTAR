@@ -1,0 +1,69 @@
+name: Conviction frame pipeline V5
+
+on:
+  push:
+    branches:
+      - diag/conviction-timing-state-v4
+    paths:
+      - 'diag/conviction_frame_pipeline/**'
+      - '.github/workflows/conviction-frame-pipeline-v5.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+      - name: Build static Windows 8.1 x86 V5 probe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force artifact | Out-Null
+          cl.exe /nologo /O2 /MT /W4 /WX /wd4127 /EHsc /std:c++17 /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 diag\conviction_frame_pipeline\PTARConvictionFramePipelineV5.cpp user32.lib /link /OUT:artifact\PTAR_Conviction_Frame_Pipeline_V5.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+      - name: Run self-test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & artifact\PTAR_Conviction_Frame_Pipeline_V5.exe --selftest | Tee-Object artifact\SELFTEST.txt
+          if($LASTEXITCODE -ne 0){ throw "selftest failed rc=$LASTEXITCODE" }
+          if((Get-Content artifact\SELFTEST.txt -Raw) -notmatch 'SELFTEST=PASS'){ throw 'selftest PASS marker missing' }
+      - name: Validate PE and dependencies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dumpbin /headers artifact\PTAR_Conviction_Frame_Pipeline_V5.exe | Tee-Object artifact\HEADERS.txt
+          dumpbin /dependents artifact\PTAR_Conviction_Frame_Pipeline_V5.exe | Tee-Object artifact\DEPENDENTS.txt
+          $h=Get-Content artifact\HEADERS.txt -Raw
+          $d=Get-Content artifact\DEPENDENTS.txt -Raw
+          if($h -notmatch '14C machine \(x86\)'){ throw 'PE is not x86/I386' }
+          foreach($bad in @('VCRUNTIME','MSVCP','UCRTBASE','API-MS-WIN-CRT')){ if($d -match $bad){ throw "forbidden dynamic runtime dependency $bad" } }
+          $sha=(Get-FileHash artifact\PTAR_Conviction_Frame_Pipeline_V5.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          @(
+            'PTAR_CONVICTION_FRAME_PIPELINE_V5=1',
+            'PE_MACHINE=I386_0x014C',
+            'TARGET_OS=WINDOWS_8_1',
+            'MODE=READ_ONLY_EXTERNAL',
+            'TRIGGER=GLOBAL_CTRL_T',
+            'ENGINE_LOOP_FPS_FIELD=UGAMEENGINE_PLUS_F8',
+            'RENDER_THREAD=EXACT_G_RENDERTHREAD',
+            'GAME_FILES_MODIFIED=NO',
+            'PTAR_FILES_MODIFIED=NO',
+            'D3D11_MODIFIED=NO',
+            ('SHA256='+$sha),
+            ('SOURCE_COMMIT='+$env:GITHUB_SHA)
+          ) | Set-Content artifact\VERSION.txt -Encoding ASCII
+          Write-Host "SHA256=$sha"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_Conviction_Frame_Pipeline_V5_x86
+          path: artifact/
+          if-no-files-found: error
+          retention-days: 30
