@@ -1,0 +1,225 @@
+name: LAB Conviction f438 A-B matrix
+
+on:
+  push:
+    branches: [lab/conviction-f438-ab-matrix]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-matrix:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      - name: Compile common D3D9 shaders
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force build_x86,lab_artifacts | Out-Null
+          $fxc=Get-Command fxc.exe -ErrorAction SilentlyContinue
+          if(-not $fxc){
+            $roots=@("$env:ProgramFiles(x86)\Windows Kits\10\bin","$env:ProgramFiles(x86)\Windows Kits\8.1\bin")
+            foreach($root in $roots){
+              if(Test-Path $root){
+                $fxc=Get-ChildItem $root -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1
+                if($fxc){break}
+              }
+            }
+          }
+          if(-not $fxc){throw 'fxc.exe not found'}
+          $fxcPath=if($fxc.Path){$fxc.Path}else{$fxc.FullName}
+          $jobs=@(
+            @('ps_3_0','compat\x86_d3d9\ptar_moe_d3d9_ps.hlsl','ptar_ps_bytecode.h','g_ptarPs'),
+            @('ps_3_0','compat\x86_d3d9\ptar_moe_universal_d3d9_ps.hlsl','ptar_universal_ps_bytecode.h','g_ptarUniversalPs'),
+            @('ps_2_0','compat\x86_d3d9\ptar_bilinear_ref_ps.hlsl','ptar_bilinear_ps_bytecode.h','g_ptarBilinearPs'),
+            @('ps_3_0','compat\x86_d3d9\ptar_gw16i_hud_ps.hlsl','ptar_gw16i_hud_ps_bytecode.h','g_ptarGw16iHudPs'),
+            @('ps_3_0','compat\x86_d3d9\ptar_gw16i_feedback_ps.hlsl','ptar_gw16i_feedback_ps_bytecode.h','g_ptarGw16iFeedbackPs'),
+            @('ps_3_0','compat\x86_d3d9\ptar_fg_me_coarse_ps.hlsl','ptar_fg_me_coarse_ps_bytecode.h','g_ptarFgMeCoarsePs'),
+            @('ps_3_0','compat\x86_d3d9\ptar_fg_me_refine_ps.hlsl','ptar_fg_me_refine_ps_bytecode.h','g_ptarFgMeRefinePs'),
+            @('ps_3_0','compat\x86_d3d9\ptar_fg_interpolate_ps.hlsl','ptar_fg_interpolate_ps_bytecode.h','g_ptarFgInterpolatePs')
+          )
+          foreach($j in $jobs){
+            & $fxcPath /nologo /T $j[0] /E main /O3 /Fh (Join-Path build_x86 $j[2]) /Vn $j[3] $j[1]
+            if($LASTEXITCODE -ne 0){throw "FXC failed: $($j[1])"}
+          }
+          Write-Host "FXC=$fxcPath"
+
+      - name: Build five controlled f438 variants
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $proxy='compat\x86_d3d9\ptar_d3d9_proxy.cpp'
+          $iso='compat\x86_d3d9\ptar_isolated_presenter.h'
+          $base='f438dffe49ae2a4c2d96b4406431f4e02a3b3841'
+
+          function Reset-Sources {
+            & git checkout -- $proxy $iso
+            if($LASTEXITCODE -ne 0){throw 'git reset sources failed'}
+          }
+
+          function Patch-Variant([string]$variant) {
+            Reset-Sources
+
+            if($variant -eq 'CONTROL_F438') {
+              return
+            }
+
+            if($variant -eq 'GOV_OFF') {
+              $p=Get-Content $proxy -Raw
+              $p=$p.Replace('PtRealGovernorWaitAfterSourceFrame(false);','PtDiagLogA("LAB_GOVERNOR_BYPASS fallback=1");')
+              $pattern='PtRealGovernorWaitAfterSourceFrame\(\s*PtHudFgEnabled\(\)\s*&&\s*PtIsoPresenterIsActive\(\)\s*\);'
+              $p=[regex]::Replace($p,$pattern,'PtDiagLogA("LAB_GOVERNOR_BYPASS fallback=0");')
+              Set-Content $proxy $p -Encoding UTF8
+              if((Get-Content $proxy -Raw) -notmatch 'LAB_GOVERNOR_BYPASS fallback=0'){throw 'GOV_OFF patch failed'}
+              return
+            }
+
+            if($variant -eq 'CPU_BRIDGE') {
+              $h=Get-Content $iso -Raw
+              $pattern='p\.sharedGpuTransport=\s*SUCCEEDED\(producerExHr\)\s*&&\s*p\.producerEx!=0;'
+              $h=[regex]::Replace($h,$pattern,'p.sharedGpuTransport=false; // LAB_FORCE_CPU_READBACK')
+              Set-Content $iso $h -Encoding UTF8
+              if((Get-Content $iso -Raw) -notmatch 'LAB_FORCE_CPU_READBACK'){throw 'CPU_BRIDGE patch failed'}
+              return
+            }
+
+            if($variant -eq 'NO_FLUSH') {
+              $h=Get-Content $iso -Raw
+              $count=([regex]::Matches($h,'D3DGETDATA_FLUSH')).Count
+              if($count -lt 2){throw "NO_FLUSH expected >=2 FLUSH sites, found $count"}
+              $h=$h.Replace('D3DGETDATA_FLUSH','0 /* LAB_NO_D3DGETDATA_FLUSH */')
+              Set-Content $iso $h -Encoding UTF8
+              if((Get-Content $iso -Raw) -match 'D3DGETDATA_FLUSH[^*]'){throw 'NO_FLUSH patch incomplete'}
+              return
+            }
+
+            if($variant -eq 'LEGACY_SOURCE') {
+              $p=Get-Content $proxy -Raw
+              $needle="    g_ptarSourceFactoryEx=false;`r`n`r`n    if(g_sysDirect3DCreate9Ex)"
+              if(-not $p.Contains($needle)){
+                $needle="    g_ptarSourceFactoryEx=false;`n`n    if(g_sysDirect3DCreate9Ex)"
+              }
+              if(-not $p.Contains($needle)){throw 'LEGACY_SOURCE anchor missing'}
+              $replacement=$needle.Replace('if(g_sysDirect3DCreate9Ex)','volatile LONG ptarLabUseExSource=0;`n`n    if(ptarLabUseExSource && g_sysDirect3DCreate9Ex)')
+              $replacement=$replacement.Replace('`n',[Environment]::NewLine)
+              $p=$p.Replace($needle,$replacement)
+              Set-Content $proxy $p -Encoding UTF8
+              $check=Get-Content $proxy -Raw
+              if($check -notmatch 'ptarLabUseExSource'){throw 'LEGACY_SOURCE patch failed'}
+              return
+            }
+
+            throw "unknown variant $variant"
+          }
+
+          function Build-Variant([string]$variant) {
+            Patch-Variant $variant
+            $out=Join-Path 'lab_artifacts' $variant
+            New-Item -ItemType Directory -Force $out | Out-Null
+
+            & cl.exe /nologo /LD /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I build_x86 $proxy /link user32.lib /DEF:compat\x86_d3d9\d3d9_proxy.def /OUT:$out\d3d9.dll /SUBSYSTEM:WINDOWS,6.03
+            if($LASTEXITCODE -ne 0){throw "compile failed: $variant"}
+
+            dumpbin /headers $out\d3d9.dll | Out-File $out\HEADERS.txt -Encoding ascii
+            dumpbin /exports $out\d3d9.dll | Out-File $out\EXPORTS.txt -Encoding ascii
+            dumpbin /dependents $out\d3d9.dll | Out-File $out\DEPENDENTS.txt -Encoding ascii
+            $heads=Get-Content $out\HEADERS.txt -Raw
+            $exports=Get-Content $out\EXPORTS.txt -Raw
+            $deps=Get-Content $out\DEPENDENTS.txt -Raw
+            if($heads -notmatch '14C machine \(x86\)'){throw "$variant not x86"}
+            foreach($n in @('Direct3DCreate9','Direct3DCreate9Ex','D3DPERF_BeginEvent','D3DPERF_EndEvent')){
+              if($exports -notmatch [regex]::Escape($n)){throw "$variant missing export $n"}
+            }
+            foreach($bad in @('VCRUNTIME','MSVCP','UCRTBASE','API-MS-WIN-CRT')){
+              if($deps -match $bad){throw "$variant dynamic runtime dependency $bad"}
+            }
+
+            & git diff -- $proxy $iso | Out-File $out\PATCH.diff -Encoding utf8
+            $sha=(Get-FileHash $out\d3d9.dll -Algorithm SHA256).Hash.ToLowerInvariant()
+            @(
+              "PTAR_LAB_VARIANT=$variant",
+              "BASE_COMMIT=$base",
+              'API=D3D9_X86_ONLY',
+              'D3D11_UNTOUCHED=1',
+              "DLL_SHA256=$sha",
+              "LAB_COMMIT=$env:GITHUB_SHA"
+            ) | Set-Content $out\VERSION.txt -Encoding ascii
+            Write-Host "$variant SHA256=$sha"
+          }
+
+          foreach($v in @('CONTROL_F438','GOV_OFF','CPU_BRIDGE','NO_FLUSH','LEGACY_SOURCE')) {
+            Build-Variant $v
+          }
+          Reset-Sources
+
+          $shas=@{}
+          foreach($v in @('CONTROL_F438','GOV_OFF','CPU_BRIDGE','NO_FLUSH','LEGACY_SOURCE')) {
+            $shas[$v]=(Get-FileHash "lab_artifacts\$v\d3d9.dll" -Algorithm SHA256).Hash
+          }
+          if(($shas.Values | Select-Object -Unique).Count -ne 5){throw 'variant binaries are not all distinct'}
+          Write-Host 'AB_MATRIX_BINARY_DISTINCTNESS=PASS'
+
+      - name: Run repository-level smoke suite
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force smoke | Out-Null
+
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I compat\x86_d3d9 compat\x86_d3d9\d3d9_resolution_policy_smoke.cpp /link /OUT:smoke\resolution.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){throw 'resolution smoke compile failed'}
+          & smoke\resolution.exe | Tee-Object smoke\RESOLUTION.txt
+          if($LASTEXITCODE -ne 0 -or (Get-Content smoke\RESOLUTION.txt -Raw) -notmatch 'D3D9_RESOLUTION_POLICY_SMOKE=PASS'){throw 'resolution smoke failed'}
+
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I build_x86 compat\x86_d3d9\d3d9_fg_gpu_pipeline_smoke.cpp /link user32.lib /OUT:smoke\fg_pipeline.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){throw 'FG pipeline smoke compile failed'}
+          & smoke\fg_pipeline.exe | Tee-Object smoke\FG_PIPELINE.txt
+          if($LASTEXITCODE -ne 0 -or (Get-Content smoke\FG_PIPELINE.txt -Raw) -notmatch 'D3D9_FG_GPU_PIPELINE_SMOKE=PASS'){throw 'FG pipeline smoke failed'}
+
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I compat\x86_d3d9 compat\x86_d3d9\d3d9_fg_pacer_smoke.cpp /link /OUT:smoke\fg_pacer.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){throw 'FG pacer smoke compile failed'}
+          & smoke\fg_pacer.exe | Tee-Object smoke\FG_PACER.txt
+          if($LASTEXITCODE -ne 0 -or (Get-Content smoke\FG_PACER.txt -Raw) -notmatch 'D3D9_FG_PACER_SMOKE=PASS'){throw 'FG pacer smoke failed'}
+
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 compat\x86_d3d9\d3d9_object_lifetime_smoke.cpp /link user32.lib /OUT:smoke\lifetime.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){throw 'lifetime smoke compile failed'}
+          & smoke\lifetime.exe | Tee-Object smoke\LIFETIME.txt
+          if($LASTEXITCODE -ne 0 -or (Get-Content smoke\LIFETIME.txt -Raw) -notmatch 'D3D9_OBJECT_LIFETIME_SMOKE=PASS'){throw 'lifetime smoke failed'}
+
+          Write-Host 'REPOSITORY_SMOKES=PASS'
+
+      - name: Package A-B matrix
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $readme=@'
+          PTAR / Conviction D3D9 x86 - f438 A/B laboratory matrix
+          Base: f438dffe49ae2a4c2d96b4406431f4e02a3b3841
+          D3D11: untouched / out of scope.
+
+          CONTROL_F438  = exact frozen D3D9 source behavior.
+          GOV_OFF       = source REAL governor waits bypassed only.
+          CPU_BRIDGE    = keep D3D9Ex source, force isolated CPU_READBACK transport; no shared EVENT-fence path.
+          NO_FLUSH      = keep GPU shared transport but EVENT GetData polling uses flags=0 instead of D3DGETDATA_FLUSH.
+          LEGACY_SOURCE = source game factory forced back to legacy Direct3DCreate9; isolated presenter remains D3D9Ex and transport falls back to CPU_READBACK.
+
+          These are differential diagnostic builds, not production replacements.
+          Each directory contains the exact patch diff and SHA-256 metadata.
+          '@
+          Set-Content lab_artifacts\README_MATRIX.txt $readme -Encoding ascii
+          Copy-Item smoke lab_artifacts\smoke -Recurse
+          Compress-Archive -Path lab_artifacts\* -DestinationPath PTAR_CONVICTION_F438_AB_MATRIX.zip -CompressionLevel Optimal
+          $sha=(Get-FileHash PTAR_CONVICTION_F438_AB_MATRIX.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "MATRIX_ZIP_SHA256=$sha"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-CONVICTION-F438-AB-MATRIX
+          path: PTAR_CONVICTION_F438_AB_MATRIX.zip
