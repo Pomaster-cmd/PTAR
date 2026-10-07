@@ -28,7 +28,7 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           New-Item -ItemType Directory -Force artifact | Out-Null
-          cl.exe /nologo /O2 /MT /W4 /WX /EHsc /std:c++17 /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 diag\conviction_hotspot\PTARConvictionHotspotSampler.cpp /link /OUT:artifact\PTAR_Conviction_Hotspot_Sampler.exe /SUBSYSTEM:CONSOLE,6.03
+          cl.exe /nologo /O2 /MT /W4 /WX /wd4127 /EHsc /std:c++17 /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 diag\conviction_hotspot\PTARConvictionHotspotSampler.cpp /link /OUT:artifact\PTAR_Conviction_Hotspot_Sampler.exe /SUBSYSTEM:CONSOLE,6.03
           if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
           if(-not(Test-Path artifact\PTAR_Conviction_Hotspot_Sampler.exe)){ throw 'sampler missing' }
 
