@@ -1,0 +1,251 @@
+name: LAB D3D9 safe-sync c01
+
+on:
+  push:
+    branches: [lab/d3d9-safe-sync-c01]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-regress:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      - name: Lock safe-sync architecture invariants
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $p=Get-Content compat\x86_d3d9\ptar_d3d9_proxy.cpp -Raw
+
+          foreach($required in @(
+            'IDirect3D9* d3d=g_sysDirect3DCreate9(sdk);',
+            'FG_PRESENT_GENERATED',
+            'PRESENT_REAL',
+            'PtFgPacerPrepareGenerated',
+            'PtFgPacerPrepareReal',
+            'RenderFGMotionAndIntermediate',
+            'RotateRealHistory'
+          )){
+            if($p -notmatch [regex]::Escape($required)){
+              throw "safe-sync required token missing: $required"
+            }
+          }
+
+          foreach($forbidden in @(
+            'ptar_async_presenter.h',
+            'ptar_isolated_presenter.h',
+            'g_ptarSourceFactoryEx',
+            'SOURCE_SWAP_WINDOW',
+            'ISOLATED_SUBMIT_REAL',
+            'D3D9EX_MANAGED_',
+            'PtRealGovernorWaitAfterSourceFrame',
+            'CreateThread('
+          )){
+            if($p -match [regex]::Escape($forbidden)){
+              throw "safe-sync architecture regression detected: $forbidden"
+            }
+          }
+
+          Write-Host 'D3D9_SAFE_SYNC_ARCHITECTURE=PASS'
+          Write-Host 'D3D9_REGULAR_FACTORY_ONLY=PASS'
+          Write-Host 'D3D9_NO_ASYNC_OR_ISOLATED_PRESENTER=PASS'
+
+      - name: Compile D3D9 shaders
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force build_x86,artifact | Out-Null
+          $fxc=Get-Command fxc.exe -ErrorAction SilentlyContinue
+          if(-not $fxc){
+            $roots=@("$env:ProgramFiles(x86)\Windows Kits\10\bin","$env:ProgramFiles(x86)\Windows Kits\8.1\bin")
+            foreach($root in $roots){
+              if(Test-Path $root){
+                $fxc=Get-ChildItem $root -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1
+                if($fxc){break}
+              }
+            }
+          }
+          if(-not $fxc){throw 'fxc.exe not found'}
+          $fxcPath=if($fxc.Path){$fxc.Path}else{$fxc.FullName}
+
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 /Fh build_x86\ptar_ps_bytecode.h /Vn g_ptarPs compat\x86_d3d9\ptar_moe_d3d9_ps.hlsl
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 /Fh build_x86\ptar_universal_ps_bytecode.h /Vn g_ptarUniversalPs compat\x86_d3d9\ptar_moe_universal_d3d9_ps.hlsl
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          & $fxcPath /nologo /T ps_2_0 /E main /O3 /Fh build_x86\ptar_bilinear_ps_bytecode.h /Vn g_ptarBilinearPs compat\x86_d3d9\ptar_bilinear_ref_ps.hlsl
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 /Fh build_x86\ptar_fg_me_coarse_ps_bytecode.h /Vn g_ptarFgMeCoarsePs compat\x86_d3d9\ptar_fg_me_coarse_ps.hlsl
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 /Fh build_x86\ptar_fg_me_refine_ps_bytecode.h /Vn g_ptarFgMeRefinePs compat\x86_d3d9\ptar_fg_me_refine_ps.hlsl
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 /Fh build_x86\ptar_fg_interpolate_ps_bytecode.h /Vn g_ptarFgInterpolatePs compat\x86_d3d9\ptar_fg_interpolate_ps.hlsl
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          Write-Host "FXC=$fxcPath"
+
+      - name: Build Win8.1 x86 D3D9 proxy
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /LD /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I build_x86 compat\x86_d3d9\ptar_d3d9_proxy.cpp /link user32.lib /DEF:compat\x86_d3d9\d3d9_proxy.def /OUT:artifact\d3d9.dll /SUBSYSTEM:WINDOWS,6.03
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          if(-not(Test-Path artifact\d3d9.dll)){throw 'd3d9.dll missing'}
+
+          dumpbin /headers artifact\d3d9.dll | Tee-Object build_x86\HEADERS.txt
+          dumpbin /exports artifact\d3d9.dll | Tee-Object build_x86\EXPORTS.txt
+          dumpbin /dependents artifact\d3d9.dll | Tee-Object build_x86\DEPENDENTS.txt
+
+          $h=Get-Content build_x86\HEADERS.txt -Raw
+          $e=Get-Content build_x86\EXPORTS.txt -Raw
+          $d=Get-Content build_x86\DEPENDENTS.txt -Raw
+          if($h -notmatch '14C machine \(x86\)'){throw 'PE is not x86/I386'}
+          foreach($n in @('Direct3DCreate9','Direct3DCreate9Ex','D3DPERF_BeginEvent','D3DPERF_EndEvent')){
+            if($e -notmatch [regex]::Escape($n)){throw "missing export $n"}
+          }
+          foreach($bad in @('VCRUNTIME','MSVCP','UCRTBASE','API-MS-WIN-CRT')){
+            if($d -match $bad){throw "forbidden dynamic runtime dependency $bad"}
+          }
+          Write-Host ('DLL_SHA256='+(Get-FileHash artifact\d3d9.dll -Algorithm SHA256).Hash.ToLowerInvariant())
+          Write-Host 'D3D9_WIN81_X86_PE_GATE=PASS'
+
+      - name: Resolution policy smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I compat\x86_d3d9 compat\x86_d3d9\d3d9_resolution_policy_smoke.cpp /link /OUT:artifact\d3d9_resolution_policy_smoke.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          & artifact\d3d9_resolution_policy_smoke.exe | Tee-Object build_x86\D3D9_RESOLUTION_POLICY_SMOKE.txt
+          if($LASTEXITCODE -ne 0){throw 'resolution policy smoke failed'}
+          if((Get-Content build_x86\D3D9_RESOLUTION_POLICY_SMOKE.txt -Raw) -notmatch 'D3D9_RESOLUTION_POLICY_SMOKE=PASS'){throw 'resolution PASS marker missing'}
+
+      - name: Universal spatial GPU smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I build_x86 compat\x86_d3d9\d3d9_universal_spatial_gpu_smoke.cpp /link user32.lib /OUT:artifact\d3d9_universal_spatial_gpu_smoke.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          & artifact\d3d9_universal_spatial_gpu_smoke.exe | Tee-Object build_x86\D3D9_UNIVERSAL_SPATIAL_GPU_SMOKE.txt
+          if($LASTEXITCODE -ne 0){throw 'universal spatial GPU smoke failed'}
+          if((Get-Content build_x86\D3D9_UNIVERSAL_SPATIAL_GPU_SMOKE.txt -Raw) -notmatch 'D3D9_UNIVERSAL_SPATIAL_GPU_SMOKE=PASS'){throw 'universal spatial PASS marker missing'}
+
+      - name: GW16I HUD GPU smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I build_x86 compat\x86_d3d9\d3d9_gw16i_hud_gpu_smoke.cpp /link user32.lib /OUT:artifact\d3d9_gw16i_hud_gpu_smoke.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          & artifact\d3d9_gw16i_hud_gpu_smoke.exe | Tee-Object build_x86\D3D9_GW16I_HUD_GPU_SMOKE.txt
+          if($LASTEXITCODE -ne 0){throw 'GW16I HUD GPU smoke failed'}
+          if((Get-Content build_x86\D3D9_GW16I_HUD_GPU_SMOKE.txt -Raw) -notmatch 'D3D9_GW16I_HUD_GPU_SMOKE=PASS'){throw 'HUD PASS marker missing'}
+
+      - name: Wall-clock FPS smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I compat\x86_d3d9 compat\x86_d3d9\d3d9_wallclock_fps_smoke.cpp /link /OUT:artifact\d3d9_wallclock_fps_smoke.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          & artifact\d3d9_wallclock_fps_smoke.exe | Tee-Object build_x86\D3D9_WALLCLOCK_FPS_SMOKE.txt
+          if($LASTEXITCODE -ne 0){throw 'wallclock FPS smoke failed'}
+          if((Get-Content build_x86\D3D9_WALLCLOCK_FPS_SMOKE.txt -Raw) -notmatch 'D3D9_WALLCLOCK_FPS_SMOKE=PASS'){throw 'wallclock PASS marker missing'}
+
+      - name: F9 capture smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I compat\x86_d3d9 compat\x86_d3d9\d3d9_f9_capture_smoke.cpp /link user32.lib /OUT:artifact\d3d9_f9_capture_smoke.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          Push-Location artifact
+          try{
+            & .\d3d9_f9_capture_smoke.exe | Tee-Object ..\build_x86\D3D9_F9_CAPTURE_SMOKE.txt
+            if($LASTEXITCODE -ne 0){throw 'F9 capture smoke failed'}
+          } finally { Pop-Location }
+          if((Get-Content build_x86\D3D9_F9_CAPTURE_SMOKE.txt -Raw) -notmatch 'D3D9_F9_CAPTURE_SMOKE=PASS'){throw 'F9 PASS marker missing'}
+
+      - name: FG GPU pipeline smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I build_x86 compat\x86_d3d9\d3d9_fg_gpu_pipeline_smoke.cpp /link user32.lib /OUT:artifact\d3d9_fg_gpu_pipeline_smoke.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          & artifact\d3d9_fg_gpu_pipeline_smoke.exe | Tee-Object build_x86\D3D9_FG_GPU_PIPELINE_SMOKE.txt
+          if($LASTEXITCODE -ne 0){throw 'FG GPU pipeline smoke failed'}
+          $t=Get-Content build_x86\D3D9_FG_GPU_PIPELINE_SMOKE.txt -Raw
+          if($t -notmatch 'D3D9_FG_GPU_PIPELINE_SMOKE=PASS' -or $t -notmatch 'FG_MOTION_NONZERO_PIXELS=[1-9][0-9]*'){throw 'FG GPU evidence missing'}
+
+      - name: FG local-grid QPC pacing smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I compat\x86_d3d9 compat\x86_d3d9\d3d9_fg_pacer_smoke.cpp /link /OUT:artifact\d3d9_fg_pacer_smoke.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          & artifact\d3d9_fg_pacer_smoke.exe | Tee-Object build_x86\D3D9_FG_PACER_SMOKE.txt
+          if($LASTEXITCODE -ne 0){throw 'FG pacer smoke failed'}
+          $t=Get-Content build_x86\D3D9_FG_PACER_SMOKE.txt -Raw
+          if($t -notmatch 'D3D9_FG_PACER_SMOKE=PASS'){throw 'FG pacer PASS marker missing'}
+          if($t -notmatch 'FG_PACER_LATE_SKIP_COUNT=0'){throw 'late-skip regression'}
+          if($t -notmatch 'FG_PACER_RESYNC_COUNT=[1-9][0-9]*'){throw 'resync evidence missing'}
+
+      - name: D3D9 object lifetime and reset smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 compat\x86_d3d9\d3d9_object_lifetime_smoke.cpp /link user32.lib /OUT:artifact\d3d9_object_lifetime_smoke.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          Push-Location artifact
+          try{
+            & .\d3d9_object_lifetime_smoke.exe | Tee-Object ..\build_x86\D3D9_OBJECT_LIFETIME_SMOKE.txt
+            if($LASTEXITCODE -ne 0){throw 'object lifetime smoke failed'}
+          } finally { Pop-Location }
+          $t=Get-Content build_x86\D3D9_OBJECT_LIFETIME_SMOKE.txt -Raw
+          if($t -notmatch 'D3D9_OBJECT_LIFETIME_SMOKE=PASS' -or $t -notmatch 'D3D9_DYNAMIC_RESOLUTION_SEQUENCE=PASS'){throw 'lifetime/reset PASS marker missing'}
+
+      - name: Package lab candidate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out='lab_package'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          Copy-Item artifact\d3d9.dll $out\d3d9.dll
+          Copy-Item compat\x86_d3d9\01-INSTALL_PTAR_X86_D3D9.bat $out\
+          Copy-Item compat\x86_d3d9\02-UNINSTALL_PTAR_X86_D3D9.bat $out\
+          Copy-Item compat\x86_d3d9\03-COLLECT_CRASH_DIAGNOSTICS.bat $out\
+          Copy-Item compat\x86_d3d9\install_x86_d3d9.ps1 $out\
+          Copy-Item compat\x86_d3d9\uninstall_x86_d3d9.ps1 $out\
+          Copy-Item compat\x86_d3d9\collect_x86_d3d9_diag.ps1 $out\
+          Copy-Item compat\x86_d3d9\README_TEST.txt $out\
+          @(
+            'PTAR_VARIANT=LAB_D3D9_SAFE_SYNC_C01',
+            'BASE_COMMIT=c01ef3170c044d28df34baaa6b28041c873e61c4',
+            'ARCH=D3D9_REGULAR_SAME_DEVICE_SYNC',
+            'NO_D3D9EX_FACTORY_SUBSTITUTION=1',
+            'NO_ASYNC_PRESENTER=1',
+            'NO_ISOLATED_PRESENTER=1',
+            ('DLL_SHA256='+(Get-FileHash $out\d3d9.dll -Algorithm SHA256).Hash.ToLowerInvariant()),
+            ('LAB_COMMIT='+$env:GITHUB_SHA)
+          ) | Set-Content $out\PTAR_LAB_SAFE_SYNC_VERSION.txt -Encoding ASCII
+          Compress-Archive -Path $out\* -DestinationPath PTAR_D3D9_SAFE_SYNC_C01_LAB.zip -CompressionLevel Optimal
+          Write-Host ('PACKAGE_SHA256='+(Get-FileHash PTAR_D3D9_SAFE_SYNC_C01_LAB.zip -Algorithm SHA256).Hash.ToLowerInvariant())
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-D3D9-SAFE-SYNC-C01-LAB
+          path: |
+            PTAR_D3D9_SAFE_SYNC_C01_LAB.zip
+            build_x86/HEADERS.txt
+            build_x86/EXPORTS.txt
+            build_x86/DEPENDENTS.txt
+            build_x86/D3D9_RESOLUTION_POLICY_SMOKE.txt
+            build_x86/D3D9_UNIVERSAL_SPATIAL_GPU_SMOKE.txt
+            build_x86/D3D9_GW16I_HUD_GPU_SMOKE.txt
+            build_x86/D3D9_WALLCLOCK_FPS_SMOKE.txt
+            build_x86/D3D9_F9_CAPTURE_SMOKE.txt
+            build_x86/D3D9_FG_GPU_PIPELINE_SMOKE.txt
+            build_x86/D3D9_FG_PACER_SMOKE.txt
+            build_x86/D3D9_OBJECT_LIFETIME_SMOKE.txt
