@@ -1,0 +1,74 @@
+name: Conviction hotspot sampler
+
+on:
+  push:
+    branches:
+      - diag/conviction-mainthread-hotspot
+    paths:
+      - 'diag/conviction_hotspot/**'
+      - '.github/workflows/conviction-hotspot-sampler.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      - name: Build static Windows 8.1 x86 sampler
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force artifact | Out-Null
+          cl.exe /nologo /O2 /MT /W4 /WX /EHsc /std:c++17 /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 diag\conviction_hotspot\PTARConvictionHotspotSampler.cpp /link /OUT:artifact\PTAR_Conviction_Hotspot_Sampler.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          if(-not(Test-Path artifact\PTAR_Conviction_Hotspot_Sampler.exe)){ throw 'sampler missing' }
+
+      - name: Run self-test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & artifact\PTAR_Conviction_Hotspot_Sampler.exe --selftest | Tee-Object artifact\SELFTEST.txt
+          if($LASTEXITCODE -ne 0){ throw "selftest failed rc=$LASTEXITCODE" }
+          $t=Get-Content artifact\SELFTEST.txt -Raw
+          if($t -notmatch 'SELFTEST=PASS'){ throw 'selftest PASS marker missing' }
+
+      - name: Validate PE and dependencies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dumpbin /headers artifact\PTAR_Conviction_Hotspot_Sampler.exe | Tee-Object artifact\HEADERS.txt
+          dumpbin /dependents artifact\PTAR_Conviction_Hotspot_Sampler.exe | Tee-Object artifact\DEPENDENTS.txt
+          $h=Get-Content artifact\HEADERS.txt -Raw
+          $d=Get-Content artifact\DEPENDENTS.txt -Raw
+          if($h -notmatch '14C machine \(x86\)'){ throw 'PE is not x86/I386' }
+          foreach($bad in @('VCRUNTIME','MSVCP','UCRTBASE','API-MS-WIN-CRT')){
+            if($d -match $bad){ throw "forbidden dynamic runtime dependency $bad" }
+          }
+          $sha=(Get-FileHash artifact\PTAR_Conviction_Hotspot_Sampler.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          @(
+            'PTAR_CONVICTION_HOTSPOT_SAMPLER=1',
+            'PE_MACHINE=I386_0x014C',
+            'TARGET_OS=WINDOWS_8_1',
+            'SAMPLING=EXTERNAL_SUSPEND_GETCONTEXT_RESUME',
+            'GAME_FILES_MODIFIED=NO',
+            'PTAR_FILES_MODIFIED=NO',
+            ('SHA256='+$sha),
+            ('SOURCE_COMMIT='+$env:GITHUB_SHA)
+          ) | Set-Content artifact\VERSION.txt -Encoding ASCII
+          Write-Host "SHA256=$sha"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR_Conviction_Hotspot_Sampler_x86
+          path: artifact/
+          if-no-files-found: error
+          retention-days: 30
