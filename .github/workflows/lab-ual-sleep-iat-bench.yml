@@ -1,5 +1,6 @@
 name: LAB UAL Sleep IAT restoration bench
 
+# Synthetic x86 regression harness; never modifies SOURCE/main or D3D11.
 on:
   push:
     branches: [lab/conviction-f438-ab-matrix]
