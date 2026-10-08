@@ -1,0 +1,105 @@
+name: LAB UAL 9.7.4 exact symbol map
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [lab/conviction-f438-ab-matrix]
+    paths:
+      - '.github/workflows/lab-ual-974-symbol-map.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  map:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download exact UAL 9.7.4 release
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force work,report | Out-Null
+          $url='https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases/download/v9.7.4/Ultimate-ASI-Loader.zip'
+          Invoke-WebRequest -UseBasicParsing $url -OutFile work/ual974.zip
+          $sha=(Get-FileHash work/ual974.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "RELEASE_SHA256=$sha" | Tee-Object report/RELEASE.txt
+          if($sha -ne '952cebfc30d525afc2bdbaca954329d405ded3aa688a83027354dae14dfd5c5f'){throw "release hash mismatch: $sha"}
+          Expand-Archive work/ual974.zip work/ual974 -Force
+          Get-ChildItem work/ual974 -Recurse -File | Sort-Object FullName | ForEach-Object { "$($_.FullName.Substring((Resolve-Path work/ual974).Path.Length+1))`t$($_.Length)`t$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())" } | Set-Content report/FILES.txt
+
+      - name: Locate exact Win32 DLL and PDB
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $dlls=Get-ChildItem work/ual974 -Recurse -File -Filter *.dll
+          $target=$dlls | Where-Object { (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -eq 'd5a059aa467a7a7127c8f6169f79fa63ff0f55986ee9eb2fd9a281bebf2aa2e6' } | Select-Object -First 1
+          if(-not $target){throw 'exact observed Win32 UAL DLL sha not found in v9.7.4 release'}
+          Copy-Item $target.FullName work/observed.dll
+          "OBSERVED_DLL=$($target.FullName)" | Tee-Object report/TARGET.txt
+          "OBSERVED_DLL_SHA256=$((Get-FileHash work/observed.dll -Algorithm SHA256).Hash.ToLowerInvariant())" | Add-Content report/TARGET.txt
+          $pdbs=Get-ChildItem work/ual974 -Recurse -File -Filter *.pdb
+          $pdbs | ForEach-Object { $_.FullName } | Set-Content report/PDB_LIST.txt
+          if($pdbs){
+            foreach($p in $pdbs){
+              try {
+                & 'C:\Program Files\LLVM\bin\llvm-pdbutil.exe' dump -publics -symbols $p.FullName 2>$null | Out-File ("report/PDB_"+$p.BaseName+".txt") -Encoding utf8
+              } catch {}
+            }
+          }
+
+      - name: Disassemble exact observed DLL around relevant RVAs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & 'C:\Program Files\LLVM\bin\llvm-objdump.exe' -p work/observed.dll | Out-File report/HEADERS_IMPORTS.txt -Encoding utf8
+          & 'C:\Program Files\LLVM\bin\llvm-objdump.exe' -d --x86-asm-syntax=intel work/observed.dll | Out-File report/DISASM.txt -Encoding utf8
+          $dis=Get-Content report/DISASM.txt
+          function Window([string]$needle,[string]$out){
+            $m=Select-String -Path report/DISASM.txt -Pattern $needle | Select-Object -First 1
+            if(-not $m){ "NOT_FOUND $needle" | Set-Content $out; return }
+            $a=[Math]::Max(0,$m.LineNumber-25); $b=[Math]::Min($dis.Count-1,$m.LineNumber+80)
+            $dis[$a..$b] | Set-Content $out
+          }
+          Window '^10038f40:' report/RVA_38F40.txt
+          Window '^10038f70:' report/RVA_38F70.txt
+          Window '^10038fa0:' report/RVA_38FA0.txt
+          Window '^10038fc0:' report/RVA_38FC0.txt
+          # Determine whether observed target is an instruction boundary in the normal linear stream.
+          $exact=Select-String -Path report/DISASM.txt -Pattern '^10038fa0:'
+          "LINEAR_DISASM_HAS_38FA0_BOUNDARY=$([bool]$exact)" | Tee-Object report/BOUNDARY.txt
+          if($exact){$exact.Line | Add-Content report/BOUNDARY.txt}
+          # Capture candidate Sleep wrapper pattern: string_view length=5 followed by call and indirect tail jump.
+          Select-String -Path report/DISASM.txt -Pattern 'mov.*0x5|call.*100478|jmp.*100a70' -Context 5,8 | Out-String | Set-Content report/SLEEP_WRAPPER_CANDIDATES.txt
+
+      - name: Search PDB outputs for Sleep and nearby addresses
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Continue'
+          $files=Get-ChildItem report -Filter 'PDB_*.txt'
+          if(-not $files){'NO_PDB_IN_RELEASE' | Set-Content report/PDB_SLEEP_MATCHES.txt; exit 0}
+          Select-String -Path $files.FullName -Pattern 'CustomSleep|Sleep|38F40|38FA0|GetSystemTimeAsFileTime' -Context 3,3 | Out-String | Set-Content report/PDB_SLEEP_MATCHES.txt
+
+      - name: Write verdict
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $b=Get-Content report/BOUNDARY.txt -Raw
+          @(
+            'OBSERVED_RUNTIME_IAT_TARGET_RVA=0x00038FA0',
+            'EXPECTED_EXACT_DLL_SHA256=d5a059aa467a7a7127c8f6169f79fa63ff0f55986ee9eb2fd9a281bebf2aa2e6',
+            'PURPOSE=determine whether 0x38FA0 is the actual UAL Sleep wrapper entry, another wrapper, or a non-entry interior address',
+            ($b.Trim())
+          ) | Set-Content report/VERDICT.txt
+          Get-Content report/VERDICT.txt
+
+      - name: Package report
+        shell: pwsh
+        run: |
+          Compress-Archive -Path report/* -DestinationPath UAL_974_EXACT_SYMBOL_MAP.zip -CompressionLevel Optimal
+          "REPORT_SHA256=$((Get-FileHash UAL_974_EXACT_SYMBOL_MAP.zip -Algorithm SHA256).Hash.ToLowerInvariant())"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: UAL-974-EXACT-SYMBOL-MAP
+          path: UAL_974_EXACT_SYMBOL_MAP.zip
