@@ -1,0 +1,114 @@
+name: LAB UAL 9.7.2 Sleep hotspot fingerprint
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [lab/conviction-f438-ab-matrix]
+    paths:
+      - 'lab/conviction_ual_sleep/ual_sleep_hotspot_fingerprint.cpp'
+      - '.github/workflows/lab-ual-972-hotspot-fingerprint.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  fingerprint:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      - name: Build x86 sampler harness
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force build,report | Out-Null
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 lab\conviction_ual_sleep\ual_sleep_hotspot_fingerprint.cpp /link version.lib /OUT:build\fingerprint.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){throw 'compile failed'}
+          dumpbin /imports build\fingerprint.exe | Out-File report/HARNESS_IMPORTS.txt -Encoding ascii
+
+      - name: Download exact UAL 9.7.2 and 9.7.4
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $expect=@{
+            'v9.7.2'='c7277e832f6f07af64903a99ecebab2936260cbf55eda70787c5d7b2d5b9fe60';
+            'v9.7.4'='d5a059aa467a7a7127c8f6169f79fa63ff0f55986ee9eb2fd9a281bebf2aa2e6'
+          }
+          foreach($tag in @('v9.7.2','v9.7.4')){
+            New-Item -ItemType Directory -Force "work/$tag","cases/$tag" | Out-Null
+            Invoke-WebRequest -UseBasicParsing "https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases/download/$tag/Ultimate-ASI-Loader.zip" -OutFile "work/$tag.zip"
+            Expand-Archive "work/$tag.zip" "work/$tag" -Force
+            $dll=Get-ChildItem "work/$tag" -Recurse -File | Where-Object {$_.Name -ieq 'dinput8.dll'} | Select-Object -First 1
+            if(-not $dll){throw "$tag DLL missing"}
+            $sha=(Get-FileHash $dll.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            if($sha -ne $expect[$tag]){throw "$tag DLL hash mismatch $sha"}
+            Copy-Item build/fingerprint.exe "cases/$tag/fingerprint.exe"
+            Copy-Item $dll.FullName "cases/$tag/version.dll"
+            "$tag DLL_SHA256=$sha" | Add-Content report/HASHES.txt
+            dumpbin /headers $dll.FullName | Out-File "report/${tag}_HEADERS.txt" -Encoding ascii
+            & 'C:\Program Files\LLVM\bin\llvm-objdump.exe' -d --x86-asm-syntax=intel $dll.FullName | Out-File "report/${tag}_DISASM.txt" -Encoding utf8
+          }
+
+      - name: Run sampled Sleep loops
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          function Run-One($tag){
+            Push-Location "cases/$tag"
+            try {
+              $p=Start-Process -FilePath .\fingerprint.exe -NoNewWindow -Wait -PassThru -RedirectStandardOutput stdout.txt -RedirectStandardError stderr.txt
+              if($p.ExitCode -ne 0){throw "$tag exit=$($p.ExitCode) $(Get-Content stderr.txt -Raw)"}
+              Copy-Item stdout.txt "../../report/${tag}_PROFILE.txt"
+              Write-Host "===== $tag ====="
+              Get-Content stdout.txt
+            } finally { Pop-Location }
+          }
+          Run-One 'v9.7.2'
+          Run-One 'v9.7.4'
+
+      - name: Assert exact 9.7.2 runtime fingerprint
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $a=Get-Content report/v9.7.2_PROFILE.txt -Raw
+          $b=Get-Content report/v9.7.4_PROFILE.txt -Raw
+          if($a -notmatch 'SLEEP_IAT_SLOT=.*VERSION_RVA=0x00038FA0'){throw '9.7.2 exact Sleep RVA 38FA0 not reproduced'}
+          if($a -notmatch 'SLEEP_IAT_FINAL=.*VERSION_RVA=0x00038FA0'){throw '9.7.2 Sleep hook did not persist'}
+          if($b -match 'SLEEP_IAT_FINAL=.*VERSION_RVA='){throw '9.7.4 unexpectedly kept VERSION Sleep hook'}
+          @(
+            'FIELD_OBSERVED_SLEEP_RVA=0x00038FA0',
+            'UAL_9_7_2_CUSTOMSLEEP_RVA=0x00038FA0',
+            'UAL_9_7_2_PERSISTENT_HOOK=CONFIRMED',
+            'UAL_9_7_4_RESTORED_HOOK=CONFIRMED',
+            'PROFILE_PURPOSE=compare exact VERSION/ntdll sampled RVAs with field capture'
+          ) | Set-Content report/VERDICT.txt -Encoding ascii
+          Get-Content report/VERDICT.txt
+
+      - name: Extract disassembly windows at field RVAs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $rvas=@('23799','237E5','23812','26774','267AE','267DA','26800','2682C','268B0','2FF03','38FA0','3EB37','4784C','4789E','47A74','532A0','6668D','866B5','86735')
+          foreach($tag in @('v9.7.2','v9.7.4')){
+            $src="report/${tag}_DISASM.txt"; $lines=Get-Content $src
+            foreach($r in $rvas){
+              $addr=('100'+$r).ToLower()
+              $m=Select-String -Path $src -Pattern "^$addr`:" | Select-Object -First 1
+              if($m){$lo=[Math]::Max(0,$m.LineNumber-12);$hi=[Math]::Min($lines.Count-1,$m.LineNumber+20);$lines[$lo..$hi] | Add-Content "report/${tag}_FIELD_WINDOWS.txt"}
+              else {"RVA 0x$r exact-boundary=NO" | Add-Content "report/${tag}_FIELD_WINDOWS.txt"}
+            }
+          }
+
+      - name: Package report
+        shell: pwsh
+        run: |
+          Compress-Archive -Path report/* -DestinationPath UAL_972_SLEEP_HOTSPOT_FINGERPRINT.zip -CompressionLevel Optimal
+          "REPORT_SHA256=$((Get-FileHash UAL_972_SLEEP_HOTSPOT_FINGERPRINT.zip -Algorithm SHA256).Hash.ToLowerInvariant())"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: UAL-972-SLEEP-HOTSPOT-FINGERPRINT
+          path: UAL_972_SLEEP_HOTSPOT_FINGERPRINT.zip
