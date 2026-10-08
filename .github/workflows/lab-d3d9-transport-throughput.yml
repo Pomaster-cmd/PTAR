@@ -1,0 +1,76 @@
+name: LAB D3D9 isolated transport throughput
+
+on:
+  push:
+    branches: [lab/conviction-f438-ab-matrix]
+    paths:
+      - 'lab/d3d9_transport_bench/**'
+      - '.github/workflows/lab-d3d9-transport-throughput.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      - name: Build x86 Win8.1-compatible transport bench
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force build,report | Out-Null
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 lab\d3d9_transport_bench\d3d9_transport_bench.cpp /link d3d9.lib user32.lib /OUT:build\d3d9_transport_bench.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){throw 'transport bench compile failed'}
+          dumpbin /headers build\d3d9_transport_bench.exe | Out-File report/HEADERS.txt -Encoding ascii
+          dumpbin /dependents build\d3d9_transport_bench.exe | Out-File report/DEPENDENTS.txt -Encoding ascii
+          $h=Get-Content report/HEADERS.txt -Raw
+          if($h -notmatch '14C machine \(x86\)'){throw 'bench is not x86'}
+
+      - name: Run 640x360, 1280x720, 1920x1080
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($r in @(@(640,360),@(1280,720),@(1920,1080))){
+            $w=$r[0];$h=$r[1]
+            Write-Host "===== ${w}x${h} ====="
+            & build\d3d9_transport_bench.exe $w $h | Tee-Object "report/BENCH_${w}x${h}.txt"
+            if($LASTEXITCODE -ne 0){throw "bench process failed ${w}x${h}"}
+            $t=Get-Content "report/BENCH_${w}x${h}.txt" -Raw
+            if($t -notmatch 'RESULT=(PASS|SKIP_OR_FAIL)'){throw "result marker missing ${w}x${h}"}
+          }
+
+      - name: Summarize transport differential
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=@(
+            'PTAR_D3D9_TRANSPORT_THROUGHPUT_LAB=1',
+            'BASE_ARCH=f438 D3D9Ex shared surface + EVENT query model',
+            'D3D11_UNTOUCHED=1'
+          )
+          foreach($f in Get-ChildItem report/BENCH_*.txt | Sort-Object Name){
+            $out += "FILE=$($f.Name)"
+            $lines=Get-Content $f.FullName | Where-Object {$_ -match '^(INIT_|SHARED_|BLOCKING_|CPU_READBACK|RESULT=)'}
+            $out += $lines
+          }
+          $out | Set-Content report/VERDICT.txt -Encoding ascii
+          Get-Content report/VERDICT.txt
+
+      - name: Package report
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Compress-Archive -Path report\* -DestinationPath PTAR_D3D9_TRANSPORT_THROUGHPUT_LAB.zip -CompressionLevel Optimal
+          Write-Host ('REPORT_SHA256='+(Get-FileHash PTAR_D3D9_TRANSPORT_THROUGHPUT_LAB.zip -Algorithm SHA256).Hash.ToLowerInvariant())
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-D3D9-TRANSPORT-THROUGHPUT-LAB
+          path: PTAR_D3D9_TRANSPORT_THROUGHPUT_LAB.zip
