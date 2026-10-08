@@ -15,6 +15,15 @@
 // GENERATED then REAL, with an even local display interval. The current pair is
 // anchored when it is ready. We never busy-wait for an already missed
 // historical midpoint and never let one late frame poison following pairs.
+//
+// Conviction legacy hardening:
+// Ultimate ASI Loader 9.7.2 can leave the EXE Sleep IAT redirected to its
+// CustomSleep wrapper. Do not let PTAR's own pacing path inherit that hook.
+// Resolve the system Sleep export once and call it indirectly for Sleep(0)
+// semantics. This keeps the original scheduler behaviour while removing PTAR's
+// direct Sleep import from the proxy's IAT. SwitchToThread remains the fallback.
+
+typedef VOID (WINAPI *PTFN_PtarNativeSleep)(DWORD);
 
 struct PTFGPacerState
 {
@@ -32,6 +41,38 @@ struct PTFGPacerState
 };
 
 static PTFGPacerState g_ptarFgPacer={};
+static PTFN_PtarNativeSleep g_ptarFgNativeSleep=0;
+static bool g_ptarFgNativeSleepResolved=false;
+
+static PTFN_PtarNativeSleep PtFgPacerResolveNativeSleep()
+{
+    if(g_ptarFgNativeSleepResolved)
+        return g_ptarFgNativeSleep;
+
+    g_ptarFgNativeSleepResolved=true;
+
+    HMODULE kernel32=GetModuleHandleW(L"kernel32.dll");
+    if(kernel32)
+    {
+        g_ptarFgNativeSleep=(PTFN_PtarNativeSleep)
+            GetProcAddress(kernel32,"Sleep");
+    }
+
+    PtDiagLogA(
+        "FG_PACER_NATIVE_SLEEP resolved=%p policy=INDIRECT_KERNEL32_EXPORT",
+        (void*)g_ptarFgNativeSleep);
+
+    return g_ptarFgNativeSleep;
+}
+
+static void PtFgPacerYieldCoarse()
+{
+    PTFN_PtarNativeSleep sleepFn=PtFgPacerResolveNativeSleep();
+    if(sleepFn)
+        sleepFn(0);
+    else
+        SwitchToThread();
+}
 
 static void PtFgPacerInit()
 {
@@ -44,7 +85,7 @@ static void PtFgPacerInit()
 
     g_ptarFgPacer.initialized=true;
     PtDiagLogA(
-        "FG_PACER_INIT qpc_freq=%lld policy=PRODPORT1_EVEN_LOCAL_GRID",
+        "FG_PACER_INIT qpc_freq=%lld policy=PRODPORT1_EVEN_LOCAL_GRID_NATIVE_SLEEP",
         (long long)g_ptarFgPacer.frequency.QuadPart);
 }
 
@@ -60,7 +101,7 @@ static void PtFgPacerReset()
     g_ptarFgPacer.generatedLateSkips=0;
     g_ptarFgPacer.resyncs=0;
     g_ptarFgPacer.waitYields=0;
-    PtDiagLogA("FG_PACER_RESET policy=PRODPORT1");
+    PtDiagLogA("FG_PACER_RESET policy=PRODPORT1_NATIVE_SLEEP");
 }
 
 static LONGLONG PtFgPacerPeriodTicks()
@@ -93,7 +134,7 @@ static void PtFgPacerWaitUntil(LONGLONG target)
             break;
 
         if(remain>coarseThreshold)
-            Sleep(0);
+            PtFgPacerYieldCoarse();
         else
             SwitchToThread();
 
@@ -215,4 +256,3 @@ static unsigned long PtFgPacerLateSkipCount()
     // with local-grid resynchronisation, so this remains zero by design.
     return g_ptarFgPacer.generatedLateSkips;
 }
-
