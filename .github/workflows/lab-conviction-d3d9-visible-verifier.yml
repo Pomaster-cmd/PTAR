@@ -1,0 +1,224 @@
+name: LAB Conviction D3D9 visible-frame verifier
+
+on:
+  push:
+    branches: [lab/conviction-d3d9-legacy-repair-v1]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  port-and-validate:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prove validated D3D9 core is untouched
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $baseline='d9194cb3de6b877b758797b93eb3e25ac9b6fd9b'
+          $changed=@(git diff --name-only $baseline HEAD)
+          $bad=@($changed | Where-Object {
+            $_ -like 'compat/x86_d3d9/*' -and
+            $_ -notlike 'compat/x86_d3d9/tools/*'
+          })
+          Write-Host 'CHANGED_SINCE_FIELD_BASE:'
+          $changed | ForEach-Object { Write-Host ('  '+$_) }
+          if($bad.Count -ne 0){
+            throw ('Validated D3D9 core changed: '+($bad -join ', '))
+          }
+          Write-Host 'D3D9_FIELD_CORE_UNTOUCHED=PASS'
+          Write-Host 'D3D11_SOURCE_TREE_UNTOUCHED=PASS'
+
+      - name: Import exact existing D3D11 verifier tools read-only
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $d3d11Ref='69d44d8b61c3e28a6f3ed42b8501816ac28b5438'
+          git fetch origin $d3d11Ref --depth=1
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          New-Item -ItemType Directory -Force staging\visible_pacing | Out-Null
+          cmd /d /c "git show $d3d11Ref`:diag/visible_pacing/PTARVisiblePacingVerifier.cs > staging\visible_pacing\PTARVisiblePacingVerifier.cs"
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          cmd /d /c "git show $d3d11Ref`:diag/visible_pacing/run_single_engine_verifier.ps1 > staging\visible_pacing\run_single_engine_verifier.ps1"
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          $srcBlob=(git rev-parse "$d3d11Ref`:diag/visible_pacing/PTARVisiblePacingVerifier.cs").Trim()
+          $runBlob=(git rev-parse "$d3d11Ref`:diag/visible_pacing/run_single_engine_verifier.ps1").Trim()
+          if($srcBlob -ne '8e9384f0d999129ec7c8c41c7070df49193d7bc8'){throw "Unexpected D3D11 verifier source blob $srcBlob"}
+          if($runBlob -ne '81f94273ac6bf673f9e5f2ed9d88703e2fa3eb4a'){throw "Unexpected D3D11 verifier runner blob $runBlob"}
+          Copy-Item compat\x86_d3d9\tools\03-ARM_VISIBLE_FRAME_VERIFIER_D3D9.cmd staging\03-ARM_VISIBLE_FRAME_VERIFIER_D3D9.cmd
+          Copy-Item compat\x86_d3d9\tools\set_vblank_diagnostics_d3d9.ps1 staging\set_vblank_diagnostics_d3d9.ps1
+          Write-Host "D3D11_VERIFIER_SOURCE_REF=$d3d11Ref"
+          Write-Host "D3D11_VERIFIER_SOURCE_BLOB=$srcBlob"
+          Write-Host "D3D11_VERIFIER_RUNNER_BLOB=$runBlob"
+          Write-Host 'D3D11_TOOLS_REUSED_WITHOUT_MODIFICATION=PASS'
+
+      - name: Validate D3D9 marker protocol equals D3D11 VBLANK3 contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $v=Get-Content staging\visible_pacing\PTARVisiblePacingVerifier.cs -Raw
+          $h=Get-Content compat\x86_d3d9\ptar_gw16i_hud_d3d9.h -Raw
+          $p=Get-Content compat\x86_d3d9\ptar_d3d9_proxy.cpp -Raw
+
+          foreach($token in @(
+            'const int MARKER_X = 176;',
+            'const int MARKER_Y = 160;',
+            'const int MARKER_W = 158;',
+            'const int MARKER_H = 10;',
+            'const int CELL_COUNT = 16;',
+            'const int CELL_STEP = 10;',
+            'gray | (generated ? 0x1000 : 0) | 0x4000',
+            '(PopCount(sig & 0x1FFF) & 1) != 0'
+          )){
+            if($v -notmatch [regex]::Escape($token)){throw "D3D11 verifier token missing: $token"}
+          }
+
+          foreach($token in @(
+            'x+144+i*10,y',
+            'x+152+i*10,y+10',
+            'x+264,y,x+272,y+10',
+            'x+274,y,x+282,y+10',
+            'x+284,y,x+292,y+10',
+            'PtGw16Panel(dev,32,160,336,172,bg)'
+          )){
+            if($h -notmatch [regex]::Escape($token)){throw "D3D9 marker token missing: $token"}
+          }
+
+          foreach($token in @(
+            'g_ptarHudFrameSequence&4095ul',
+            'generatedFrame',
+            'FG_PRESENT_GENERATED',
+            'PRESENT_REAL'
+          )){
+            if($p -notmatch [regex]::Escape($token)){throw "D3D9 present/marker token missing: $token"}
+          }
+
+          Write-Host 'MARKER_ORIGIN_PHYSICAL=32,160'
+          Write-Host 'MARKER_CAPTURE_REGION=176,160,158,10'
+          Write-Host 'MARKER_SERIAL=GRAY12'
+          Write-Host 'MARKER_TYPE_BIT=BIT12_GENERATED'
+          Write-Host 'MARKER_PARITY=BIT13'
+          Write-Host 'MARKER_GUARDS=BIT14_ONE_BIT15_ZERO'
+          Write-Host 'D3D9_D3D11_VISIBLE_MARKER_PROTOCOL_PARITY=PASS'
+
+      - name: Compile and self-test exact VBLANK3 verifier
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $csc64=Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+          $csc32=Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319\csc.exe'
+          if(Test-Path $csc64){$csc=$csc64}elseif(Test-Path $csc32){$csc=$csc32}else{throw 'csc.exe .NET Framework 4 missing'}
+          & $csc /nologo /target:exe /optimize+ /platform:x64 /out:staging\visible_pacing\PTARVisiblePacingVerifier_PRECHECK.exe staging\visible_pacing\PTARVisiblePacingVerifier.cs
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          & staging\visible_pacing\PTARVisiblePacingVerifier_PRECHECK.exe --selftest | Tee-Object staging\VBLANK3_SELFTEST.txt
+          if($LASTEXITCODE -ne 0){throw 'VBLANK3 self-test failed'}
+          $t=Get-Content staging\VBLANK3_SELFTEST.txt -Raw
+          if($t -notmatch 'SELFTEST=PASS'){throw 'VBLANK3 PASS marker missing'}
+          Remove-Item staging\visible_pacing\PTARVisiblePacingVerifier_PRECHECK.exe -Force
+          Write-Host 'VBLANK3_COMPILE_SELFTEST=PASS'
+
+      - name: Validate D3D9 launcher contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $b=Get-Content staging\03-ARM_VISIBLE_FRAME_VERIFIER_D3D9.cmd -Raw
+          $s=Get-Content staging\set_vblank_diagnostics_d3d9.ps1 -Raw
+          foreach($token in @(
+            'EXPECTED_RUNTIME=c4a0668b313a2d6ca31c165eb2e5b216559bc3de8c5a1fe60b4aa9ac57c4a16d',
+            'd3d9.dll',
+            'Conviction_game.exe',
+            'CTRL+F6',
+            'F5',
+            'run_single_engine_verifier.ps1'
+          )){
+            if($b -notmatch [regex]::Escape($token)){throw "launcher token missing: $token"}
+          }
+          if($b -match 'd3d11\.dll'){throw 'D3D11 runtime reference leaked into D3D9 launcher'}
+          if($s -notmatch 'VBlankDiagnostics'){throw 'D3D9 marker helper contract missing'}
+          if($s -notmatch 'PTAR_D3D9_VERIFIER_BACKUPS'){throw 'non-destructive INI backup missing'}
+          Write-Host 'D3D9_EXTERNAL_TOOL_ONLY=PASS'
+          Write-Host 'D3D9_NO_CORE_PATCH=PASS'
+          Write-Host 'D3D11_NO_CHANGE=PASS'
+
+      - name: Write field README and manifest
+        shell: pwsh
+        run: |
+          @'
+          PTAR CONVICTION D3D9 - VISIBLE FRAME VERIFIER
+          =============================================
+
+          OBJECTIF
+          Verifier sur la sortie reellement visible que le FG produit des contenus GENERATED
+          distincts alternes avec les contenus REAL, en reutilisant le moteur VBLANK3 du chemin D3D11.
+
+          IMPORTANT
+          - Ce pack ne contient PAS de d3d9.dll.
+          - Il ne modifie PAS le coeur D3D9 Legacy Repair V1.
+          - Il ne modifie PAS le chemin D3D11.
+          - PTARVisiblePacingVerifier.cs et run_single_engine_verifier.ps1 sont repris octet/logique
+            depuis le verifier D3D11 de reference, commit 69d44d8b61c3e28a6f3ed42b8501816ac28b5438.
+          - Seuls le lanceur/configurateur externes sont adaptes au dossier D3D9 x86 de Conviction.
+
+          INSTALLATION / TEST
+          1. Extraire TOUT le contenu de ce ZIP dans le dossier qui contient actuellement :
+               Conviction_game.exe
+               d3d9.dll
+          2. Le jeu doit etre ferme.
+          3. Lancer : 03-ARM_VISIBLE_FRAME_VERIFIER_D3D9.cmd
+          4. Lancer Conviction.
+          5. Activer le FG avec CTRL+F6 si necessaire.
+          6. Se placer dans une scene animee et attendre 2-3 secondes.
+          7. Appuyer UNE FOIS sur F5.
+          8. Ne plus changer de mode pendant les 20 secondes de mesure.
+
+          RESULTATS
+          Le rapport PTAR_VISIBLE_VERIFIER_LAST_OUTPUT.txt contient notamment :
+          - VISIBLE GENERATED CONTENTS / MILLI-FPS
+          - VISIBLE REAL CONTENTS / MILLI-FPS
+          - VISIBLE UNIQUE MILLI-FPS
+          - GAPS / SAME-TYPE / BAD
+          - statistiques de pacing et PACING VERDICT
+
+          PREUVE FG ATTENDUE
+          Avec FG actif, GENERATED et REAL doivent tous deux etre presents et alterner.
+          Un simple compteur FPS double ne suffit pas : ce verifier lit le marqueur de type
+          inscrit dans chaque image visible et distingue donc les contenus G des contenus R.
+
+          CONFIGURATION
+          Le lanceur arme VBlankDiagnostics avant le demarrage du jeu. Si win81_nis.ini existe,
+          il est sauvegarde avant toute modification dans PTAR_D3D9_VERIFIER_BACKUPS.
+          Si l'INI est absent, le runtime Legacy Repair V1 utilise deja VBlankDiagnostics=1 par defaut
+          et aucun fichier n'est cree.
+          '@ | Set-Content staging\README_VISIBLE_FG_VERIFIER_D3D9_FR.txt -Encoding ASCII
+
+          @(
+            'PTAR_TOOL=CONVICTION_D3D9_VISIBLE_FRAME_VERIFIER',
+            'D3D9_FIELD_BASE=d9194cb3de6b877b758797b93eb3e25ac9b6fd9b',
+            'D3D9_RUNTIME_SHA256=c4a0668b313a2d6ca31c165eb2e5b216559bc3de8c5a1fe60b4aa9ac57c4a16d',
+            'D3D11_VERIFIER_SOURCE_COMMIT=69d44d8b61c3e28a6f3ed42b8501816ac28b5438',
+            'D3D11_VERIFIER_SOURCE_BLOB=8e9384f0d999129ec7c8c41c7070df49193d7bc8',
+            'D3D11_VERIFIER_RUNNER_BLOB=81f94273ac6bf673f9e5f2ed9d88703e2fa3eb4a',
+            'D3D9_CORE_MODIFIED=NO',
+            'D3D11_MODIFIED=NO',
+            'MARKER_PROTOCOL=VBLANK3_GRAY12_G_R_PARITY_GUARDS'
+          ) | Set-Content staging\PTAR_D3D9_VISIBLE_VERIFIER_MANIFEST.txt -Encoding ASCII
+
+      - name: Package external verifier
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Compress-Archive -Path staging\* -DestinationPath PTAR_CONVICTION_D3D9_VISIBLE_FRAME_VERIFIER.zip -CompressionLevel Optimal
+          $sha=(Get-FileHash PTAR_CONVICTION_D3D9_VISIBLE_FRAME_VERIFIER.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "PACKAGE_SHA256=$sha"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-CONVICTION-D3D9-VISIBLE-FRAME-VERIFIER
+          path: PTAR_CONVICTION_D3D9_VISIBLE_FRAME_VERIFIER.zip
+          if-no-files-found: error
