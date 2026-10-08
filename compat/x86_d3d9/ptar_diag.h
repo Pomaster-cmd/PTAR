@@ -3,6 +3,11 @@
 // PTAR X86/D3D9 diagnostic layer.
 // Intentionally limited to Win32 + statically-linked CRT functions so it can
 // start logging before the real D3D9 runtime or PTAR resources are initialized.
+//
+// Production/field default is deliberately silent: diagnostics are enabled
+// only when PTAR_D3D9_DIAGNOSTICS.ON exists beside d3d9.dll. This keeps the hot
+// Present/pacing path free from per-frame file I/O while preserving the same
+// crash logging layer for explicit forensic runs.
 
 #include <windows.h>
 #include <cstdio>
@@ -12,6 +17,7 @@
 
 static HMODULE g_ptdiagSelf=0;
 static wchar_t g_ptdiagLogPath[MAX_PATH]={0};
+static bool g_ptdiagEnabled=false;
 static const char* volatile g_ptdiagStage="PRE_INIT";
 static volatile LONG g_ptdiagStageSeq=0;
 static volatile LONG g_ptdiagSeriousExceptionCount=0;
@@ -20,7 +26,7 @@ static LPTOP_LEVEL_EXCEPTION_FILTER g_ptdiagPreviousUnhandled=0;
 
 static void PtDiagRawWrite(const char* text)
 {
-    if(!text || !*text || !g_ptdiagLogPath[0]) return;
+    if(!g_ptdiagEnabled || !text || !*text || !g_ptdiagLogPath[0]) return;
 
     HANDLE h=CreateFileW(
         g_ptdiagLogPath,
@@ -40,7 +46,7 @@ static void PtDiagRawWrite(const char* text)
 
 static void PtDiagLogA(const char* fmt,...)
 {
-    if(!fmt) return;
+    if(!g_ptdiagEnabled || !fmt) return;
 
     char body[1536]={0};
     va_list ap;
@@ -65,7 +71,7 @@ static void PtDiagLogA(const char* fmt,...)
 
 static void PtDiagVLogW(const wchar_t* fmt,va_list ap)
 {
-    if(!fmt) return;
+    if(!g_ptdiagEnabled || !fmt) return;
     wchar_t wide[1024]={0};
     _vsnwprintf_s(wide,_countof(wide),_TRUNCATE,fmt,ap);
 
@@ -79,6 +85,7 @@ static void PtDiagStage(const char* stage)
 {
     if(!stage) stage="<null>";
     g_ptdiagStage=stage;
+    if(!g_ptdiagEnabled) return;
     const LONG seq=InterlockedIncrement(&g_ptdiagStageSeq);
     PtDiagLogA("STAGE seq=%ld",seq);
 }
@@ -105,7 +112,7 @@ static bool PtDiagIsSeriousException(DWORD code)
 
 static void PtDiagLogException(const char* kind,EXCEPTION_POINTERS* ep)
 {
-    if(!ep || !ep->ExceptionRecord) return;
+    if(!g_ptdiagEnabled || !ep || !ep->ExceptionRecord) return;
 
     const DWORD code=ep->ExceptionRecord->ExceptionCode;
     if(!PtDiagIsSeriousException(code)) return;
@@ -185,18 +192,42 @@ static void PtDiagInit(HMODULE self)
 {
     g_ptdiagSelf=self;
     g_ptdiagStage="DLL_ATTACH";
+    g_ptdiagEnabled=false;
+    g_ptdiagLogPath[0]=0;
 
-    wchar_t path[MAX_PATH]={0};
-    if(GetModuleFileNameW(self,path,(DWORD)_countof(path)))
+    wchar_t baseDir[MAX_PATH]={0};
+    if(GetModuleFileNameW(self,baseDir,(DWORD)_countof(baseDir)))
     {
         wchar_t* last=0;
-        for(wchar_t* p=path;*p;++p)
+        for(wchar_t* p=baseDir;*p;++p)
             if(*p==L'\\' || *p==L'/') last=p;
         if(last) *(last+1)=0;
-        if(wcslen(path)+wcslen(L"PTAR_X86_D3D9.log")+1<_countof(path))
-            wcscat_s(path,L"PTAR_X86_D3D9.log");
-        wcsncpy_s(g_ptdiagLogPath,path,_TRUNCATE);
+
+        wchar_t flagPath[MAX_PATH]={0};
+        wcscpy_s(flagPath,baseDir);
+        if(wcslen(flagPath)+wcslen(L"PTAR_D3D9_DIAGNOSTICS.ON")+1<_countof(flagPath))
+        {
+            wcscat_s(flagPath,L"PTAR_D3D9_DIAGNOSTICS.ON");
+            const DWORD attr=GetFileAttributesW(flagPath);
+            g_ptdiagEnabled=(attr!=INVALID_FILE_ATTRIBUTES) &&
+                            ((attr&FILE_ATTRIBUTE_DIRECTORY)==0);
+        }
+
+        if(g_ptdiagEnabled)
+        {
+            wchar_t logPath[MAX_PATH]={0};
+            wcscpy_s(logPath,baseDir);
+            if(wcslen(logPath)+wcslen(L"PTAR_X86_D3D9.log")+1<_countof(logPath))
+            {
+                wcscat_s(logPath,L"PTAR_X86_D3D9.log");
+                wcsncpy_s(g_ptdiagLogPath,logPath,_TRUNCATE);
+            }
+        }
     }
+
+    // Keep default field execution silent and free of diagnostic handlers.
+    if(!g_ptdiagEnabled)
+        return;
 
     PtDiagRawWrite(
         "\r\n============================================================\r\n"
@@ -204,7 +235,7 @@ static void PtDiagInit(HMODULE self)
         "============================================================\r\n");
 
     PtDiagLogA(
-        "DIAG_INIT build=PTAR_X86_D3D9_FG1_GENERIC_VTABLEFIX2_CRASHLOG1 "
+        "DIAG_INIT build=PTAR_X86_D3D9_LEGACY_REPAIR_V1 "
         "pid=%lu self=%p",
         (unsigned long)GetCurrentProcessId(),self);
 
