@@ -77,16 +77,26 @@ jobs:
           $v72=Get-Content report/UAL_9_7_2.txt -Raw
           $v73=Get-Content report/UAL_9_7_3.txt -Raw
           $v74=Get-Content report/UAL_9_7_4.txt -Raw
-          if($v72 -notmatch 'SLEEP_PTR_INITIAL=.*version.dll'){throw '9.7.2 did not hook Sleep as expected'}
-          if($v72 -notmatch 'SLEEP_PTR_AFTER1=.*version.dll'){throw '9.7.2 unexpectedly restored Sleep after first call'}
-          if($v73 -notmatch 'SLEEP_PTR_INITIAL=.*version.dll'){throw '9.7.3 did not hook Sleep initially'}
-          if($v73 -match 'SLEEP_PTR_AFTER1=.*version.dll'){throw '9.7.3 failed to restore Sleep after first call'}
-          if($v74 -match 'SLEEP_PTR_AFTER1=.*version.dll'){throw '9.7.4 failed to restore Sleep after first call'}
-          'UAL_IAT_RESTORATION_DIFFERENTIAL=PASS' | Tee-Object report/VERDICT.txt
+          if($v72 -notmatch 'SLEEP_PTR_PRE_VERSION_API=.*VERSION.dll'){throw '9.7.2 did not hook Sleep initially'}
+          if($v72 -notmatch 'SLEEP_PTR_POST_VERSION_API=.*VERSION.dll'){throw '9.7.2 unexpectedly restored Sleep after VERSION API call'}
+          if($v72 -notmatch 'SLEEP_PTR_AFTER_SLEEP1=.*VERSION.dll'){throw '9.7.2 unexpectedly restored Sleep after Sleep call'}
+          if($v73 -match 'SLEEP_PTR_POST_VERSION_API=.*VERSION.dll'){throw '9.7.3 did not restore Sleep by post-VERSION checkpoint'}
+          if($v74 -match 'SLEEP_PTR_POST_VERSION_API=.*VERSION.dll'){throw '9.7.4 did not restore Sleep by post-VERSION checkpoint'}
+          foreach($txt in @($v72,$v73,$v74)){
+            if($txt -notmatch 'LIMITER_TARGET_MS=8\.333333'){throw 'limiter timing marker missing'}
+          }
+          @(
+            'UAL_IAT_RESTORATION_DIFFERENTIAL=PASS',
+            'UAL_9_7_2_SLEEP_HOOK_PERSISTENCE=CONFIRMED',
+            'UAL_9_7_3_PLUS_RESTORATION=CONFIRMED',
+            'CONVICTION_STYLE_LIMITER=MEASURED_SEPARATELY'
+          ) | Set-Content report/VERDICT.txt -Encoding ascii
+          Get-Content report/VERDICT.txt
 
       - name: Package report
         shell: pwsh
         run: |
+          $ErrorActionPreference='Stop'
           Compress-Archive -Path report\* -DestinationPath UAL_SLEEP_IAT_RESTORATION_BENCH.zip -CompressionLevel Optimal
           $sha=(Get-FileHash UAL_SLEEP_IAT_RESTORATION_BENCH.zip -Algorithm SHA256).Hash.ToLowerInvariant()
           Write-Host "REPORT_SHA256=$sha"
