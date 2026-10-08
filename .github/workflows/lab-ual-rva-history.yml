@@ -1,0 +1,132 @@
+name: LAB UAL CustomSleep RVA history
+
+on:
+  push:
+    branches: [lab/conviction-f438-ab-matrix]
+    paths:
+      - '.github/workflows/lab-ual-rva-history.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  map-history:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download historical Win32 UAL bundles and map CustomSleep
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force work,report | Out-Null
+          $tags=@('v9.7.4','v9.7.3','v9.7.2','v9.7.1','v9.7.0','v9.6.0','v9.5.0','v9.4.0','v9.3.0','v9.2.0','v9.1.0')
+          foreach($tag in $tags){
+            $url="https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases/download/$tag/Ultimate-ASI-Loader.zip"
+            try {
+              Invoke-WebRequest -UseBasicParsing $url -OutFile "work/$tag.zip"
+              New-Item -ItemType Directory -Force "work/$tag" | Out-Null
+              Expand-Archive "work/$tag.zip" "work/$tag" -Force
+              "OK $tag $url" | Add-Content report/DOWNLOADS.txt
+            } catch {
+              "MISS $tag $url $($_.Exception.Message)" | Add-Content report/DOWNLOADS.txt
+            }
+          }
+
+          @'
+          import os, struct, hashlib, csv, pathlib
+
+          root=pathlib.Path('work')
+          rows=[]
+
+          def u16(b,o): return struct.unpack_from('<H',b,o)[0]
+          def u32(b,o): return struct.unpack_from('<I',b,o)[0]
+          def sections(b):
+              pe=u32(b,0x3c); coff=pe+4; n=u16(b,coff+2); optsz=u16(b,coff+16); sec=coff+20+optsz
+              out=[]
+              for i in range(n):
+                  s=sec+i*40
+                  name=b[s:s+8].split(b'\0',1)[0].decode('ascii','replace')
+                  vsize=u32(b,s+8); va=u32(b,s+12); rawsize=u32(b,s+16); raw=u32(b,s+20)
+                  out.append((name,va,vsize,raw,rawsize))
+              return out
+          def off_to_rva(b,off):
+              for name,va,vsize,raw,rawsize in sections(b):
+                  if raw <= off < raw+rawsize:
+                      return va+(off-raw)
+              return None
+          def rva_to_off(b,rva):
+              for name,va,vsize,raw,rawsize in sections(b):
+                  if va <= rva < va+max(vsize,rawsize):
+                      return raw+(rva-va)
+              return None
+          def find_custom_sleep(b):
+              needle='Sleep'.encode('utf-16le')+b'\0\0'
+              poss=[]; st=0
+              while True:
+                  i=b.find(needle,st)
+                  if i<0: break
+                  r=off_to_rva(b,i)
+                  if r is not None: poss.append((i,r))
+                  st=i+2
+              candidates=[]
+              for off,rva in poss:
+                  va=0x10000000+rva
+                  pat=struct.pack('<I',va)
+                  st=0
+                  while True:
+                      x=b.find(pat,st)
+                      if x<0: break
+                      xr=off_to_rva(b,x)
+                      if xr is not None:
+                          # Current compiler shape: function prologue occurs 0x0A before immediate string VA.
+                          # Search backward up to 64 bytes for canonical x86 EBP prologue.
+                          lo=max(0,x-64)
+                          best=None
+                          for p in range(x,lo-1,-1):
+                              if b[p:p+8] == bytes.fromhex('55 8B EC 83 EC 08 8B C4'):
+                                  best=off_to_rva(b,p); break
+                          candidates.append((rva,xr,best))
+                      st=x+1
+              return poss,candidates
+
+          for d in sorted(root.glob('v*')):
+              if not d.is_dir(): continue
+              dlls=list(d.rglob('dinput8.dll'))+list(d.rglob('version.dll'))
+              if not dlls:
+                  rows.append(dict(tag=d.name,file='NONE',sha='',size=0,size_image='',timestamp='',sleep_utf16='',sleep_xref='',customsleep_rva=''))
+                  continue
+              f=dlls[0]; b=f.read_bytes()
+              pe=u32(b,0x3c); coff=pe+4; opt=coff+20
+              sizeimg=u32(b,opt+56); ts=u32(b,coff+4)
+              poss,cands=find_custom_sleep(b)
+              rows.append(dict(
+                  tag=d.name,file=str(f),sha=hashlib.sha256(b).hexdigest(),size=len(b),
+                  size_image=f'0x{sizeimg:08X}',timestamp=f'0x{ts:08X}',
+                  sleep_utf16=';'.join(f'0x{r:08X}' for _,r in poss),
+                  sleep_xref=';'.join(f'0x{x:08X}' for _,x,_ in cands),
+                  customsleep_rva=';'.join(f'0x{p:08X}' for _,_,p in cands if p is not None)))
+
+          with open('report/UAL_CUSTOMSLEEP_HISTORY.csv','w',newline='',encoding='utf-8') as fh:
+              w=csv.DictWriter(fh,fieldnames=['tag','file','sha','size','size_image','timestamp','sleep_utf16','sleep_xref','customsleep_rva'])
+              w.writeheader(); w.writerows(rows)
+          with open('report/UAL_CUSTOMSLEEP_HISTORY.txt','w',encoding='utf-8') as fh:
+              for r in rows: fh.write(str(r)+'\n')
+          matches=[r for r in rows if '0x00038FA0' in r['customsleep_rva'].upper()]
+          with open('report/MATCH_38FA0.txt','w',encoding='utf-8') as fh:
+              fh.write('\n'.join(str(r) for r in matches) if matches else 'NO_EXACT_38FA0_MATCH_IN_RELEASE_SET\n')
+          '@ | Set-Content work/map.py -Encoding utf8
+          python work/map.py
+          if($LASTEXITCODE -ne 0){throw "map.py failed rc=$LASTEXITCODE"}
+          Get-Content report/UAL_CUSTOMSLEEP_HISTORY.txt
+          Get-Content report/MATCH_38FA0.txt
+
+      - name: Package history report
+        shell: pwsh
+        run: |
+          Compress-Archive -Path report\* -DestinationPath UAL_CUSTOMSLEEP_RVA_HISTORY.zip -CompressionLevel Optimal
+      - uses: actions/upload-artifact@v4
+        with:
+          name: UAL-CUSTOMSLEEP-RVA-HISTORY
+          path: UAL_CUSTOMSLEEP_RVA_HISTORY.zip
