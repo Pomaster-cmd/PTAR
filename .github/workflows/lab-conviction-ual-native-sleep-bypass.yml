@@ -1,0 +1,76 @@
+name: LAB Conviction UAL native Sleep bypass
+
+on:
+  push:
+    branches: [lab/conviction-d3d9-legacy-repair-v1]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bypass:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      - name: Build x86 bypass harness
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force build,case,report | Out-Null
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 lab\conviction_ual_sleep\ual_native_sleep_bypass.cpp /link version.lib /OUT:build\ual_native_sleep_bypass.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          dumpbin /imports build\ual_native_sleep_bypass.exe | Out-File report\HARNESS_IMPORTS.txt -Encoding ascii
+          $i=Get-Content report\HARNESS_IMPORTS.txt -Raw
+          if($i -notmatch '(?m)\bSleep\b'){throw 'test harness must retain imported Sleep control path'}
+          if($i -notmatch 'GetProcAddress'){throw 'native resolver missing'}
+
+      - name: Download exact UAL 9.7.2
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Invoke-WebRequest -UseBasicParsing 'https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases/download/v9.7.2/Ultimate-ASI-Loader.zip' -OutFile build\ual972.zip
+          Expand-Archive build\ual972.zip build\ual972 -Force
+          $dll=Get-ChildItem build\ual972 -Recurse -File | Where-Object {$_.Name -ieq 'dinput8.dll'} | Select-Object -First 1
+          if(-not $dll){throw 'UAL 9.7.2 dinput8.dll missing'}
+          $sha=(Get-FileHash $dll.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($sha -ne 'c7277e832f6f07af64903a99ecebab2936260cbf55eda70787c5d7b2d5b9fe60'){throw "UAL 9.7.2 hash mismatch: $sha"}
+          Copy-Item build\ual_native_sleep_bypass.exe case\ual_native_sleep_bypass.exe
+          Copy-Item $dll.FullName case\version.dll
+          "UAL_972_DLL_SHA256=$sha" | Set-Content report\HASHES.txt -Encoding ascii
+
+      - name: Run imported-vs-native Sleep A-B
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Push-Location case
+          try {
+            $p=Start-Process -FilePath .\ual_native_sleep_bypass.exe -NoNewWindow -Wait -PassThru -RedirectStandardOutput stdout.txt -RedirectStandardError stderr.txt
+            Get-Content stdout.txt
+            if($p.ExitCode -ne 0){throw "harness exit=$($p.ExitCode) $(Get-Content stderr.txt -Raw)"}
+            Copy-Item stdout.txt ..\report\RESULT.txt
+          } finally { Pop-Location }
+          $t=Get-Content report\RESULT.txt -Raw
+          if($t -notmatch 'IMPORTED_SLEEP=.*VERSION_RVA=0x00038FA0'){throw 'UAL 9.7.2 imported Sleep fingerprint missing'}
+          if($t -notmatch 'NATIVE_SLEEP=.*IN_VERSION=0'){throw 'native resolver still points into VERSION'}
+          if($t -notmatch 'NATIVE_VERSION_SAMPLES=0'){throw 'native path entered VERSION.dll'}
+          if($t -notmatch 'RESULT=PASS'){throw 'bypass PASS marker missing'}
+          Write-Host 'UAL_972_NATIVE_SLEEP_BYPASS=PASS'
+
+      - name: Package evidence
+        shell: pwsh
+        run: |
+          Compress-Archive -Path report\* -DestinationPath UAL_972_NATIVE_SLEEP_BYPASS_EVIDENCE.zip -CompressionLevel Optimal
+          Write-Host ('EVIDENCE_SHA256='+(Get-FileHash UAL_972_NATIVE_SLEEP_BYPASS_EVIDENCE.zip -Algorithm SHA256).Hash.ToLowerInvariant())
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: UAL-972-NATIVE-SLEEP-BYPASS-EVIDENCE
+          path: UAL_972_NATIVE_SLEEP_BYPASS_EVIDENCE.zip
+          if-no-files-found: error
