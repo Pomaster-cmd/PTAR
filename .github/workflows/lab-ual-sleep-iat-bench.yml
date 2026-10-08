@@ -1,0 +1,95 @@
+name: LAB UAL Sleep IAT restoration bench
+
+on:
+  push:
+    branches: [lab/conviction-f438-ab-matrix]
+    paths:
+      - 'lab/conviction_ual_sleep/**'
+      - '.github/workflows/lab-ual-sleep-iat-bench.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      - name: Build synthetic x86 harness
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force build,report | Out-Null
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 lab\conviction_ual_sleep\ual_sleep_iat_bench.cpp /link version.lib /OUT:build\ual_sleep_iat_bench.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){throw 'bench compile failed'}
+          dumpbin /imports build\ual_sleep_iat_bench.exe | Out-File report/HARNESS_IMPORTS.txt -Encoding ascii
+          if((Get-Content report/HARNESS_IMPORTS.txt -Raw) -notmatch 'Sleep'){throw 'Sleep import missing'}
+          if((Get-Content report/HARNESS_IMPORTS.txt -Raw) -notmatch 'VERSION.dll'){throw 'VERSION import missing'}
+
+      - name: Download UAL 9.7.2, 9.7.3, 9.7.4
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($tag in @('v9.7.2','v9.7.3','v9.7.4')){
+            New-Item -ItemType Directory -Force "work/$tag" | Out-Null
+            Invoke-WebRequest -UseBasicParsing "https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases/download/$tag/Ultimate-ASI-Loader.zip" -OutFile "work/$tag.zip"
+            Expand-Archive "work/$tag.zip" "work/$tag" -Force
+            $dll=Get-ChildItem "work/$tag" -Recurse -File | Where-Object {$_.Name -ieq 'dinput8.dll'} | Select-Object -First 1
+            if(-not $dll){throw "$tag dinput8.dll not found"}
+            New-Item -ItemType Directory -Force "cases/$tag" | Out-Null
+            Copy-Item build\ual_sleep_iat_bench.exe "cases/$tag/bench.exe"
+            Copy-Item $dll.FullName "cases/$tag/version.dll"
+            "$tag SHA256=$((Get-FileHash $dll.FullName -Algorithm SHA256).Hash.ToLowerInvariant())" | Add-Content report/UAL_HASHES.txt
+          }
+          New-Item -ItemType Directory -Force cases\SYSTEM | Out-Null
+          Copy-Item build\ual_sleep_iat_bench.exe cases\SYSTEM\bench.exe
+
+      - name: Run baseline and UAL versions
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          function Run-Case([string]$name,[string]$dir){
+            Push-Location $dir
+            try {
+              $p=Start-Process -FilePath .\bench.exe -NoNewWindow -Wait -PassThru -RedirectStandardOutput stdout.txt -RedirectStandardError stderr.txt
+              if($p.ExitCode -ne 0){throw "$name exit=$($p.ExitCode) stderr=$(Get-Content stderr.txt -Raw)"}
+              Copy-Item stdout.txt "../../report/$name.txt"
+              Write-Host "===== $name ====="
+              Get-Content stdout.txt
+            } finally { Pop-Location }
+          }
+          Run-Case 'SYSTEM' 'cases/SYSTEM'
+          Run-Case 'UAL_9_7_2' 'cases/v9.7.2'
+          Run-Case 'UAL_9_7_3' 'cases/v9.7.3'
+          Run-Case 'UAL_9_7_4' 'cases/v9.7.4'
+
+      - name: Assert restoration differential
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $v72=Get-Content report/UAL_9_7_2.txt -Raw
+          $v73=Get-Content report/UAL_9_7_3.txt -Raw
+          $v74=Get-Content report/UAL_9_7_4.txt -Raw
+          if($v72 -notmatch 'SLEEP_PTR_INITIAL=.*version.dll'){throw '9.7.2 did not hook Sleep as expected'}
+          if($v72 -notmatch 'SLEEP_PTR_AFTER1=.*version.dll'){throw '9.7.2 unexpectedly restored Sleep after first call'}
+          if($v73 -notmatch 'SLEEP_PTR_INITIAL=.*version.dll'){throw '9.7.3 did not hook Sleep initially'}
+          if($v73 -match 'SLEEP_PTR_AFTER1=.*version.dll'){throw '9.7.3 failed to restore Sleep after first call'}
+          if($v74 -match 'SLEEP_PTR_AFTER1=.*version.dll'){throw '9.7.4 failed to restore Sleep after first call'}
+          'UAL_IAT_RESTORATION_DIFFERENTIAL=PASS' | Tee-Object report/VERDICT.txt
+
+      - name: Package report
+        shell: pwsh
+        run: |
+          Compress-Archive -Path report\* -DestinationPath UAL_SLEEP_IAT_RESTORATION_BENCH.zip -CompressionLevel Optimal
+          $sha=(Get-FileHash UAL_SLEEP_IAT_RESTORATION_BENCH.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "REPORT_SHA256=$sha"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: UAL-SLEEP-IAT-RESTORATION-BENCH
+          path: UAL_SLEEP_IAT_RESTORATION_BENCH.zip
