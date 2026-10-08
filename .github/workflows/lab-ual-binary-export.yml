@@ -1,0 +1,41 @@
+name: LAB UAL VERSION binary export
+
+on:
+  push:
+    branches: [lab/conviction-f438-ab-matrix]
+    paths:
+      - '.github/workflows/lab-ual-binary-export.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download exact current VERSION packages
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force out,ual,scc | Out-Null
+          Invoke-WebRequest -UseBasicParsing 'https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases/download/Win32-latest/version-Win32.zip' -OutFile ual.zip
+          Invoke-WebRequest -UseBasicParsing 'https://github.com/ThirteenAG/WidescreenFixesPack/releases/download/scc/SplinterCellConviction.FusionFix.zip' -OutFile scc.zip
+          Expand-Archive ual.zip ual -Force
+          Expand-Archive scc.zip scc -Force
+          $u=Get-ChildItem ual -Recurse -File | Where-Object {$_.Name -ieq 'version.dll'} | Select-Object -First 1
+          $s=Get-ChildItem scc -Recurse -File | Where-Object {$_.Name -ieq 'version.dll'} | Select-Object -First 1
+          if(-not $u -or -not $s){throw 'version.dll missing'}
+          Copy-Item $u.FullName out/UAL_ROLLING_VERSION.dll
+          Copy-Item $s.FullName out/SCC_CURRENT_VERSION.dll
+          @(
+            "UAL_SHA256=$((Get-FileHash $u.FullName -Algorithm SHA256).Hash.ToLowerInvariant())",
+            "SCC_SHA256=$((Get-FileHash $s.FullName -Algorithm SHA256).Hash.ToLowerInvariant())",
+            "BYTE_IDENTICAL=$([bool]((Get-FileHash $u.FullName -Algorithm SHA256).Hash -eq (Get-FileHash $s.FullName -Algorithm SHA256).Hash))"
+          ) | Set-Content out/IDENTITY.txt -Encoding ascii
+      - uses: actions/upload-artifact@v4
+        with:
+          name: UAL-SCC-VERSION-BINARIES
+          path: out
