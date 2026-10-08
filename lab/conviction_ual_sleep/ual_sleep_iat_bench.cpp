@@ -4,6 +4,8 @@
 #include <cstdio>
 #include <cstdint>
 #include <cstring>
+#include <vector>
+#include <algorithm>
 
 static void* FindImportSlot(const char* wanted)
 {
@@ -63,15 +65,88 @@ static double BenchSleep(unsigned n)
     return (double)(b.QuadPart-a.QuadPart)*1000.0/(double)f.QuadPart;
 }
 
+struct LimiterStats
+{
+    double minMs=0.0;
+    double medianMs=0.0;
+    double p95Ms=0.0;
+    double maxMs=0.0;
+    double meanMs=0.0;
+    double meanOvershootMs=0.0;
+    double meanSleepCalls=0.0;
+    double cpuMs=0.0;
+};
+
+static unsigned long long FileTimeToU64(const FILETIME& ft)
+{
+    ULARGE_INTEGER u{};
+    u.LowPart=ft.dwLowDateTime;
+    u.HighPart=ft.dwHighDateTime;
+    return u.QuadPart;
+}
+
+static LimiterStats BenchConvictionStyleLimiter(double targetMs,unsigned frames)
+{
+    LARGE_INTEGER freq{};
+    QueryPerformanceFrequency(&freq);
+    if(freq.QuadPart<=0) freq.QuadPart=1;
+
+    FILETIME c0{},e0{},k0{},u0{},c1{},e1{},k1{},u1{};
+    GetThreadTimes(GetCurrentThread(),&c0,&e0,&k0,&u0);
+
+    std::vector<double> elapsed;
+    elapsed.reserve(frames);
+    unsigned long long totalSleeps=0;
+    double sum=0.0;
+
+    for(unsigned frame=0;frame<frames;++frame)
+    {
+        LARGE_INTEGER start{},now{};
+        QueryPerformanceCounter(&start);
+        unsigned long sleeps=0;
+        for(;;)
+        {
+            QueryPerformanceCounter(&now);
+            const double ms=(double)(now.QuadPart-start.QuadPart)*1000.0/(double)freq.QuadPart;
+            if(ms>=targetMs)
+            {
+                elapsed.push_back(ms);
+                sum+=ms;
+                break;
+            }
+            Sleep(0);
+            ++sleeps;
+        }
+        totalSleeps+=sleeps;
+    }
+
+    GetThreadTimes(GetCurrentThread(),&c1,&e1,&k1,&u1);
+    std::sort(elapsed.begin(),elapsed.end());
+
+    LimiterStats s{};
+    if(!elapsed.empty())
+    {
+        s.minMs=elapsed.front();
+        s.maxMs=elapsed.back();
+        s.medianMs=elapsed[elapsed.size()/2];
+        size_t p95=(elapsed.size()*95u)/100u;
+        if(p95>=elapsed.size()) p95=elapsed.size()-1u;
+        s.p95Ms=elapsed[p95];
+        s.meanMs=sum/(double)elapsed.size();
+        s.meanOvershootMs=s.meanMs-targetMs;
+        s.meanSleepCalls=(double)totalSleeps/(double)elapsed.size();
+    }
+    const unsigned long long cpu100ns=
+        (FileTimeToU64(k1)+FileTimeToU64(u1))-
+        (FileTimeToU64(k0)+FileTimeToU64(u0));
+    s.cpuMs=(double)cpu100ns/10000.0;
+    return s;
+}
+
 int main()
 {
-    std::printf("UAL_SLEEP_IAT_BENCH=1\n");
+    std::printf("UAL_SLEEP_IAT_BENCH=2\n");
     std::printf("PID=%lu\n",(unsigned long)GetCurrentProcessId());
-
-    // Force a genuine VERSION.dll import/use. The local UAL proxy must forward it.
-    DWORD dummy=0;
-    DWORD ver=GetFileVersionInfoSizeW(L"kernel32.dll",&dummy);
-    std::printf("VERSION_API_SIZE=%lu GLE=%lu\n",(unsigned long)ver,(unsigned long)GetLastError());
 
     auto slot=(uintptr_t*)FindImportSlot("Sleep");
     if(!slot)
@@ -80,15 +155,22 @@ int main()
         return 10;
     }
     std::printf("SLEEP_IAT_SLOT=%p\n",(void*)slot);
-    SlotProtect("INITIAL",slot);
-    PtrInfo("SLEEP_PTR_INITIAL",(void*)*slot);
+    SlotProtect("PRE_VERSION_API",slot);
+    PtrInfo("SLEEP_PTR_PRE_VERSION_API",(void*)*slot);
+
+    // A real VERSION.dll call exercises UAL's forwarding path and, on fixed
+    // releases, gives the loader a chance to restore the executable IAT.
+    DWORD dummy=0;
+    DWORD ver=GetFileVersionInfoSizeW(L"kernel32.dll",&dummy);
+    std::printf("VERSION_API_SIZE=%lu GLE=%lu\n",(unsigned long)ver,(unsigned long)GetLastError());
+
+    SlotProtect("POST_VERSION_API",slot);
+    PtrInfo("SLEEP_PTR_POST_VERSION_API",(void*)*slot);
 
     Sleep(0);
-    SlotProtect("AFTER1",slot);
-    PtrInfo("SLEEP_PTR_AFTER1",(void*)*slot);
-
+    PtrInfo("SLEEP_PTR_AFTER_SLEEP1",(void*)*slot);
     Sleep(0);
-    PtrInfo("SLEEP_PTR_AFTER2",(void*)*slot);
+    PtrInfo("SLEEP_PTR_AFTER_SLEEP2",(void*)*slot);
 
     const unsigned n1=1000;
     const unsigned n2=10000;
@@ -96,6 +178,14 @@ int main()
     double t2=BenchSleep(n2);
     std::printf("BENCH_SLEEP0_N=%u TOTAL_MS=%.3f US_PER_CALL=%.3f\n",n1,t1,t1*1000.0/n1);
     std::printf("BENCH_SLEEP0_N=%u TOTAL_MS=%.3f US_PER_CALL=%.3f\n",n2,t2,t2*1000.0/n2);
+
+    const double target=1000.0/120.0;
+    const unsigned frames=240;
+    LimiterStats ls=BenchConvictionStyleLimiter(target,frames);
+    std::printf(
+        "LIMITER_TARGET_MS=%.6f FRAMES=%u MIN_MS=%.6f MEDIAN_MS=%.6f P95_MS=%.6f MAX_MS=%.6f MEAN_MS=%.6f MEAN_OVERSHOOT_MS=%.6f MEAN_SLEEP0_CALLS=%.3f CPU_MS=%.3f\n",
+        target,frames,ls.minMs,ls.medianMs,ls.p95Ms,ls.maxMs,ls.meanMs,
+        ls.meanOvershootMs,ls.meanSleepCalls,ls.cpuMs);
 
     std::printf("RESULT=PASS\n");
     return 0;
