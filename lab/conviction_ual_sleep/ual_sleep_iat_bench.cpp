@@ -43,7 +43,7 @@ static void PtrInfo(const char* label, void* p)
         GetModuleFileNameW((HMODULE)mbi.AllocationBase,path,MAX_PATH);
         off=(uintptr_t)p-(uintptr_t)mbi.AllocationBase;
     }
-    std::wprintf(L"%S=%p module=%ls offset=0x%08lX\n",label,p,path[0]?path:L"<none>",(unsigned long)off);
+    ::wprintf(L"%S=%p module=%ls offset=0x%08lX\n",label,p,path[0]?path:L"<none>",(unsigned long)off);
 }
 
 static void SlotProtect(const char* label, void* slot)
