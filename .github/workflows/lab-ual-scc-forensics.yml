@@ -1,0 +1,200 @@
+name: LAB Conviction UAL/FusionFix forensics
+
+on:
+  push:
+    branches: [lab/conviction-f438-ab-matrix]
+    paths:
+      - '.github/workflows/lab-ual-scc-forensics.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  forensic-map:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      - name: Download exact public runtime packages
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force dl,extract,report | Out-Null
+          $urls=@{
+            UAL974='https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases/download/v9.7.4/Ultimate-ASI-Loader.zip'
+            UAL_VERSION_ROLLING='https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases/download/Win32-latest/version-Win32.zip'
+            SCC_CURRENT='https://github.com/ThirteenAG/WidescreenFixesPack/releases/download/scc/SplinterCellConviction.FusionFix.zip'
+          }
+          foreach($k in $urls.Keys){
+            $out="dl/$k.zip"
+            Invoke-WebRequest -UseBasicParsing $urls[$k] -OutFile $out
+            $sha=(Get-FileHash $out -Algorithm SHA256).Hash.ToLowerInvariant()
+            $size=(Get-Item $out).Length
+            "$k URL=$($urls[$k]) SHA256=$sha SIZE=$size" | Tee-Object -FilePath report/DOWNLOADS.txt -Append
+            Expand-Archive -LiteralPath $out -DestinationPath "extract/$k" -Force
+          }
+
+      - name: Inventory VERSION binaries and PDBs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+
+          function Read-U16([byte[]]$b,[int]$o){ [BitConverter]::ToUInt16($b,$o) }
+          function Read-U32([byte[]]$b,[int]$o){ [BitConverter]::ToUInt32($b,$o) }
+          function Get-PeMeta([string]$path){
+            [byte[]]$b=[IO.File]::ReadAllBytes($path)
+            if($b.Length -lt 512 -or (Read-U16 $b 0) -ne 0x5A4D){ throw "BAD_MZ $path" }
+            $pe=[int](Read-U32 $b 0x3c)
+            if((Read-U32 $b $pe) -ne 0x4550){ throw "BAD_PE $path" }
+            $coff=$pe+4
+            $machine=Read-U16 $b $coff
+            $sections=Read-U16 $b ($coff+2)
+            $timestamp=Read-U32 $b ($coff+4)
+            $optSize=Read-U16 $b ($coff+16)
+            $opt=$coff+20
+            $magic=Read-U16 $b $opt
+            $entry=Read-U32 $b ($opt+16)
+            $imageBase=if($magic -eq 0x10b){Read-U32 $b ($opt+28)}else{0}
+            $sizeImage=Read-U32 $b ($opt+56)
+            $sizeHeaders=Read-U32 $b ($opt+60)
+            [pscustomobject]@{Machine=('0x{0:X4}' -f $machine);Sections=$sections;TimeDateStamp=('0x{0:X8}' -f $timestamp);Magic=('0x{0:X4}' -f $magic);EntryRVA=('0x{0:X8}' -f $entry);ImageBase=('0x{0:X8}' -f $imageBase);SizeOfImage=('0x{0:X8}' -f $sizeImage);SizeOfHeaders=('0x{0:X8}' -f $sizeHeaders)}
+          }
+
+          $rows=@()
+          foreach($root in @('extract/UAL974','extract/UAL_VERSION_ROLLING','extract/SCC_CURRENT')){
+            Get-ChildItem $root -Recurse -File | Where-Object {$_.Name -ieq 'version.dll'} | ForEach-Object {
+              $m=Get-PeMeta $_.FullName
+              $rows += [pscustomobject]@{
+                Source=$root
+                Relative=$_.FullName.Substring((Resolve-Path $root).Path.Length).TrimStart('\')
+                Bytes=$_.Length
+                SHA256=(Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+                Machine=$m.Machine
+                TimeDateStamp=$m.TimeDateStamp
+                EntryRVA=$m.EntryRVA
+                ImageBase=$m.ImageBase
+                SizeOfImage=$m.SizeOfImage
+              }
+            }
+          }
+          if(-not $rows){ throw 'No VERSION.dll found in downloaded packages' }
+          $rows | Format-Table -AutoSize | Out-String -Width 4096 | Set-Content report/VERSION_INVENTORY.txt -Encoding ascii
+          $rows | Export-Csv report/VERSION_INVENTORY.csv -NoTypeInformation
+
+          Get-ChildItem extract -Recurse -File | Where-Object {$_.Extension -ieq '.pdb'} |
+            Select-Object FullName,Length | Format-Table -AutoSize | Out-String -Width 4096 |
+            Set-Content report/PDB_INVENTORY.txt -Encoding ascii
+
+          foreach($r in $rows){
+            if($r.SizeOfImage -eq '0x002E0000'){
+              "OBSERVED_USER_SIZEOFIMAGE_MATCH source=$($r.Source) relative=$($r.Relative) sha=$($r.SHA256)" |
+                Tee-Object -FilePath report/OBSERVED_MATCHES.txt -Append
+            }
+          }
+
+      - name: Map observed VERSION.dll RVAs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $objdump=(Get-Command llvm-objdump.exe -ErrorAction SilentlyContinue)
+          $pdbutil=(Get-Command llvm-pdbutil.exe -ErrorAction SilentlyContinue)
+          "LLVM_OBJDUMP=$($objdump.Path)" | Set-Content report/TOOLS.txt
+          "LLVM_PDBUTIL=$($pdbutil.Path)" | Add-Content report/TOOLS.txt
+          "DUMPBIN=$((Get-Command dumpbin.exe).Path)" | Add-Content report/TOOLS.txt
+
+          $targets=@(
+            @{Name='UAL974';Root='extract/UAL974'},
+            @{Name='UALROLL';Root='extract/UAL_VERSION_ROLLING'},
+            @{Name='SCC';Root='extract/SCC_CURRENT'}
+          )
+          $rvas=@(0x00023700,0x00023800,0x00026700,0x00026800,0x0002FF00,0x00038FA0,0x0003EB00,0x00047800,0x00047A00,0x00053200,0x00066600,0x00066700,0x00086600,0x00086700)
+
+          foreach($t in $targets){
+            $dll=Get-ChildItem $t.Root -Recurse -File | Where-Object {$_.Name -ieq 'version.dll'} | Select-Object -First 1
+            if(-not $dll){continue}
+            $prefix="report/$($t.Name)"
+            dumpbin /headers $dll.FullName | Out-File "$prefix`_HEADERS.txt" -Encoding ascii
+            dumpbin /exports $dll.FullName | Out-File "$prefix`_EXPORTS.txt" -Encoding ascii
+            dumpbin /dependents $dll.FullName | Out-File "$prefix`_DEPENDENTS.txt" -Encoding ascii
+            if($objdump){
+              & $objdump.Path -d --print-imm-hex $dll.FullName | Out-File "$prefix`_DISASM.txt" -Encoding ascii
+            }
+          }
+
+          # RVA->file-offset byte windows independent of disassembler address conventions.
+          function U16([byte[]]$b,[int]$o){[BitConverter]::ToUInt16($b,$o)}
+          function U32([byte[]]$b,[int]$o){[BitConverter]::ToUInt32($b,$o)}
+          function RvaToOffset([byte[]]$b,[uint32]$rva){
+            $pe=[int](U32 $b 0x3c); $coff=$pe+4; $n=[int](U16 $b ($coff+2)); $optSize=[int](U16 $b ($coff+16)); $sec=$coff+20+$optSize
+            for($i=0;$i -lt $n;$i++){
+              $s=$sec+$i*40; $vsize=U32 $b ($s+8); $va=U32 $b ($s+12); $rawSize=U32 $b ($s+16); $raw=U32 $b ($s+20); $span=[Math]::Max($vsize,$rawSize)
+              if($rva -ge $va -and $rva -lt ($va+$span)){ return [int]($raw+($rva-$va)) }
+            }
+            return -1
+          }
+          foreach($t in $targets){
+            $dll=Get-ChildItem $t.Root -Recurse -File | Where-Object {$_.Name -ieq 'version.dll'} | Select-Object -First 1
+            if(-not $dll){continue}
+            [byte[]]$b=[IO.File]::ReadAllBytes($dll.FullName)
+            $out=@("SOURCE=$($t.Name)","DLL=$($dll.FullName)","SHA256=$((Get-FileHash $dll.FullName -Algorithm SHA256).Hash.ToLowerInvariant())")
+            foreach($rva in $rvas){
+              $off=RvaToOffset $b $rva
+              if($off -ge 0){
+                $start=[Math]::Max(0,$off-32); $count=[Math]::Min(96,$b.Length-$start)
+                $hex=($b[$start..($start+$count-1)] | ForEach-Object {$_.ToString('X2')}) -join ''
+                $out += ('RVA=0x{0:X8} FILEOFF=0x{1:X8} WINDOW_START=0x{2:X8} HEX={3}' -f $rva,$off,$start,$hex)
+              } else {
+                $out += ('RVA=0x{0:X8} FILEOFF=UNMAPPED' -f $rva)
+              }
+            }
+            $out | Set-Content "report/$($t.Name)_RVA_WINDOWS.txt" -Encoding ascii
+          }
+
+          if($pdbutil){
+            Get-ChildItem extract -Recurse -File -Filter *.pdb | ForEach-Object {
+              $safe=($_.FullName -replace '[^A-Za-z0-9._-]','_')
+              try { & $pdbutil.Path dump -publics -symbols $_.FullName | Out-File "report/PDB_$safe.txt" -Encoding ascii } catch { }
+            }
+          }
+
+      - name: Diff pre-Oct-2026 SCC source against current limiter-era source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          # Known first Sep-30 mouse commit has parent eae361e... ; that parent is a clean pre-Sep30 checkpoint.
+          $pre='eae361e535cec60995ec0c80b564ad501ec86ae6'
+          $cur='2b34384ddc038c99b730a993d6a793adfd855eaf'
+          $baseUrl='https://raw.githubusercontent.com/ThirteenAG/WidescreenFixesPack'
+          Invoke-WebRequest -UseBasicParsing "$baseUrl/$pre/source/SplinterCellConviction.FusionFix/dllmain.cpp" -OutFile report/SCC_PRE_SEP30_dllmain.cpp
+          Invoke-WebRequest -UseBasicParsing "$baseUrl/$cur/source/SplinterCellConviction.FusionFix/dllmain.cpp" -OutFile report/SCC_CURRENT_dllmain.cpp
+          git diff --no-index -- report/SCC_PRE_SEP30_dllmain.cpp report/SCC_CURRENT_dllmain.cpp | Out-File report/SCC_PRE_VS_CURRENT.diff -Encoding utf8
+          if($LASTEXITCODE -gt 1){throw "git diff failed rc=$LASTEXITCODE"}
+          $global:LASTEXITCODE=0
+
+      - name: Package forensic report
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $summary=@'
+          PTAR / Conviction VERSION.dll + UAL/FusionFix laboratory forensics
+          Purpose: map the persistent Sleep IAT target seen in V4/V5 without asking for more user-side tests.
+          Observed user runtime VERSION.dll SizeOfImage from V6 metadata: 0x002E0000.
+          Observed Sleep IAT runtime target: VERSION.dll + 0x00038FA0.
+          Observed main-thread VERSION.dll hotspot buckets include 0x237xx, 0x267xx/0x268xx, 0x2FFxx, 0x3EBxx, 0x478xx/0x47Axx, 0x532xx, 0x666xx/0x667xx, 0x866xx/0x867xx.
+          No PTAR SOURCE/main modification. No D3D11 modification.
+          '@
+          Set-Content report/README.txt $summary -Encoding ascii
+          Compress-Archive -Path report\* -DestinationPath PTAR_CONVICTION_UAL_SCC_FORENSICS.zip -CompressionLevel Optimal
+          $sha=(Get-FileHash PTAR_CONVICTION_UAL_SCC_FORENSICS.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "FORENSIC_ZIP_SHA256=$sha"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-CONVICTION-UAL-SCC-FORENSICS
+          path: PTAR_CONVICTION_UAL_SCC_FORENSICS.zip
