@@ -17,7 +17,7 @@ struct QpcClock {
 
 struct Stats {
     std::vector<double> v;
-    void add(double x){v.push_back(x);}    
+    void add(double x){v.push_back(x);}
     double pct(double p) const {
         if(v.empty()) return 0.0;
         std::vector<double> s=v; std::sort(s.begin(),s.end());
@@ -39,8 +39,6 @@ struct Slot {
     HANDLE shared{};
     bool pending{};
 };
-
-static void rel(IUnknown*& p){ if(p){p->Release();p=nullptr;} }
 
 template<class T> static void relT(T*& p){ if(p){p->Release();p=nullptr;} }
 
@@ -69,7 +67,8 @@ struct Bench {
         RegisterClassW(&wc);
         hwnd=CreateWindowExW(0,wc.lpszClassName,L"PTAR bench",WS_OVERLAPPEDWINDOW,0,0,320,240,nullptr,nullptr,wc.hInstance,nullptr);
         if(!hwnd){std::printf("INIT_FAIL CreateWindow gle=%lu\n",GetLastError());return false;}
-        auto pCreate9Ex=(HRESULT(WINAPI*)(UINT,IDirect3D9Ex**))GetProcAddress(LoadLibraryW(L"d3d9.dll"),"Direct3DCreate9Ex");
+        HMODULE d3dmod=LoadLibraryW(L"d3d9.dll");
+        auto pCreate9Ex=(HRESULT(WINAPI*)(UINT,IDirect3D9Ex**))GetProcAddress(d3dmod,"Direct3DCreate9Ex");
         if(!pCreate9Ex){std::printf("INIT_SKIP Direct3DCreate9Ex unavailable\n");return false;}
         HRESULT hr=pCreate9Ex(D3D_SDK_VERSION,&d3d); if(FAILED(hr)){std::printf("INIT_SKIP Direct3DCreate9Ex hr=%08lX\n",(unsigned long)hr);return false;}
         D3DPRESENT_PARAMETERS pp{}; pp.Windowed=TRUE;pp.SwapEffect=D3DSWAPEFFECT_DISCARD;pp.hDeviceWindow=hwnd;pp.BackBufferWidth=64;pp.BackBufferHeight=64;pp.BackBufferFormat=D3DFMT_A8R8G8B8;pp.PresentationInterval=D3DPRESENT_INTERVAL_IMMEDIATE;
