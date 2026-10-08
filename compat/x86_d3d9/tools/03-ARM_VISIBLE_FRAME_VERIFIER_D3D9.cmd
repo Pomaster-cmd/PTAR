@@ -47,7 +47,8 @@ if not errorlevel 1 (
  exit /b 30
 )
 
-for /f "tokens=1" %%H in ('"%SystemRoot%\System32\certutil.exe" -hashfile "%RUNTIME%" SHA256 ^| findstr /R /I "^[0-9A-F][0-9A-F ]*$"') do if not defined RUNTIME_HASH set "RUNTIME_HASH=%%H"
+set "RUNTIME_HASH="
+for /f "usebackq delims=" %%H in (`"%SystemRoot%\System32\certutil.exe" -hashfile "%RUNTIME%" SHA256 2^>nul ^| findstr /R /I "^[0-9A-F][0-9A-F ]*$"`) do if not defined RUNTIME_HASH set "RUNTIME_HASH=%%H"
 if not defined RUNTIME_HASH (
  echo [ERREUR] Impossible de calculer le SHA-256 du runtime.
  exit /b 31
