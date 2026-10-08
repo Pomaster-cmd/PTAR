@@ -132,19 +132,31 @@ struct Bench {
 
     void benchBlocking(const char* name,DWORD pollFlags,int frames){
         if(slots.size()!=6){std::printf("%s=SKIP shared unsupported\n",name);return;}
-        Stats wait; unsigned long polls=0,errors=0;
+        Stats wait; unsigned long polls=0,errors=0,timeouts=0,forcedFlushes=0;
         auto all0=clk.now();
         Slot &s=slots[0];
         for(int frame=0;frame<frames;++frame){
             prod->ColorFill(srcSurf,nullptr,D3DCOLOR_XRGB(frame&255,(frame*3)&255,(frame*7)&255));
             auto a=clk.now(); HRESULT hr=prod->StretchRect(srcSurf,nullptr,s.prodSurf,nullptr,D3DTEXF_NONE); if(SUCCEEDED(hr))hr=s.fence->Issue(D3DISSUE_END);
             if(SUCCEEDED(hr)){
-                for(;;){HRESULT q=s.fence->GetData(nullptr,0,pollFlags);++polls;if(q==S_OK)break;if(q!=S_FALSE){++errors;break;}SwitchToThread();}
+                bool done=false;
+                for(int spin=0;spin<20000;++spin){
+                    HRESULT q=s.fence->GetData(nullptr,0,pollFlags);++polls;
+                    if(q==S_OK){done=true;break;}
+                    if(q!=S_FALSE){++errors;done=true;break;}
+                    SwitchToThread();
+                }
+                if(!done){
+                    ++timeouts;
+                    HRESULT q=s.fence->GetData(nullptr,0,D3DGETDATA_FLUSH);++polls;++forcedFlushes;
+                    for(int spin=0;q==S_FALSE && spin<20000;++spin){SwitchToThread();q=s.fence->GetData(nullptr,0,D3DGETDATA_FLUSH);++polls;}
+                    if(q!=S_OK)++errors;
+                }
             } else ++errors;
             auto b=clk.now();wait.add(clk.ms(a,b));
         }
         auto all1=clk.now(); double total=clk.ms(all0,all1);
-        std::printf("%s frames=%d total_ms=%.3f effective_hz=%.2f wait_avg_ms=%.6f p50=%.6f p95=%.6f p99=%.6f max=%.6f polls=%lu errors=%lu\n",name,frames,total,total>0?frames*1000.0/total:0.0,wait.avg(),wait.pct(.50),wait.pct(.95),wait.pct(.99),wait.mx(),polls,errors);
+        std::printf("%s frames=%d total_ms=%.3f effective_hz=%.2f wait_avg_ms=%.6f p50=%.6f p95=%.6f p99=%.6f max=%.6f polls=%lu timeouts=%lu forced_flushes=%lu errors=%lu\n",name,frames,total,total>0?frames*1000.0/total:0.0,wait.avg(),wait.pct(.50),wait.pct(.95),wait.pct(.99),wait.mx(),polls,timeouts,forcedFlushes,errors);
     }
 
     void benchCpuReadback(int frames){
