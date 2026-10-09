@@ -1,0 +1,112 @@
+name: LAB D3D9 migration hotfix binary 20261009
+
+on:
+  push:
+    branches: [lab/ctrl-ui-real-visibility-20261009]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  migration-binary-regression:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      - name: Fetch exact validated 4fc and 2fb runtimes from prior artifacts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force oldzip,newzip,oldart,newart,labpkg,labout | Out-Null
+          $headers=@{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json';'X-GitHub-Api-Version'='2022-11-28'}
+          Invoke-WebRequest -Headers $headers -Uri 'https://api.github.com/repos/Pomaster-cmd/PTAR/actions/artifacts/11615190207/zip' -OutFile oldzip\old.zip
+          Invoke-WebRequest -Headers $headers -Uri 'https://api.github.com/repos/Pomaster-cmd/PTAR/actions/artifacts/11623690025/zip' -OutFile newzip\new.zip
+          Expand-Archive oldzip\old.zip oldart
+          Expand-Archive newzip\new.zip newart
+          $old=Get-ChildItem oldart -Recurse -Filter d3d9.dll | Select-Object -First 1
+          $new=Get-ChildItem newart -Recurse -Filter d3d9.dll | Select-Object -First 1
+          if(-not $old -or -not $new){throw 'artifact d3d9.dll missing'}
+          $oh=(Get-FileHash $old.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $nh=(Get-FileHash $new.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "OLD_EXACT_SHA256=$oh"
+          Write-Host "NEW_EXACT_SHA256=$nh"
+          if($oh -ne '4fc269367cf519e512fb892bbc40479a55ecae6c223167e142c8e96fcc966b8d'){throw 'old exact runtime mismatch'}
+          if($nh -ne '2fb071918d75527d94597d03ffc116e4d91b904d9e5efe55ba020f0c127b3bfc'){throw 'new exact runtime mismatch'}
+          Copy-Item $old.FullName labout\d3d9_old_4fc.dll
+          Copy-Item $new.FullName labpkg\d3d9.dll
+
+      - name: Build x86 dummy target
+        shell: pwsh
+        run: |
+          @'
+          #include <windows.h>
+          int WINAPI WinMain(HINSTANCE,HINSTANCE,LPSTR,int){return 0;}
+          '@ | Set-Content labout\dummy.cpp -Encoding ASCII
+          & cl.exe /nologo /O2 /MT /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 labout\dummy.cpp /link user32.lib /OUT:labout\game.exe /SUBSYSTEM:WINDOWS,6.03
+          if($LASTEXITCODE -ne 0){throw 'dummy x86 build failed'}
+
+      - name: Case A - upgrade previous PTAR and preserve original backup byte-for-byte
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $t='labout\caseA';New-Item -ItemType Directory -Force $t | Out-Null
+          Copy-Item labout\game.exe "$t\game.exe"
+          Copy-Item labout\d3d9_old_4fc.dll "$t\d3d9.dll"
+          [IO.File]::WriteAllText((Join-Path $t 'd3d9.dll.ptar_original'),'ORIGINAL-BACKUP-SENTINEL',[Text.Encoding]::ASCII)
+          $before=(Get-FileHash "$t\d3d9.dll.ptar_original" -Algorithm SHA256).Hash
+          & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File lab\ctrl_ui_real_visibility\install_x86_d3d9_migration_hotfix.ps1 -GameExe "$t\game.exe" -PackageRoot labpkg
+          if($LASTEXITCODE -ne 0){throw "case A installer rc=$LASTEXITCODE"}
+          $after=(Get-FileHash "$t\d3d9.dll.ptar_original" -Algorithm SHA256).Hash
+          if($before -ne $after){throw 'original backup modified'}
+          if((Get-FileHash "$t\d3d9.dll" -Algorithm SHA256).Hash.ToLowerInvariant() -ne '2fb071918d75527d94597d03ffc116e4d91b904d9e5efe55ba020f0c127b3bfc'){throw 'runtime not upgraded'}
+          $state=Get-Content "$t\PTAR_X86_D3D9_INSTALL_STATE.txt" -Raw
+          if($state -notmatch 'PREVIOUS_PTAR_SHA256=4fc269367cf519e512fb892bbc40479a55ecae6c223167e142c8e96fcc966b8d'){throw 'previous hash not recorded'}
+          Write-Host 'MIGRATION_PRESERVE_ORIGINAL=PASS'
+
+      - name: Case B - upgrade previous PTAR without original backup and preserve prior PTAR copy
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $t='labout\caseB';New-Item -ItemType Directory -Force $t | Out-Null
+          Copy-Item labout\game.exe "$t\game.exe"
+          Copy-Item labout\d3d9_old_4fc.dll "$t\d3d9.dll"
+          & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File lab\ctrl_ui_real_visibility\install_x86_d3d9_migration_hotfix.ps1 -GameExe "$t\game.exe" -PackageRoot labpkg
+          if($LASTEXITCODE -ne 0){throw "case B installer rc=$LASTEXITCODE"}
+          $prev="$t\d3d9.dll.ptar_previous_4fc269367cf5"
+          if(-not(Test-Path $prev)){throw 'previous PTAR copy missing'}
+          if((Get-FileHash $prev -Algorithm SHA256).Hash.ToLowerInvariant() -ne '4fc269367cf519e512fb892bbc40479a55ecae6c223167e142c8e96fcc966b8d'){throw 'previous PTAR copy mismatch'}
+          if((Get-FileHash "$t\d3d9.dll" -Algorithm SHA256).Hash.ToLowerInvariant() -ne '2fb071918d75527d94597d03ffc116e4d91b904d9e5efe55ba020f0c127b3bfc'){throw 'runtime not upgraded'}
+          Write-Host 'MIGRATION_PRESERVE_PREVIOUS_PTAR=PASS'
+
+      - name: Case C - unknown DLL plus original backup remains protected
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Continue'
+          $t='labout\caseC';New-Item -ItemType Directory -Force $t | Out-Null
+          Copy-Item labout\game.exe "$t\game.exe"
+          [IO.File]::WriteAllText((Join-Path $t 'd3d9.dll'),'UNKNOWN-RUNTIME',[Text.Encoding]::ASCII)
+          [IO.File]::WriteAllText((Join-Path $t 'd3d9.dll.ptar_original'),'ORIGINAL-BACKUP-SENTINEL',[Text.Encoding]::ASCII)
+          $liveBefore=(Get-FileHash "$t\d3d9.dll" -Algorithm SHA256).Hash;$bakBefore=(Get-FileHash "$t\d3d9.dll.ptar_original" -Algorithm SHA256).Hash
+          & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File lab\ctrl_ui_real_visibility\install_x86_d3d9_migration_hotfix.ps1 -GameExe "$t\game.exe" -PackageRoot labpkg
+          $rc=$LASTEXITCODE
+          if($rc -eq 0){throw 'unknown runtime should be refused'}
+          if((Get-FileHash "$t\d3d9.dll" -Algorithm SHA256).Hash -ne $liveBefore){throw 'unknown live runtime modified'}
+          if((Get-FileHash "$t\d3d9.dll.ptar_original" -Algorithm SHA256).Hash -ne $bakBefore){throw 'original backup modified'}
+          Write-Host 'UNKNOWN_RUNTIME_PROTECTION=PASS'
+
+      - name: Static previous validated c4 gate
+        shell: pwsh
+        run: |
+          $s=Get-Content lab\ctrl_ui_real_visibility\install_x86_d3d9_migration_hotfix.ps1 -Raw
+          if($s -notmatch 'c4a0668b313a2d6ca31c165eb2e5b216559bc3de8c5a1fe60b4aa9ac57c4a16d'){throw 'c4 runtime missing from trusted migration set'}
+          if($s -notmatch 'ORIGINAL_BACKUP=PRESERVED'){throw 'original backup preservation path missing'}
+          if($s -notmatch 'ptar_previous_'){throw 'previous PTAR preservation path missing'}
+          Write-Host 'C4_TRUSTED_MIGRATION_STATIC=PASS'
