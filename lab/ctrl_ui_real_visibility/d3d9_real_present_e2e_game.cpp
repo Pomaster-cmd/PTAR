@@ -10,14 +10,19 @@ static LRESULT CALLBACK WndProc(HWND h,UINT m,WPARAM w,LPARAM l)
     return DefWindowProcW(h,m,w,l);
 }
 
-static bool SendChord(WORD vk)
+static bool ChordDown(WORD vk)
 {
-    INPUT in[4]={};
+    INPUT in[2]={};
     in[0].type=INPUT_KEYBOARD; in[0].ki.wVk=VK_CONTROL;
     in[1].type=INPUT_KEYBOARD; in[1].ki.wVk=vk;
-    in[2].type=INPUT_KEYBOARD; in[2].ki.wVk=vk; in[2].ki.dwFlags=KEYEVENTF_KEYUP;
-    in[3].type=INPUT_KEYBOARD; in[3].ki.wVk=VK_CONTROL; in[3].ki.dwFlags=KEYEVENTF_KEYUP;
-    return SendInput(4,in,sizeof(INPUT))==4;
+    return SendInput(2,in,sizeof(INPUT))==2;
+}
+static bool ChordUp(WORD vk)
+{
+    INPUT in[2]={};
+    in[0].type=INPUT_KEYBOARD; in[0].ki.wVk=vk; in[0].ki.dwFlags=KEYEVENTF_KEYUP;
+    in[1].type=INPUT_KEYBOARD; in[1].ki.wVk=VK_CONTROL; in[1].ki.dwFlags=KEYEVENTF_KEYUP;
+    return SendInput(2,in,sizeof(INPUT))==2;
 }
 
 int WINAPI wWinMain(HINSTANCE hi,HINSTANCE,LPWSTR cmd,int)
@@ -67,26 +72,38 @@ int WINAPI wWinMain(HINSTANCE hi,HINSTANCE,LPWSTR cmd,int)
     }
 
     if(log){fprintf(log,"CREATE_DEVICE=PASS TYPE=%d EXCLUSIVE=%d\r\n",(int)used,exclusive?1:0);fflush(log);}
-    ULONGLONG start=GetTickCount64(); bool fgSent=false; unsigned presents=0, failures=0;
+    ULONGLONG start=GetTickCount64(); bool fgSent=false,fgKeyDown=false; unsigned presents=0, failures=0;
     MSG msg={};
     while((int)(GetTickCount64()-start)<runMs)
     {
         while(PeekMessageW(&msg,0,0,0,PM_REMOVE)){if(msg.message==WM_QUIT)goto done;TranslateMessage(&msg);DispatchMessageW(&msg);}
         ULONGLONG elapsed=GetTickCount64()-start;
-        if(!fgSent && elapsed>=26000)
+        if(!fgSent && !fgKeyDown && elapsed>=26000)
         {
             SetForegroundWindow(hwnd); SetFocus(hwnd);
-            if(SendChord(VK_F6)){fgSent=true;if(log){fprintf(log,"CTRL_F6_SENT_AT_MS=%llu\r\n",(unsigned long long)elapsed);fflush(log);}}
+            if(ChordDown(VK_F6))
+            {
+                fgKeyDown=true;
+                if(log){fprintf(log,"CTRL_F6_DOWN_AT_MS=%llu\r\n",(unsigned long long)elapsed);fflush(log);}
+            }
         }
         DWORD phase=(DWORD)((elapsed/250)%6);
         D3DCOLOR c=D3DCOLOR_XRGB(20+phase*25,40+phase*20,80+phase*15);
         dev->Clear(0,0,D3DCLEAR_TARGET,c,1.0f,0);
         hr=dev->Present(0,0,0,0);
         if(SUCCEEDED(hr))++presents; else ++failures;
+        if(fgKeyDown && !fgSent)
+        {
+            ChordUp(VK_F6);
+            fgKeyDown=false;
+            fgSent=true;
+            if(log){fprintf(log,"CTRL_F6_UP_AFTER_PRESENT_AT_MS=%llu\r\n",(unsigned long long)(GetTickCount64()-start));fflush(log);}
+        }
         Sleep(16);
     }
 
 done:
+    if(fgKeyDown)ChordUp(VK_F6);
     if(log)
     {
         fprintf(log,"PRESENT_CALLS=%u\r\nPRESENT_FAILURES=%u\r\nFG_TOGGLE_SENT=%d\r\nRESULT=%s\r\n",presents,failures,fgSent?1:0,(presents>100&&failures==0&&fgSent)?"PASS":"FAIL");
