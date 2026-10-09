@@ -1,0 +1,185 @@
+name: LAB D3D9 runtime present telemetry 20261009
+
+on:
+  push:
+    branches: [lab/ctrl-ui-real-visibility-20261009]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prove committed render and FG core remain untouched
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $base='0066c7d4b32aed167d2a74030801e896b8fe9aa4'
+          foreach($core in @(
+            'compat/x86_d3d9/ptar_d3d9_proxy.cpp',
+            'compat/x86_d3d9/ptar_fg_pacer.h',
+            'compat/x86_d3d9/ptar_fg_me_coarse_ps.hlsl',
+            'compat/x86_d3d9/ptar_fg_me_refine_ps.hlsl',
+            'compat/x86_d3d9/ptar_fg_interpolate_ps.hlsl',
+            'compat/x86_d3d9/ptar_moe_d3d9_ps.hlsl',
+            'compat/x86_d3d9/ptar_moe_universal_d3d9_ps.hlsl'
+          )){
+            $d=git diff --name-only $base HEAD -- $core
+            if($d){throw "Committed protected core changed unexpectedly: $core"}
+          }
+          Write-Host 'COMMITTED_D3D9_RENDER_FG_CORE_UNTOUCHED=PASS'
+
+      - name: Apply additive telemetry hook and inspect exact transient core diff
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & .\lab\ctrl_ui_real_visibility\apply_d3d9_present_telemetry_patch.ps1
+          $d=git diff -- compat/x86_d3d9/ptar_d3d9_proxy.cpp
+          $text=($d -join "`n")
+          if($text -notmatch '#include "ptar_present_telemetry.h"'){throw 'telemetry include absent from transient diff'}
+          if($text -notmatch 'PtPresentTelemetryRecord\(generatedFrame\);'){throw 'telemetry record hook absent from transient diff'}
+          if($text -match 'PtFgPacerPrepareGenerated\(' -and $text -match '^[-+].*PtFgPacerPrepareGenerated' ){throw 'pacer policy changed'}
+          if($text -match '^[-+].*PtFgPacerPrepareReal' ){throw 'real pacing policy changed'}
+          Write-Host 'TRANSIENT_PATCH_ADDITIVE_ONLY=PASS'
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      - name: Build shader bytecode
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force build_x86,artifact,smoke_game | Out-Null
+          $fxc=Get-Command fxc.exe -ErrorAction SilentlyContinue
+          if(-not $fxc){
+            $roots=@("$env:ProgramFiles(x86)\Windows Kits\10\bin","$env:ProgramFiles(x86)\Windows Kits\8.1\bin")
+            foreach($root in $roots){if(Test-Path $root){$fxc=Get-ChildItem $root -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1;if($fxc){break}}}
+          }
+          if(-not $fxc){throw 'fxc.exe not found'}
+          $fxcPath=if($fxc.Path){$fxc.Path}else{$fxc.FullName}
+          $jobs=@(
+            @('ps_3_0','compat\x86_d3d9\ptar_moe_d3d9_ps.hlsl','build_x86\ptar_ps_bytecode.h','g_ptarPs'),
+            @('ps_3_0','compat\x86_d3d9\ptar_moe_universal_d3d9_ps.hlsl','build_x86\ptar_universal_ps_bytecode.h','g_ptarUniversalPs'),
+            @('ps_2_0','compat\x86_d3d9\ptar_bilinear_ref_ps.hlsl','build_x86\ptar_bilinear_ps_bytecode.h','g_ptarBilinearPs'),
+            @('ps_3_0','compat\x86_d3d9\ptar_gw16i_hud_ps.hlsl','build_x86\ptar_gw16i_hud_ps_bytecode.h','g_ptarGw16iHudPs'),
+            @('ps_3_0','compat\x86_d3d9\ptar_gw16i_feedback_ps.hlsl','build_x86\ptar_gw16i_feedback_ps_bytecode.h','g_ptarGw16iFeedbackPs'),
+            @('ps_3_0','compat\x86_d3d9\ptar_fg_me_coarse_ps.hlsl','build_x86\ptar_fg_me_coarse_ps_bytecode.h','g_ptarFgMeCoarsePs'),
+            @('ps_3_0','compat\x86_d3d9\ptar_fg_me_refine_ps.hlsl','build_x86\ptar_fg_me_refine_ps_bytecode.h','g_ptarFgMeRefinePs'),
+            @('ps_3_0','compat\x86_d3d9\ptar_fg_interpolate_ps.hlsl','build_x86\ptar_fg_interpolate_ps_bytecode.h','g_ptarFgInterpolatePs')
+          )
+          foreach($j in $jobs){& $fxcPath /nologo /T $j[0] /E main /O3 /Fh $j[2] /Vn $j[3] $j[1];if($LASTEXITCODE -ne 0){throw "FXC failed: $($j[1])"}}
+          Write-Host 'FXC_ALL=PASS'
+
+      - name: Build exact x86 D3D9 runtime with additive telemetry
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /LD /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I build_x86 compat\x86_d3d9\ptar_d3d9_proxy.cpp /link user32.lib /DEF:compat\x86_d3d9\d3d9_proxy.def /OUT:artifact\d3d9.dll /SUBSYSTEM:WINDOWS,6.03
+          if($LASTEXITCODE -ne 0){throw 'D3D9 runtime compile failed'}
+          dumpbin /headers artifact\d3d9.dll | Tee-Object build_x86\HEADERS.txt
+          dumpbin /dependents artifact\d3d9.dll | Tee-Object build_x86\DEPENDENTS.txt
+          $h=Get-Content build_x86\HEADERS.txt -Raw
+          $d=Get-Content build_x86\DEPENDENTS.txt -Raw
+          if($h -notmatch '14C machine \(x86\)'){throw 'runtime is not x86'}
+          if($h -notmatch '6\.03 subsystem version'){throw 'runtime subsystem is not 6.03'}
+          foreach($bad in @('VCRUNTIME','MSVCP','UCRTBASE','API-MS-WIN-CRT')){if($d -match $bad){throw "forbidden dynamic runtime dependency $bad"}}
+          $sha=(Get-FileHash artifact\d3d9.dll -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "D3D9_DLL_SHA256=$sha"
+          Set-Content build_x86\D3D9_SHA256.txt $sha -Encoding ASCII
+          Write-Host 'D3D9_RUNTIME_TELEMETRY_BUILD=PASS'
+
+      - name: Compile telemetry producer x86 and verifier x64
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I compat\x86_d3d9 lab\ctrl_ui_real_visibility\d3d9_present_telemetry_producer_smoke.cpp /link /OUT:artifact\telemetry_producer_x86.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){throw 'x86 telemetry producer compile failed'}
+          $csc="$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+          if(-not(Test-Path $csc)){throw 'Framework64 csc missing'}
+          & $csc /nologo /target:exe /optimize+ /platform:x64 /out:artifact\PTARD3D9PresentTelemetryVerifier.exe lab\ctrl_ui_real_visibility\PTARD3D9PresentTelemetryVerifier.cs
+          if($LASTEXITCODE -ne 0){throw 'x64 telemetry verifier compile failed'}
+          & artifact\PTARD3D9PresentTelemetryVerifier.exe --selftest | Tee-Object build_x86\VERIFIER_SELFTEST.txt
+          if($LASTEXITCODE -ne 0){throw 'verifier selftest failed'}
+          if((Get-Content build_x86\VERIFIER_SELFTEST.txt -Raw) -notmatch 'GDI_CAPTURE=NO'){throw 'no-GDI selftest marker missing'}
+          $src=Get-Content lab\ctrl_ui_real_visibility\PTARD3D9PresentTelemetryVerifier.cs -Raw
+          foreach($forbidden in @('BitBlt','GetDC(','ReleaseDC','gdi32.dll')){if($src.Contains($forbidden)){throw "forbidden desktop-capture token $forbidden"}}
+          Write-Host 'TELEMETRY_VERIFIER_COMPILE=PASS'
+          Write-Host 'GDI_CAPTURE_DEPENDENCY_REMOVED=PASS'
+
+      - name: Cross-bitness x86 producer to x64 verifier integration smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $producer=Start-Process -FilePath (Resolve-Path artifact\telemetry_producer_x86.exe) -ArgumentList '5000','2' -PassThru -RedirectStandardOutput build_x86\PRODUCER.txt
+          Start-Sleep -Milliseconds 250
+          $env:PTAR_GAME_ROOT=(Resolve-Path smoke_game).Path
+          Remove-Item Env:PTAR_FG_PRESENTSHED1_OUTPUT_PREFIX -ErrorAction SilentlyContinue
+          & artifact\PTARD3D9PresentTelemetryVerifier.exe 1 --autostart | Tee-Object build_x86\RAW_TELEMETRY_SMOKE.txt
+          if($LASTEXITCODE -ne 0){throw "raw telemetry verifier failed rc=$LASTEXITCODE"}
+          $csv=Import-Csv smoke_game\PTAR_RAWCADENCE_LAST_SAMPLES.csv
+          if($csv.Count -lt 100){throw 'too few runtime telemetry events'}
+          if(@($csv|Where-Object type -eq 'R').Count -eq 0){throw 'REAL events absent'}
+          if(@($csv|Where-Object type -eq 'G').Count -eq 0){throw 'GENERATED events absent'}
+          $prefix=(Join-Path (Resolve-Path smoke_game).Path 'F1_SMOKE')
+          $env:PTAR_FG_PRESENTSHED1_OUTPUT_PREFIX=$prefix
+          & artifact\PTARD3D9PresentTelemetryVerifier.exe 1 --autostart | Tee-Object build_x86\F1_TELEMETRY_SMOKE.txt
+          if($LASTEXITCODE -ne 0){throw "F1 telemetry verifier failed rc=$LASTEXITCODE"}
+          foreach($s in @('_OUTPUT.txt','_SAMPLES.csv','_STATUS.txt','_RR_FOCUS.txt','_LONG_HOLD_FOCUS.txt','_GEN_PRESSURE_FOCUS.txt')){if(-not(Test-Path ($prefix+$s))){throw "F1 output missing $s"}}
+          if(-not $producer.HasExited){Stop-Process -Id $producer.Id -Force}
+          Write-Host 'X86_TO_X64_SHARED_MEMORY=PASS'
+          Write-Host 'RAW_F5_TELEMETRY_PATH=PASS'
+          Write-Host 'F1_TELEMETRY_PATH=PASS'
+
+      - name: Verify no render-thread filesystem telemetry polling was introduced
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $t=Get-Content compat\x86_d3d9\ptar_present_telemetry.h -Raw
+          foreach($forbidden in @('CreateFileW','WriteFile','fopen','fprintf','GetPrivateProfile','SetPrivateProfile')){if($t.Contains($forbidden)){throw "render telemetry filesystem call present: $forbidden"}}
+          if($t -notmatch 'CreateFileMappingW' -or $t -notmatch 'MapViewOfFile'){throw 'shared-memory transport missing'}
+          Write-Host 'RENDER_THREAD_TELEMETRY_FILE_IO=NONE'
+          Write-Host 'PRESENT_TELEMETRY_SHARED_MEMORY=PASS'
+
+      - name: Package validated telemetry runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Copy-Item compat\x86_d3d9\ptar_present_telemetry.h artifact\
+          Copy-Item lab\ctrl_ui_real_visibility\PTARD3D9PresentTelemetryVerifier.cs artifact\
+          Copy-Item lab\ctrl_ui_real_visibility\apply_d3d9_present_telemetry_patch.ps1 artifact\
+          $sha=(Get-FileHash artifact\d3d9.dll -Algorithm SHA256).Hash.ToLowerInvariant()
+          @(
+            'PTAR_D3D9_RUNTIME_PRESENT_TELEMETRY=PASS',
+            'MEASUREMENT_SOURCE=RUNTIME_PRESENT_SUCCESS',
+            'GDI_CAPTURE=REMOVED_FROM_ACTIVE_D3D9_F1_F5_PATH',
+            'TRANSPORT=NAMED_SHARED_MEMORY',
+            'MAPPING=Local\\PTAR_D3D9_PRESENT_TELEMETRY_V1',
+            'CORE_PACING_POLICY_CHANGED=NO',
+            ('D3D9_DLL_SHA256='+$sha),
+            ('SOURCE_COMMIT='+$env:GITHUB_SHA)
+          ) | Set-Content artifact\PTAR_D3D9_PRESENT_TELEMETRY_VERSION.txt -Encoding ASCII
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-D3D9-RUNTIME-PRESENT-TELEMETRY-FIX
+          path: |
+            artifact/d3d9.dll
+            artifact/PTARD3D9PresentTelemetryVerifier.exe
+            artifact/PTARD3D9PresentTelemetryVerifier.cs
+            artifact/ptar_present_telemetry.h
+            artifact/apply_d3d9_present_telemetry_patch.ps1
+            artifact/PTAR_D3D9_PRESENT_TELEMETRY_VERSION.txt
+            build_x86/HEADERS.txt
+            build_x86/DEPENDENTS.txt
+            build_x86/D3D9_SHA256.txt
+            build_x86/VERIFIER_SELFTEST.txt
+            build_x86/RAW_TELEMETRY_SMOKE.txt
+            build_x86/F1_TELEMETRY_SMOKE.txt
