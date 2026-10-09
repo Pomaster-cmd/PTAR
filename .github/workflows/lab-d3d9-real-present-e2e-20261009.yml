@@ -1,0 +1,50 @@
+name: LAB D3D9 real Present E2E 20261009
+
+on:
+  push:
+    branches:
+      - lab/ctrl-ui-real-visibility-20261009
+  workflow_dispatch:
+
+jobs:
+  real-present-e2e:
+    name: real-present-${{ matrix.mode }}
+    runs-on: windows-2022
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [windowed, exclusive]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+      - name: Validate actual D3D9 device, proxy HookPresent, F5 and F1
+        shell: pwsh
+        run: |
+          if ('${{ matrix.mode }}' -eq 'exclusive') {
+            .\lab\ctrl_ui_real_visibility\validate_d3d9_real_present_e2e.ps1 -Exclusive
+          } else {
+            .\lab\ctrl_ui_real_visibility\validate_d3d9_real_present_e2e.ps1
+          }
+      - name: Upload real-Present forensic outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-D3D9-REAL-PRESENT-E2E-${{ matrix.mode }}
+          if-no-files-found: warn
+          path: |
+            artifact/*.dll
+            artifact/*.exe
+            artifact/PTAR_D3D9_REAL_PRESENT_E2E_*.txt
+            build_x86/REAL_*.txt
+            build_x86/D3D9_SHA256.txt
+            real_game_*/PTAR_E2E_GAME_RESULT.txt
+            real_game_*/PTAR_X86_D3D9.log
+            real_game_*/PTAR_*VERIFIER*.txt
+            real_game_*/PTAR_*VERIFIER*.csv
+            real_game_*/F1_REAL_PRESENT_*.txt
+            real_game_*/F1_REAL_PRESENT_*.csv
