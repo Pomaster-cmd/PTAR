@@ -1,0 +1,136 @@
+name: LAB D3D9 migration hotfix 20261009
+
+on:
+  push:
+    branches: [lab/ctrl-ui-real-visibility-20261009]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  migration-regression:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      - name: Compile shaders and baseline 4fc runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force build_x86,labout,labpkg | Out-Null
+          $fxc=Get-Command fxc.exe -ErrorAction SilentlyContinue
+          if(-not $fxc){$fxc=Get-ChildItem "$env:ProgramFiles(x86)\Windows Kits\10\bin" -Recurse -Filter fxc.exe | Sort-Object FullName -Descending | Select-Object -First 1}
+          if(-not $fxc){throw 'fxc missing'}
+          $f=if($fxc.Path){$fxc.Path}else{$fxc.FullName}
+          $jobs=@(
+            @('ps_3_0','compat\x86_d3d9\ptar_moe_d3d9_ps.hlsl','build_x86\ptar_ps_bytecode.h','g_ptarPs'),
+            @('ps_3_0','compat\x86_d3d9\ptar_moe_universal_d3d9_ps.hlsl','build_x86\ptar_universal_ps_bytecode.h','g_ptarUniversalPs'),
+            @('ps_2_0','compat\x86_d3d9\ptar_bilinear_ref_ps.hlsl','build_x86\ptar_bilinear_ps_bytecode.h','g_ptarBilinearPs'),
+            @('ps_3_0','compat\x86_d3d9\ptar_gw16i_hud_ps.hlsl','build_x86\ptar_gw16i_hud_ps_bytecode.h','g_ptarGw16iHudPs'),
+            @('ps_3_0','compat\x86_d3d9\ptar_gw16i_feedback_ps.hlsl','build_x86\ptar_gw16i_feedback_ps_bytecode.h','g_ptarGw16iFeedbackPs'),
+            @('ps_3_0','compat\x86_d3d9\ptar_fg_me_coarse_ps.hlsl','build_x86\ptar_fg_me_coarse_ps_bytecode.h','g_ptarFgMeCoarsePs'),
+            @('ps_3_0','compat\x86_d3d9\ptar_fg_me_refine_ps.hlsl','build_x86\ptar_fg_me_refine_ps_bytecode.h','g_ptarFgMeRefinePs'),
+            @('ps_3_0','compat\x86_d3d9\ptar_fg_interpolate_ps.hlsl','build_x86\ptar_fg_interpolate_ps_bytecode.h','g_ptarFgInterpolatePs')
+          )
+          foreach($j in $jobs){& $f /nologo /T $j[0] /E main /O3 /Fh $j[2] /Vn $j[3] $j[1];if($LASTEXITCODE -ne 0){throw "fxc $($j[1])"}}
+          & cl.exe /nologo /LD /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I build_x86 compat\x86_d3d9\ptar_d3d9_proxy.cpp /link user32.lib /DEF:compat\x86_d3d9\d3d9_proxy.def /OUT:labout\d3d9_old_4fc.dll /SUBSYSTEM:WINDOWS,6.03
+          if($LASTEXITCODE -ne 0){throw 'old runtime build failed'}
+          $old=(Get-FileHash labout\d3d9_old_4fc.dll -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "OLD_RUNTIME_SHA256=$old"
+          if($old -ne '4fc269367cf519e512fb892bbc40479a55ecae6c223167e142c8e96fcc966b8d'){throw 'baseline runtime no longer matches trusted 4fc hash'}
+
+      - name: Apply final HUD detail patch and build current 2fb runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $p='compat\x86_d3d9\ptar_gw16i_hud_d3d9.h'
+          $s=Get-Content $p -Raw
+          $nl="`r`n"
+          $pairs=@(
+            @('PtGw16Text(dev,&batch,x,y,"C+F5 MEASURE",fg);',('PtGw16Text(dev,&batch,x,y,"C+F5 MEASURE",fg);'+$nl+'            PtGw16Text(dev,&batch,x,originY+48,a==0?"PRE FG 20 SEC":a==1?"FG ACTIVE 20 SEC":"POST FG 20 SEC",fg);')),
+            @('PtGw16Text(dev,&batch,x,y,"C+F5 DONE",fg);',('PtGw16Text(dev,&batch,x,y,"C+F5 DONE",fg);'+$nl+'            PtGw16Text(dev,&batch,x,originY+48,a==0?"PRE FG":a==1?"FG ACTIVE":"POST FG",fg);')),
+            @('PtGw16Text(dev,&batch,x,y,"C+F1 READY",fg);',('PtGw16Text(dev,&batch,x,y,"C+F1 MODE",fg);'+$nl+'            PtGw16Text(dev,&batch,x,originY+48,a==0?"60 SEC":"120 SEC",fg);')),
+            @('PtGw16Text(dev,&batch,x,y,"C+F1 MEASURE",fg);',('PtGw16Text(dev,&batch,x,y,"C+F1 MEASURE",fg);'+$nl+'            PtGw16Text(dev,&batch,x,originY+48,a==0?"60 SEC":"120 SEC",fg);')),
+            @('PtGw16Text(dev,&batch,x,y,"C+F1 DONE",fg);',('PtGw16Text(dev,&batch,x,y,"C+F1 DONE",fg);'+$nl+'            PtGw16Text(dev,&batch,x,originY+48,a==0?"60 SEC":"120 SEC",fg);')),
+            @('PtGw16Text(dev,&batch,x,y,"C+F1 ERROR",fg);',('PtGw16Text(dev,&batch,x,y,"C+F1 ERROR",fg);'+$nl+'            PtGw16Text(dev,&batch,x,originY+48,a==0?"60 SEC":"120 SEC",fg);')),
+            @('PtGw16Text(dev,&batch,x,y,"C+F5 ERROR",fg);',('PtGw16Text(dev,&batch,x,y,"C+F5 ERROR",fg);'+$nl+'            PtGw16Text(dev,&batch,x,originY+48,a==0?"PRE FG":a==1?"FG ACTIVE":"POST FG",fg);'))
+          )
+          foreach($pair in $pairs){if(-not $s.Contains($pair[0])){throw "missing HUD token $($pair[0])"};$s=$s.Replace($pair[0],$pair[1])}
+          [IO.File]::WriteAllText((Resolve-Path $p),$s,[Text.Encoding]::ASCII)
+          & cl.exe /nologo /LD /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I build_x86 compat\x86_d3d9\ptar_d3d9_proxy.cpp /link user32.lib /DEF:compat\x86_d3d9\d3d9_proxy.def /OUT:labpkg\d3d9.dll /SUBSYSTEM:WINDOWS,6.03
+          if($LASTEXITCODE -ne 0){throw 'final runtime build failed'}
+          $new=(Get-FileHash labpkg\d3d9.dll -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "FINAL_RUNTIME_SHA256=$new"
+          if($new -ne '2fb071918d75527d94597d03ffc116e4d91b904d9e5efe55ba020f0c127b3bfc'){throw 'final runtime hash mismatch'}
+
+      - name: Build x86 dummy game target
+        shell: pwsh
+        run: |
+          @'
+          #include <windows.h>
+          int WINAPI WinMain(HINSTANCE,HINSTANCE,LPSTR,int){return 0;}
+          '@ | Set-Content labout\dummy.cpp -Encoding ASCII
+          & cl.exe /nologo /O2 /MT /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 labout\dummy.cpp /link user32.lib /OUT:labout\game.exe /SUBSYSTEM:WINDOWS,6.03
+          if($LASTEXITCODE -ne 0){throw 'dummy x86 build failed'}
+
+      - name: Regression A - migrate old PTAR while preserving original backup
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $t='labout\caseA';New-Item -ItemType Directory -Force $t | Out-Null
+          Copy-Item labout\game.exe "$t\game.exe"
+          Copy-Item labout\d3d9_old_4fc.dll "$t\d3d9.dll"
+          [IO.File]::WriteAllText((Join-Path $t 'd3d9.dll.ptar_original'),'ORIGINAL-BACKUP-SENTINEL',[Text.Encoding]::ASCII)
+          $before=(Get-FileHash "$t\d3d9.dll.ptar_original" -Algorithm SHA256).Hash
+          & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File lab\ctrl_ui_real_visibility\install_x86_d3d9_migration_hotfix.ps1 -GameExe "$t\game.exe" -PackageRoot labpkg
+          if($LASTEXITCODE -ne 0){throw "migration A failed rc=$LASTEXITCODE"}
+          $after=(Get-FileHash "$t\d3d9.dll.ptar_original" -Algorithm SHA256).Hash
+          if($before -ne $after){throw 'original backup was modified'}
+          if((Get-FileHash "$t\d3d9.dll" -Algorithm SHA256).Hash.ToLowerInvariant() -ne '2fb071918d75527d94597d03ffc116e4d91b904d9e5efe55ba020f0c127b3bfc'){throw 'live runtime not upgraded'}
+          $state=Get-Content "$t\PTAR_X86_D3D9_INSTALL_STATE.txt" -Raw
+          if($state -notmatch 'PREVIOUS_PTAR_SHA256=4fc269367cf519e512fb892bbc40479a55ecae6c223167e142c8e96fcc966b8d'){throw 'previous runtime not recorded'}
+          Write-Host 'MIGRATION_WITH_ORIGINAL_BACKUP=PASS'
+
+      - name: Regression B - migrate old PTAR with non-destructive previous-runtime copy
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $t='labout\caseB';New-Item -ItemType Directory -Force $t | Out-Null
+          Copy-Item labout\game.exe "$t\game.exe"
+          Copy-Item labout\d3d9_old_4fc.dll "$t\d3d9.dll"
+          & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File lab\ctrl_ui_real_visibility\install_x86_d3d9_migration_hotfix.ps1 -GameExe "$t\game.exe" -PackageRoot labpkg
+          if($LASTEXITCODE -ne 0){throw "migration B failed rc=$LASTEXITCODE"}
+          $prev="$t\d3d9.dll.ptar_previous_4fc269367cf5"
+          if(-not(Test-Path $prev)){throw 'previous PTAR backup missing'}
+          if((Get-FileHash $prev -Algorithm SHA256).Hash.ToLowerInvariant() -ne '4fc269367cf519e512fb892bbc40479a55ecae6c223167e142c8e96fcc966b8d'){throw 'previous PTAR backup hash mismatch'}
+          if((Get-FileHash "$t\d3d9.dll" -Algorithm SHA256).Hash.ToLowerInvariant() -ne '2fb071918d75527d94597d03ffc116e4d91b904d9e5efe55ba020f0c127b3bfc'){throw 'live runtime not upgraded'}
+          Write-Host 'MIGRATION_WITHOUT_ORIGINAL_BACKUP=PASS'
+
+      - name: Regression C - unknown DLL plus original backup still refuses overwrite
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $t='labout\caseC';New-Item -ItemType Directory -Force $t | Out-Null
+          Copy-Item labout\game.exe "$t\game.exe"
+          [IO.File]::WriteAllText((Join-Path $t 'd3d9.dll'),'UNKNOWN-RUNTIME',[Text.Encoding]::ASCII)
+          [IO.File]::WriteAllText((Join-Path $t 'd3d9.dll.ptar_original'),'ORIGINAL-BACKUP-SENTINEL',[Text.Encoding]::ASCII)
+          $liveBefore=(Get-FileHash "$t\d3d9.dll" -Algorithm SHA256).Hash;$bakBefore=(Get-FileHash "$t\d3d9.dll.ptar_original" -Algorithm SHA256).Hash
+          & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File lab\ctrl_ui_real_visibility\install_x86_d3d9_migration_hotfix.ps1 -GameExe "$t\game.exe" -PackageRoot labpkg
+          if($LASTEXITCODE -eq 0){throw 'unknown runtime should have been refused'}
+          if((Get-FileHash "$t\d3d9.dll" -Algorithm SHA256).Hash -ne $liveBefore){throw 'unknown live runtime modified'}
+          if((Get-FileHash "$t\d3d9.dll.ptar_original" -Algorithm SHA256).Hash -ne $bakBefore){throw 'original backup modified'}
+          Write-Host 'UNKNOWN_RUNTIME_REFUSAL=PASS'
+
+      - name: Static c4 migration gate
+        shell: pwsh
+        run: |
+          $s=Get-Content lab\ctrl_ui_real_visibility\install_x86_d3d9_migration_hotfix.ps1 -Raw
+          if($s -notmatch 'c4a0668b313a2d6ca31c165eb2e5b216559bc3de8c5a1fe60b4aa9ac57c4a16d'){throw 'c4 validated runtime not trusted'}
+          if($s -notmatch 'ORIGINAL_BACKUP=PRESERVED'){throw 'preservation branch missing'}
+          if($s -notmatch 'ptar_previous_'){throw 'non-destructive previous-runtime branch missing'}
+          Write-Host 'C4_STATIC_MIGRATION_GATE=PASS'
