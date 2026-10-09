@@ -1,0 +1,70 @@
+name: LAB D3D9 visual feedback parity v2
+
+on:
+  push:
+    branches: [lab/d3d9-visual-feedback-parity-v2]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prove rendering cores untouched
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $base='174a07d28d5d4dde73fe3b709fd1e17d5ab3fb10'
+          $changed=@(git diff --name-only $base HEAD)
+          $bad=@($changed | Where-Object { $_ -notlike 'lab/d3d9_visual_feedback/*' -and $_ -ne '.github/workflows/lab-d3d9-visual-feedback-parity-v2.yml' })
+          if($bad.Count -ne 0){ throw ('Unexpected file changed: '+($bad -join ', ')) }
+          Write-Host 'D3D9_CORE_UNTOUCHED=PASS'
+          Write-Host 'D3D11_CORE_UNTOUCHED=PASS'
+
+      - name: Compile exact visual shell x86 and x64
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $src='lab/d3d9_visual_feedback/VisualFeedbackProbe.cs'
+          $c32="$env:WINDIR\Microsoft.NET\Framework\v4.0.30319\csc.exe"
+          $c64="$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+          & $c32 /nologo /target:winexe /optimize+ /platform:x86 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /out:probe_x86.exe $src
+          if($LASTEXITCODE -ne 0){throw 'x86 compile failed'}
+          & $c64 /nologo /target:winexe /optimize+ /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /out:probe_x64.exe $src
+          if($LASTEXITCODE -ne 0){throw 'x64 compile failed'}
+          Write-Host 'COMPILE_X86=PASS'
+          Write-Host 'COMPILE_X64=PASS'
+
+      - name: Compare hidden and normal launch visibility
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          function Run-Probe([string]$exe,[string]$tag,[bool]$hidden){
+            $state=Join-Path $PWD ($tag+'.txt')
+            Remove-Item $state -Force -ErrorAction SilentlyContinue
+            $env:PTAR_LAB_STATE=$state
+            if($hidden){$p=Start-Process -FilePath (Join-Path $PWD $exe) -PassThru -WindowStyle Hidden}else{$p=Start-Process -FilePath (Join-Path $PWD $exe) -PassThru}
+            Start-Sleep -Milliseconds 1200
+            $proc=Get-Process -Id $p.Id -ErrorAction Stop
+            $text=Get-Content -LiteralPath $state -Raw -ErrorAction Stop
+            Write-Host ($tag+' PID='+$p.Id+' MAINHWND='+$proc.MainWindowHandle)
+            Write-Host $text
+            if($text -notmatch 'SHOWN'){throw ($tag+' Shown event missing')}
+            if($text -notmatch 'FORM_VISIBLE=True'){throw ($tag+' Form.Visible is false')}
+            if($text -notmatch 'NATIVE_VISIBLE=True'){throw ($tag+' native window is not visible')}
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          }
+          Run-Probe 'probe_x64.exe' 'X64_HIDDEN' $true
+          Run-Probe 'probe_x64.exe' 'X64_NORMAL' $false
+          Run-Probe 'probe_x86.exe' 'X86_HIDDEN' $true
+          Run-Probe 'probe_x86.exe' 'X86_NORMAL' $false
+          Write-Host 'WINFORMS_D3D11_VISUAL_CONTRACT_X64=PASS'
+          Write-Host 'WINFORMS_D3D11_VISUAL_CONTRACT_X86=PASS'
+          Write-Host 'WINDOWSTYLE_HIDDEN_DOES_NOT_SUPPRESS_FORM=PASS'
