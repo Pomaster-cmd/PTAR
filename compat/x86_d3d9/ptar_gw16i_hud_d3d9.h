@@ -353,6 +353,39 @@ static void PtGw16FeedbackPanel(
         case 18:
             PtGw16Text(dev,&batch,x,y,"REC ERR",fg);
             break;
+        // Fullscreen-safe diagnostic controller notices. These originate in
+        // the x64 CTRL+F5/F1 controllers but are rasterized here in the game's
+        // own D3D9 backbuffer instead of relying on an external HWND overlay.
+        case 19:
+            PtGw16Text(dev,&batch,x,y,"C+F5 PRE FG",fg);
+            break;
+        case 20:
+            PtGw16Text(dev,&batch,x,y,"C+F5 FG ACTIVE",fg);
+            break;
+        case 21:
+            PtGw16Text(dev,&batch,x,y,"C+F5 POST FG",fg);
+            break;
+        case 22:
+            PtGw16Text(dev,&batch,x,y,"C+F5 MEASURE",fg);
+            break;
+        case 23:
+            PtGw16Text(dev,&batch,x,y,"C+F5 DONE",fg);
+            break;
+        case 24:
+            PtGw16Text(dev,&batch,x,y,"C+F1 READY",fg);
+            break;
+        case 25:
+            PtGw16Text(dev,&batch,x,y,"C+F1 MEASURE",fg);
+            break;
+        case 26:
+            PtGw16Text(dev,&batch,x,y,"C+F1 DONE",fg);
+            break;
+        case 27:
+            PtGw16Text(dev,&batch,x,y,"C+F1 ERROR",fg);
+            break;
+        case 28:
+            PtGw16Text(dev,&batch,x,y,"C+F5 ERROR",fg);
+            break;
         default:
             PtGw16Text(dev,&batch,x,y,"PTAR",fg);
             break;
