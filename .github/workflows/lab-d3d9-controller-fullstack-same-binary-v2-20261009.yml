@@ -1,0 +1,41 @@
+name: LAB D3D9 controller fullstack same binary v2 20261009
+
+on:
+  push:
+    branches:
+      - lab/ctrl-ui-real-visibility-20261009
+  workflow_dispatch:
+
+jobs:
+  fullstack-v2:
+    runs-on: windows-2022
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+      - name: Validate exact D3D9 binary, real Present, resilient F1/F5 and HUD bridge
+        shell: pwsh
+        run: .\lab\ctrl_ui_real_visibility\validate_d3d9_controller_fullstack_same_binary_v2.ps1
+      - name: Upload full-stack v2 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-D3D9-CONTROLLER-FULLSTACK-SAME-BINARY-V2
+          if-no-files-found: warn
+          path: |
+            artifact/d3d9.dll
+            artifact/FULLSTACK_*.txt
+            artifact/PTAR_D3D9_SAME_BINARY_FULLSTACK_VALIDATION.txt
+            build_x86/D3D9_SHA256.txt
+            fullstack_game_*/PTAR_X86_D3D9.log
+            fullstack_game_*/PTAR_RAWCOMPARE3_CONTROLLER.log
+            fullstack_game_*/PTAR_D3D9_DIAG_UI_BRIDGE.log
+            fullstack_game_*/PTAR_D3D9_DIAG_UI.ini
+            fullstack_game_*/PTAR_RAWCOMPARE_*_METRICS.txt
+            fullstack_game_*/diag/PTAR_PRESENTSHED1/*.log
+            fullstack_game_*/diag/PTAR_PRESENTSHED1/*_PERCEPTUAL.txt
+            fullstack_game_*/diag/PTAR_PRESENTSHED1/*_METRICS.txt
