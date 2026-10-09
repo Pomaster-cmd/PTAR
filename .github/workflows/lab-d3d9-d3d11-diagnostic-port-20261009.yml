@@ -1,13 +1,240 @@
 name: LAB D3D9 D3D11 diagnostic port 20261009
 
 on:
+  push:
+    branches: [lab/ctrl-ui-real-visibility-20261009]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  placeholder:
+  validate:
     runs-on: windows-2022
+    timeout-minutes: 30
     steps:
-      - run: echo placeholder
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prove committed production D3D9 core remains untouched
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $base='0066c7d4b32aed167d2a74030801e896b8fe9aa4'
+          foreach($core in @(
+            'compat/x86_d3d9/ptar_d3d9_proxy.cpp',
+            'compat/x86_d3d9/ptar_fg_pacer.h',
+            'compat/x86_d3d9/ptar_fg_me_coarse_ps.hlsl',
+            'compat/x86_d3d9/ptar_fg_me_refine_ps.hlsl',
+            'compat/x86_d3d9/ptar_fg_interpolate_ps.hlsl',
+            'compat/x86_d3d9/ptar_moe_d3d9_ps.hlsl',
+            'compat/x86_d3d9/ptar_moe_universal_d3d9_ps.hlsl'
+          )){
+            $d=git diff --name-only $base HEAD -- $core
+            if($d){throw "Committed protected core changed unexpectedly: $core"}
+          }
+          Write-Host 'COMMITTED_D3D9_RENDER_FG_CORE_UNTOUCHED=PASS'
+
+      - name: Apply diagnostic-only D3D11-style introspection hook
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Copy-Item lab\ctrl_ui_real_visibility\ptar_d3d9_diag_present_ring.h compat\x86_d3d9\ptar_d3d9_diag_present_ring.h -Force
+          $p='compat\x86_d3d9\ptar_d3d9_proxy.cpp'
+          $s=Get-Content $p -Raw
+          $needle='#include "ptar_gw16i_hud_d3d9.h"'
+          if(-not $s.Contains($needle)){throw 'HUD include anchor absent'}
+          $s=$s.Replace($needle,$needle+"`r`n#include \"ptar_d3d9_diag_present_ring.h\"")
+          $old=@'
+    hr=g_realPresent(dev,0,0,hwnd,dirty);
+    if(SUCCEEDED(hr))
+        PtFgPacerRecordVisible(generatedFrame);
+    return hr;
+'@
+          $new=@'
+    hr=g_realPresent(dev,0,0,hwnd,dirty);
+    if(SUCCEEDED(hr))
+    {
+        PtFgPacerRecordVisible(generatedFrame);
+        PtD3D9DiagRecordPresent(
+            generatedFrame,
+            g_ptarHudFrameSequence&4095ul,
+            g_ptarFgPacer.lastVisibleQpc,
+            PtFgPacerRealCount(),
+            PtFgPacerGeneratedCount(),
+            g_ptarFgPacer.resyncs,
+            PtFgPacerLateSkipCount());
+    }
+    return hr;
+'@
+          if(-not $s.Contains($old)){throw 'Present success anchor absent'}
+          $s=$s.Replace($old,$new)
+          Set-Content $p $s -Encoding UTF8
+          $diff=(git diff -- $p) -join "`n"
+          if($diff -notmatch 'ptar_d3d9_diag_present_ring.h'){throw 'diagnostic include missing'}
+          if($diff -notmatch 'PtD3D9DiagRecordPresent'){throw 'diagnostic record call missing'}
+          if($diff -match '^[-+].*PtFgPacerPrepareGenerated' -or $diff -match '^[-+].*PtFgPacerPrepareReal'){throw 'pacing policy changed'}
+          Write-Host 'TRANSIENT_DIAGNOSTIC_HOOK_ONLY=PASS'
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      - name: Build shader bytecode
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force build_x86,artifact,smoke_game | Out-Null
+          $fxc=Get-Command fxc.exe -ErrorAction SilentlyContinue
+          if(-not $fxc){
+            $roots=@("$env:ProgramFiles(x86)\Windows Kits\10\bin","$env:ProgramFiles(x86)\Windows Kits\8.1\bin")
+            foreach($root in $roots){if(Test-Path $root){$fxc=Get-ChildItem $root -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1;if($fxc){break}}}
+          }
+          if(-not $fxc){throw 'fxc.exe not found'}
+          $fxcPath=if($fxc.Path){$fxc.Path}else{$fxc.FullName}
+          $jobs=@(
+            @('ps_3_0','compat\x86_d3d9\ptar_moe_d3d9_ps.hlsl','build_x86\ptar_ps_bytecode.h','g_ptarPs'),
+            @('ps_3_0','compat\x86_d3d9\ptar_moe_universal_d3d9_ps.hlsl','build_x86\ptar_universal_ps_bytecode.h','g_ptarUniversalPs'),
+            @('ps_2_0','compat\x86_d3d9\ptar_bilinear_ref_ps.hlsl','build_x86\ptar_bilinear_ps_bytecode.h','g_ptarBilinearPs'),
+            @('ps_3_0','compat\x86_d3d9\ptar_gw16i_hud_ps.hlsl','build_x86\ptar_gw16i_hud_ps_bytecode.h','g_ptarGw16iHudPs'),
+            @('ps_3_0','compat\x86_d3d9\ptar_gw16i_feedback_ps.hlsl','build_x86\ptar_gw16i_feedback_ps_bytecode.h','g_ptarGw16iFeedbackPs'),
+            @('ps_3_0','compat\x86_d3d9\ptar_fg_me_coarse_ps.hlsl','build_x86\ptar_fg_me_coarse_ps_bytecode.h','g_ptarFgMeCoarsePs'),
+            @('ps_3_0','compat\x86_d3d9\ptar_fg_me_refine_ps.hlsl','build_x86\ptar_fg_me_refine_ps_bytecode.h','g_ptarFgMeRefinePs'),
+            @('ps_3_0','compat\x86_d3d9\ptar_fg_interpolate_ps.hlsl','build_x86\ptar_fg_interpolate_ps_bytecode.h','g_ptarFgInterpolatePs')
+          )
+          foreach($j in $jobs){& $fxcPath /nologo /T $j[0] /E main /O3 /Fh $j[2] /Vn $j[3] $j[1];if($LASTEXITCODE -ne 0){throw "FXC failed: $($j[1])"}}
+          Write-Host 'FXC_ALL=PASS'
+
+      - name: Build Win8.1 x86 D3D9 runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /LD /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I build_x86 compat\x86_d3d9\ptar_d3d9_proxy.cpp /link user32.lib /DEF:compat\x86_d3d9\d3d9_proxy.def /OUT:artifact\d3d9.dll /SUBSYSTEM:WINDOWS,6.03
+          if($LASTEXITCODE -ne 0){throw 'D3D9 runtime compile failed'}
+          dumpbin /headers artifact\d3d9.dll | Tee-Object build_x86\HEADERS.txt
+          dumpbin /dependents artifact\d3d9.dll | Tee-Object build_x86\DEPENDENTS.txt
+          dumpbin /exports artifact\d3d9.dll | Tee-Object build_x86\EXPORTS.txt
+          $h=Get-Content build_x86\HEADERS.txt -Raw
+          $d=Get-Content build_x86\DEPENDENTS.txt -Raw
+          $e=Get-Content build_x86\EXPORTS.txt -Raw
+          if($h -notmatch '14C machine \(x86\)'){throw 'runtime is not x86'}
+          if($h -notmatch '6\.03 subsystem version'){throw 'runtime subsystem is not 6.03'}
+          foreach($bad in @('VCRUNTIME','MSVCP','UCRTBASE','API-MS-WIN-CRT')){if($d -match $bad){throw "forbidden dynamic runtime dependency $bad"}}
+          if($e -notmatch 'PTAR_D3D9_DIAG_STATE'){throw 'diagnostic DATA export missing'}
+          $sha=(Get-FileHash artifact\d3d9.dll -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content build_x86\D3D9_SHA256.txt $sha -Encoding ASCII
+          Write-Host "D3D9_DLL_SHA256=$sha"
+          Write-Host 'D3D9_RUNTIME_BUILD=PASS'
+
+      - name: Compile the three D3D9 diagnostics from the shared D3D11-style reader
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $csc="$env:WINDIR\Microsoft.NET\Framework\v4.0.30319\csc.exe"
+          if(-not(Test-Path $csc)){throw 'Framework x86 csc missing'}
+          $shared='lab\ctrl_ui_real_visibility\PTARD3D9PresentTelemetryReader.cs'
+          $builds=@(
+            @('lab\ctrl_ui_real_visibility\PTARVisiblePacingVerifier_D3D9RuntimeRing.cs','artifact\ptar_vblank3_d3d9_autostart.exe'),
+            @('lab\ctrl_ui_real_visibility\PTARRawCadenceVerifier_D3D9RuntimeRing.cs','artifact\ptar_rawcadence3_d3d9_autostart.exe'),
+            @('lab\ctrl_ui_real_visibility\PTARVisiblePacingVerifierPresentShed1_D3D9RuntimeRing.cs','artifact\ptar_presentshed1_visible.exe')
+          )
+          foreach($b in $builds){& $csc /nologo /target:exe /optimize+ /platform:x86 (('/out:{0}' -f $b[1])) $shared $b[0];if($LASTEXITCODE -ne 0){throw "C# compile failed $($b[0])"};& $b[1] --selftest | Tee-Object -Append build_x86\VERIFIER_SELFTEST.txt;if($LASTEXITCODE -ne 0){throw "selftest failed $($b[1])"}}
+          $all=(Get-Content $shared -Raw)+(Get-Content $builds[0][0] -Raw)+(Get-Content $builds[1][0] -Raw)+(Get-Content $builds[2][0] -Raw)
+          foreach($forbidden in @('BitBlt','CreateDIBSection','Marshal.Copy(bits')){if($all.Contains($forbidden)){throw "desktop capture token remains: $forbidden"}}
+          if($all -notmatch 'D3D9_RUNTIME_PRESENT_RING'){throw 'runtime-ring contract marker missing'}
+          Write-Host 'D3D11_DIAGNOSTIC_CONTRACT_ADAPTED_TO_D3D9=PASS'
+          Write-Host 'DESKTOP_PIXEL_CAPTURE_ACTIVE_PATH=NONE'
+
+      - name: Compile x86 remote-process integration harness
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 lab\ctrl_ui_real_visibility\d3d9_diag_ring_harness.cpp /link /OUT:smoke_game\game.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){throw 'harness compile failed'}
+          Copy-Item artifact\d3d9.dll smoke_game\d3d9.dll -Force
+
+      - name: Integration smoke - FG active and F1 through remote d3d9.dll DATA export
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=(Resolve-Path smoke_game).Path
+          $game=(Resolve-Path smoke_game\game.exe).Path
+          $dll=(Resolve-Path smoke_game\d3d9.dll).Path
+          $env:PTAR_GAME_ROOT=$root;$env:PTAR_TARGET_EXE=$game
+          $p=Start-Process -FilePath $game -ArgumentList ('"'+$dll+'" mixed 12000') -PassThru -RedirectStandardOutput build_x86\HARNESS_MIXED.txt
+          Start-Sleep -Milliseconds 300
+          & artifact\ptar_vblank3_d3d9_autostart.exe 3 --autostart | Tee-Object build_x86\F5_FG_SMOKE.txt
+          if($LASTEXITCODE -ne 0){throw "F5 FG verifier failed rc=$LASTEXITCODE"}
+          $fg=@(Import-Csv smoke_game\PTAR_VISIBLE_VERIFIER_LAST_SAMPLES.csv)
+          if($fg.Count -lt 50){throw 'F5 FG too few events'}
+          if(@($fg|Where-Object type -eq 'R').Count -eq 0 -or @($fg|Where-Object type -eq 'G').Count -eq 0){throw 'F5 FG missing R/G'}
+          $prefix=Join-Path $root 'F1_SMOKE';$env:PTAR_FG_PRESENTSHED1_OUTPUT_PREFIX=$prefix
+          & artifact\ptar_presentshed1_visible.exe 5 --autostart | Tee-Object build_x86\F1_SMOKE.txt
+          if($LASTEXITCODE -ne 0){throw "F1 verifier failed rc=$LASTEXITCODE"}
+          foreach($suffix in @('_OUTPUT.txt','_SAMPLES.csv','_STATUS.txt','_RR_FOCUS.txt','_LONG_HOLD_FOCUS.txt','_GEN_PRESSURE_FOCUS.txt')){if(-not(Test-Path ($prefix+$suffix))){throw "F1 output missing $suffix"}}
+          if(-not $p.HasExited){Stop-Process -Id $p.Id -Force}
+          Write-Host 'F5_FG_RUNTIME_RING=PASS'
+          Write-Host 'F1_RUNTIME_RING=PASS'
+
+      - name: Integration smoke - PRE POST raw REAL-only cadence
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=(Resolve-Path smoke_game).Path
+          $game=(Resolve-Path smoke_game\game.exe).Path
+          $dll=(Resolve-Path smoke_game\d3d9.dll).Path
+          $env:PTAR_GAME_ROOT=$root;$env:PTAR_TARGET_EXE=$game
+          $p=Start-Process -FilePath $game -ArgumentList ('"'+$dll+'" real 5000') -PassThru -RedirectStandardOutput build_x86\HARNESS_REAL.txt
+          Start-Sleep -Milliseconds 300
+          & artifact\ptar_rawcadence3_d3d9_autostart.exe 3 --autostart | Tee-Object build_x86\F5_RAW_SMOKE.txt
+          if($LASTEXITCODE -ne 0){throw "F5 RAW verifier failed rc=$LASTEXITCODE"}
+          $txt=Get-Content smoke_game\PTAR_RAWCADENCE_LAST_OUTPUT.txt -Raw
+          if($txt -notmatch 'RAW_RESULT=RAW_REAL_ONLY_VALID'){throw 'raw valid marker missing'}
+          if($txt -notmatch 'GENERATED_CONTENTS=0'){throw 'raw generated count is not zero'}
+          if($txt -notmatch 'GDI_CAPTURE=NO'){throw 'raw no-GDI marker missing'}
+          if(-not $p.HasExited){Stop-Process -Id $p.Id -Force}
+          Write-Host 'F5_PRE_POST_RUNTIME_RING=PASS'
+
+      - name: Package binary and source payload for final pack integration
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Copy-Item lab\ctrl_ui_real_visibility\PTARD3D9PresentTelemetryReader.cs artifact\
+          Copy-Item lab\ctrl_ui_real_visibility\PTARVisiblePacingVerifier_D3D9RuntimeRing.cs artifact\PTARVisiblePacingVerifier.cs
+          Copy-Item lab\ctrl_ui_real_visibility\PTARRawCadenceVerifier_D3D9RuntimeRing.cs artifact\PTARRawCadenceVerifier.cs
+          Copy-Item lab\ctrl_ui_real_visibility\PTARVisiblePacingVerifierPresentShed1_D3D9RuntimeRing.cs artifact\PTARVisiblePacingVerifierPresentShed1.cs
+          Copy-Item lab\ctrl_ui_real_visibility\ptar_d3d9_diag_present_ring.h artifact\
+          $sha=(Get-Content build_x86\D3D9_SHA256.txt -Raw).Trim()
+          @(
+            'PTAR_D3D9_D3D11_DIAGNOSTIC_PORT=PASS',
+            'D3D11_CONTRACT=CANONICAL',
+            'D3D9_MEASUREMENT_SOURCE=SUCCESSFUL_RUNTIME_PRESENT_RING',
+            'EXTERNAL_DESKTOP_PIXEL_CAPTURE=REMOVED',
+            'PACING_POLICY_CHANGED=NO',
+            'FG_SHADER_CHANGED=NO',
+            'D3D9EX_SUBSTITUTION=NO',
+            'SECOND_PRESENT_THREAD=NO',
+            ('D3D9_DLL_SHA256='+$sha),
+            ('SOURCE_COMMIT='+$env:GITHUB_SHA)
+          ) | Set-Content artifact\PTAR_D3D9_D3D11_DIAG_PORT_VALIDATION.txt -Encoding ASCII
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-D3D9-D3D11-DIAGNOSTIC-PORT
+          path: |
+            artifact/d3d9.dll
+            artifact/PTARD3D9PresentTelemetryReader.cs
+            artifact/PTARVisiblePacingVerifier.cs
+            artifact/PTARRawCadenceVerifier.cs
+            artifact/PTARVisiblePacingVerifierPresentShed1.cs
+            artifact/ptar_d3d9_diag_present_ring.h
+            artifact/PTAR_D3D9_D3D11_DIAG_PORT_VALIDATION.txt
+            build_x86/HEADERS.txt
+            build_x86/DEPENDENTS.txt
+            build_x86/EXPORTS.txt
+            build_x86/D3D9_SHA256.txt
+            build_x86/VERIFIER_SELFTEST.txt
+            build_x86/F5_FG_SMOKE.txt
+            build_x86/F1_SMOKE.txt
+            build_x86/F5_RAW_SMOKE.txt
