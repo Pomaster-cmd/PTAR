@@ -1,0 +1,43 @@
+name: LAB D3D9 D3D11 diagnostic port v2 20261009
+
+on:
+  push:
+    branches: [lab/ctrl-ui-real-visibility-20261009]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+      - name: Validate D3D11 diagnostic contract adapted to D3D9
+        shell: pwsh
+        run: .\lab\ctrl_ui_real_visibility\validate_d3d9_d3d11_diag_port.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-D3D9-D3D11-DIAGNOSTIC-PORT-V2
+          path: |
+            artifact/d3d9.dll
+            artifact/PTARD3D9PresentTelemetryReader.cs
+            artifact/PTARVisiblePacingVerifier.cs
+            artifact/PTARRawCadenceVerifier.cs
+            artifact/PTARVisiblePacingVerifierPresentShed1.cs
+            artifact/ptar_d3d9_diag_present_ring.h
+            artifact/PTAR_D3D9_D3D11_DIAG_PORT_VALIDATION.txt
+            build_x86/HEADERS.txt
+            build_x86/DEPENDENTS.txt
+            build_x86/EXPORTS.txt
+            build_x86/D3D9_SHA256.txt
+            build_x86/VERIFIER_SELFTEST.txt
+            build_x86/F5_FG_SMOKE.txt
+            build_x86/F1_SMOKE.txt
+            build_x86/F5_RAW_SMOKE.txt
