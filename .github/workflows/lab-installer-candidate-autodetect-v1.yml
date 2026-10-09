@@ -1,0 +1,109 @@
+name: LAB installer candidate autodetect v1
+
+on:
+  push:
+    branches: [lab/installer-candidate-autodetect-v1]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prove rendering cores untouched
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $base='174a07d28d5d4dde73fe3b709fd1e17d5ab3fb10'
+          $changed=@(git diff --name-only $base HEAD)
+          $bad=@($changed | Where-Object { $_ -like 'compat/x86_d3d9/*' -or $_ -like 'src/*' -or $_ -like 'include/*' })
+          $changed | ForEach-Object { Write-Host ('CHANGED='+$_) }
+          if($bad.Count -ne 0){ throw ('Rendering core changed: '+($bad -join ', ')) }
+          Write-Host 'D3D9_CORE_UNTOUCHED=PASS'
+          Write-Host 'D3D11_CORE_UNTOUCHED=PASS'
+
+      - name: PowerShell 4 compatible syntax parse
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $path='lab/installer_candidate_autodetect/install_auto.ps1'
+          $tokens=$null;$errors=$null
+          [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path),[ref]$tokens,[ref]$errors)
+          if($errors.Count){ $errors | ForEach-Object { Write-Host $_.Message }; throw 'PowerShell parse failed' }
+          $s=Get-Content $path -Raw
+          foreach($token in @('Get-InstallCandidates','Select-TargetExe','0x8664','0x014c','Executables candidats detectes','Cible detectee automatiquement')){
+            if($s -notmatch [regex]::Escape($token)){throw ('Missing token '+$token)}
+          }
+          if($s -match 'Get-ChildItem[^\r\n]*-Recurse'){throw 'Unbounded recursive scan detected'}
+          Write-Host 'POWERSHELL_PARSE=PASS'
+          Write-Host 'NO_UNBOUNDED_RECURSE=PASS'
+
+      - name: Synthetic candidate discovery matrix
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $src=(Resolve-Path 'lab/installer_candidate_autodetect/install_auto.ps1').Path
+          $sandbox=Join-Path $env:TEMP ('PTAR_AUTODETECT_'+[Guid]::NewGuid().ToString('N'))
+          $pkg=Join-Path $sandbox 'PTAR_PACKAGE'
+          $diag=Join-Path $pkg 'diag'
+          New-Item -ItemType Directory -Force $diag | Out-Null
+          New-Item -ItemType Directory -Force (Join-Path $pkg 'BACKENDS\D3D9_X86') | Out-Null
+          New-Item -ItemType Directory -Force (Join-Path $pkg '_PTAR_UNINSTALL') | Out-Null
+          $raw=Get-Content $src -Raw
+          $marker='# PTAR_INSTALLER_EXECUTION_START'
+          $idx=$raw.IndexOf($marker)
+          if($idx -lt 0){throw 'Execution marker missing'}
+          $prefix=$raw.Substring(0,$idx)
+          $func=Join-Path $diag 'functions.ps1'
+          Set-Content -LiteralPath $func -Value $prefix -Encoding UTF8
+          . $func
+
+          $x64=Join-Path $env:WINDIR 'System32\notepad.exe'
+          $x86=Join-Path $env:WINDIR 'SysWOW64\notepad.exe'
+          if(-not(Test-Path $x64)){throw 'x64 PE source missing'}
+          if(-not(Test-Path $x86)){throw 'x86 PE source missing'}
+          if((Get-PeMachine $x64) -ne 0x8664){throw 'x64 detector mismatch'}
+          if((Get-PeMachine $x86) -ne 0x014c){throw 'x86 detector mismatch'}
+          Write-Host 'PE_MACHINE_X64=PASS'
+          Write-Host 'PE_MACHINE_X86=PASS'
+
+          Copy-Item $x64 (Join-Path $pkg 'Game64.exe')
+          Copy-Item $x86 (Join-Path $pkg 'Conviction_game.exe')
+          Copy-Item $x86 (Join-Path $pkg 'PTAR_helper.exe')
+          Copy-Item $x86 (Join-Path $pkg 'BACKENDS\D3D9_X86\should_not_be_seen.exe')
+          $c=@(Get-InstallCandidates)
+          $c | ForEach-Object { Write-Host ('CANDIDATE='+$_.Backend+'|'+$_.Path) }
+          if($c.Count -ne 2){throw ('Expected 2 candidates, got '+$c.Count)}
+          if(@($c | Where-Object {$_.Backend -eq 'D3D11 x64'}).Count -ne 1){throw 'D3D11 candidate missing'}
+          if(@($c | Where-Object {$_.Backend -eq 'D3D9 x86'}).Count -ne 1){throw 'D3D9 candidate missing'}
+          if(@($c | Where-Object {$_.Path -match 'PTAR_helper|should_not_be_seen'}).Count -ne 0){throw 'Package helper leaked into candidates'}
+          Write-Host 'MULTI_CANDIDATE_DISCOVERY=PASS'
+          Write-Host 'PACKAGE_HELPER_FILTER=PASS'
+
+          Remove-Item (Join-Path $pkg 'Game64.exe') -Force
+          $c=@(Get-InstallCandidates)
+          if($c.Count -ne 1 -or $c[0].Backend -ne 'D3D9 x86'){throw 'Single x86 candidate selection set invalid'}
+          $picked=Select-TargetExe
+          if($picked -ine (Join-Path $pkg 'Conviction_game.exe')){throw ('Auto selected wrong candidate '+$picked)}
+          Write-Host 'SINGLE_CANDIDATE_AUTOSELECT=PASS'
+
+          Remove-Item (Join-Path $pkg 'Conviction_game.exe') -Force
+          New-Item -ItemType Directory -Force (Join-Path $pkg 'Binaries\Win64') | Out-Null
+          Copy-Item $x64 (Join-Path $pkg 'Binaries\Win64\Shipping.exe')
+          $c=@(Get-InstallCandidates)
+          if($c.Count -ne 1 -or $c[0].Backend -ne 'D3D11 x64' -or $c[0].Path -notmatch 'Binaries\\Win64\\Shipping.exe$'){throw 'Binaries Win64 discovery failed'}
+          Write-Host 'COMMON_GAME_PATH_DISCOVERY=PASS'
+
+          $explicit=Resolve-RequestedExe (Join-Path $pkg 'Binaries\Win64\Shipping.exe')
+          if($explicit -notmatch 'Shipping.exe$'){throw 'Explicit target resolve failed'}
+          Write-Host 'EXPLICIT_TARGET=PASS'
+
+          Remove-Item $sandbox -Recurse -Force
+          Write-Host 'CANDIDATE_MATRIX=PASS'
