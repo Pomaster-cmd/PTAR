@@ -91,7 +91,13 @@ jobs:
           $c=@(Get-InstallCandidates)
           if($c.Count -ne 1 -or $c[0].Backend -ne 'D3D9 x86'){throw 'Single x86 candidate selection set invalid'}
           $picked=Select-TargetExe
-          if($picked -ine (Join-Path $pkg 'Conviction_game.exe')){throw ('Auto selected wrong candidate '+$picked)}
+          $expected=(Join-Path $pkg 'Conviction_game.exe')
+          Write-Host ('PICKED_TYPE='+$picked.GetType().FullName)
+          Write-Host ('PICKED_COUNT='+@($picked).Count)
+          @($picked) | ForEach-Object { Write-Host ('PICKED_ITEM=['+[string]$_+']') }
+          Write-Host ('EXPECTED_ITEM=['+$expected+']')
+          if(@($picked).Count -ne 1){throw 'Auto select returned multiple pipeline values'}
+          if([IO.Path]::GetFullPath([string]$picked).TrimEnd('\') -ine [IO.Path]::GetFullPath($expected).TrimEnd('\')){throw 'Auto selected wrong candidate'}
           Write-Host 'SINGLE_CANDIDATE_AUTOSELECT=PASS'
 
           Remove-Item (Join-Path $pkg 'Conviction_game.exe') -Force
