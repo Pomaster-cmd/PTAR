@@ -1,0 +1,101 @@
+name: LAB complete uninstaller clean v1
+
+on:
+  push:
+    branches: [lab/complete-uninstaller-clean-v1]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prove rendering cores untouched
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $base='174a07d28d5d4dde73fe3b709fd1e17d5ab3fb10'
+          $changed=@(git diff --name-only $base HEAD)
+          $changed | ForEach-Object { Write-Host ('CHANGED='+$_) }
+          $bad=@($changed | Where-Object { $_ -notlike 'lab/complete_uninstaller_clean/*' -and $_ -ne '.github/workflows/lab-complete-uninstaller-clean-v1.yml' })
+          if($bad.Count -ne 0){ throw ('Unexpected file changed: '+($bad -join ', ')) }
+          Write-Host 'D3D9_CORE_UNTOUCHED=PASS'
+          Write-Host 'D3D11_CORE_UNTOUCHED=PASS'
+
+      - name: Parse PowerShell and inspect launcher contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $ps='lab/complete_uninstaller_clean/PTAR_SAFE_UNINSTALL.ps1'
+          $tokens=$null;$errors=$null
+          [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $ps),[ref]$tokens,[ref]$errors)
+          if($errors.Count){ $errors | ForEach-Object { Write-Host $_.Message }; throw 'PowerShell parse failed' }
+          $bat=Get-Content 'lab/complete_uninstaller_clean/06-DESINSTALLER_PTAR_AUTO.bat' -Raw
+          foreach($token in @('DisableDelayedExpansion','PTAR_FINAL_CLEANUP.cmd','start "" /b "%ComSpec%"','pause >nul')){
+            if($bat -notmatch [regex]::Escape($token)){ throw ('Missing BAT token: '+$token) }
+          }
+          $safe=Get-Content $ps -Raw
+          if($safe -notmatch [regex]::Escape("if($rel -ieq '06-DESINSTALLER_PTAR_AUTO.bat')")){ throw 'Active launcher deferral missing' }
+          Write-Host 'POWERSHELL_PARSE=PASS'
+          Write-Host 'BAT_CLEANUP_CONTRACT=PASS'
+          Write-Host 'ACTIVE_LAUNCHER_DEFER=PASS'
+
+      - name: Execute real BAT uninstall in path with spaces and parentheses
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $sandbox=Join-Path $env:TEMP ('PTAR Uninstall Test (A) '+[Guid]::NewGuid().ToString('N'))
+          $root=Join-Path $sandbox 'PTAR COMPLETE (FIELD)'
+          $u=Join-Path $root '_PTAR_UNINSTALL'
+          New-Item -ItemType Directory -Force $u | Out-Null
+          Copy-Item 'lab/complete_uninstaller_clean/06-DESINSTALLER_PTAR_AUTO.bat' (Join-Path $root '06-DESINSTALLER_PTAR_AUTO.bat')
+          Copy-Item 'lab/complete_uninstaller_clean/PTAR_SAFE_UNINSTALL.ps1' (Join-Path $u 'PTAR_SAFE_UNINSTALL.ps1')
+          Set-Content -LiteralPath (Join-Path $root 'owned.txt') -Value 'owned' -Encoding ASCII
+          Set-Content -LiteralPath (Join-Path $root 'modified.txt') -Value 'original' -Encoding ASCII
+          @('# PTAR STATIC DIRS | depth | relpath','1|1|_PTAR_UNINSTALL') | Set-Content -LiteralPath (Join-Path $u 'PTAR_STATIC_DIRS.tsv') -Encoding ASCII
+
+          function H([string]$p){ (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() }
+          $rows=@(
+            '# PTAR STATIC OWNERSHIP | relpath | sha256',
+            ('1|06-DESINSTALLER_PTAR_AUTO.bat|'+(H (Join-Path $root '06-DESINSTALLER_PTAR_AUTO.bat'))),
+            ('2|owned.txt|'+(H (Join-Path $root 'owned.txt'))),
+            ('3|modified.txt|'+(H (Join-Path $root 'modified.txt'))),
+            ('4|_PTAR_UNINSTALL/PTAR_SAFE_UNINSTALL.ps1|'+(H (Join-Path $u 'PTAR_SAFE_UNINSTALL.ps1'))),
+            ('5|_PTAR_UNINSTALL/PTAR_STATIC_DIRS.tsv|'+(H (Join-Path $u 'PTAR_STATIC_DIRS.tsv')))
+          )
+          $rows | Set-Content -LiteralPath (Join-Path $u 'PTAR_STATIC_OWNERSHIP.tsv') -Encoding ASCII
+          Set-Content -LiteralPath (Join-Path $root 'modified.txt') -Value 'user changed' -Encoding ASCII
+
+          $bat=Join-Path $root '06-DESINSTALLER_PTAR_AUTO.bat'
+          $ErrorActionPreference='Continue'
+          $out=(& $env:ComSpec /d /c "echo.|call `"$bat`"" 2>&1 | Out-String)
+          $rc=$LASTEXITCODE
+          $ErrorActionPreference='Stop'
+          Write-Host '--- BAT OUTPUT START ---'
+          Write-Host $out
+          Write-Host '--- BAT OUTPUT END ---'
+          Write-Host ('BAT_RC='+$rc)
+          if($rc -ne 0){ throw ('BAT returned '+$rc) }
+          if($out -notmatch '\[PASS\] Desinstallation PTAR terminee\.'){ throw 'Top-level PASS missing' }
+          if($out -notmatch '\[DEFER\] Lanceur actif'){ throw 'Active launcher was not deferred' }
+          if($out -notmatch '\[KEEP\] Fichier modifie : modified\.txt'){ throw 'Modified-file safety output missing' }
+          foreach($bad in @('The system cannot find','Le fichier spécifié est introuvable','Le fichier specifie est introuvable','The syntax of the command is incorrect','unexpected at this time','n’est pas attendu','n''est pas attendu')){
+            if($out -match [regex]::Escape($bad)){ throw ('Spurious uninstall error visible: '+$bad) }
+          }
+          Start-Sleep -Seconds 4
+          if(Test-Path -LiteralPath (Join-Path $root 'owned.txt')){ throw 'Owned file was not removed' }
+          if(-not(Test-Path -LiteralPath (Join-Path $root 'modified.txt'))){ throw 'Modified user file was incorrectly removed' }
+          if(Test-Path -LiteralPath (Join-Path $root '06-DESINSTALLER_PTAR_AUTO.bat')){ throw 'Launcher self-cleanup failed' }
+          if(Test-Path -LiteralPath $u){ throw '_PTAR_UNINSTALL directory was not cleaned' }
+          Write-Host 'REAL_BAT_EXECUTION=PASS'
+          Write-Host 'NO_SPURIOUS_VISIBLE_ERRORS=PASS'
+          Write-Host 'SAFE_HASH_OWNERSHIP=PASS'
+          Write-Host 'DEFERRED_SELF_DELETE=PASS'
+          Remove-Item -LiteralPath $sandbox -Recurse -Force -ErrorAction SilentlyContinue
