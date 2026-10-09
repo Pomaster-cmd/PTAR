@@ -25,12 +25,20 @@ static bool ChordUp(WORD vk)
     return SendInput(2,in,sizeof(INPUT))==2;
 }
 
+static int ArgInt(LPWSTR cmd,const wchar_t* key,int defv)
+{
+    if(!cmd||!key)return defv;
+    const wchar_t* p=wcsstr(cmd,key);
+    if(!p)return defv;
+    int v=_wtoi(p+wcslen(key));
+    return v>0?v:defv;
+}
+
 int WINAPI wWinMain(HINSTANCE hi,HINSTANCE,LPWSTR cmd,int)
 {
     bool exclusive=(cmd && wcsstr(cmd,L"--exclusive")!=0);
-    int runMs=150000;
-    const wchar_t* p=cmd? wcsstr(cmd,L"--ms=") : 0;
-    if(p){int v=_wtoi(p+5); if(v>=5000)runMs=v;}
+    int runMs=ArgInt(cmd,L"--ms=",150000); if(runMs<5000)runMs=5000;
+    int fgAtMs=ArgInt(cmd,L"--fg-at=",26000); if(fgAtMs<500)fgAtMs=500;
 
     WNDCLASSW wc={}; wc.lpfnWndProc=WndProc; wc.hInstance=hi; wc.lpszClassName=L"PTAR_REAL_D3D9_E2E"; wc.hCursor=LoadCursor(0,IDC_ARROW);
     if(!RegisterClassW(&wc) && GetLastError()!=ERROR_CLASS_ALREADY_EXISTS) return 10;
@@ -71,14 +79,14 @@ int WINAPI wWinMain(HINSTANCE hi,HINSTANCE,LPWSTR cmd,int)
         if(log){fprintf(log,"CREATE_DEVICE=FAIL HR=0x%08lX EXCLUSIVE=%d\r\n",(unsigned long)hr,exclusive?1:0);fclose(log);}d3d->Release();return 13;
     }
 
-    if(log){fprintf(log,"CREATE_DEVICE=PASS TYPE=%d EXCLUSIVE=%d\r\n",(int)used,exclusive?1:0);fflush(log);}
+    if(log){fprintf(log,"CREATE_DEVICE=PASS TYPE=%d EXCLUSIVE=%d FG_AT_MS=%d\r\n",(int)used,exclusive?1:0,fgAtMs);fflush(log);}
     ULONGLONG start=GetTickCount64(); bool fgSent=false,fgKeyDown=false; unsigned presents=0, failures=0;
     MSG msg={};
     while((int)(GetTickCount64()-start)<runMs)
     {
         while(PeekMessageW(&msg,0,0,0,PM_REMOVE)){if(msg.message==WM_QUIT)goto done;TranslateMessage(&msg);DispatchMessageW(&msg);}
         ULONGLONG elapsed=GetTickCount64()-start;
-        if(!fgSent && !fgKeyDown && elapsed>=26000)
+        if(!fgSent && !fgKeyDown && elapsed>=(ULONGLONG)fgAtMs)
         {
             SetForegroundWindow(hwnd); SetFocus(hwnd);
             if(ChordDown(VK_F6))
