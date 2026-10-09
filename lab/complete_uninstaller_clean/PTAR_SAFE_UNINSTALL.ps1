@@ -3,7 +3,20 @@ $ErrorActionPreference='Stop'
 trap { Write-Host ('[FAIL] ' + $_.Exception.Message) -ForegroundColor Red; exit 1 }
 $Root=([string]$Root).Trim().Trim('"');if([string]::IsNullOrWhiteSpace($Root)){throw 'Chemin racine PTAR vide.'};$Root=[IO.Path]::GetFullPath($Root);if(-not $Root.EndsWith('\')){$Root+='\'}
 $U=Join-Path $Root '_PTAR_UNINSTALL';$Static=Join-Path $U 'PTAR_STATIC_OWNERSHIP.tsv';$Dirs=Join-Path $U 'PTAR_STATIC_DIRS.tsv';$PsExe=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-function Sha([string]$p){return (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant()}
+function Sha([string]$p){
+    $fs=[IO.File]::Open($p,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite)
+    try{
+        $sha=[Security.Cryptography.SHA256]::Create()
+        try{
+            $hash=$sha.ComputeHash($fs)
+            return ([BitConverter]::ToString($hash)).Replace('-','').ToLowerInvariant()
+        } finally {
+            $sha.Dispose()
+        }
+    } finally {
+        $fs.Dispose()
+    }
+}
 function SafeRemoveDir([string]$p){if(Test-Path -LiteralPath $p -PathType Container){try{Remove-Item -LiteralPath $p -Force -ErrorAction Stop}catch{}}}
 function Is-Running([string]$exe){$want=[IO.Path]::GetFullPath($exe);$r=$false;Get-Process -ErrorAction SilentlyContinue|ForEach-Object{try{if([IO.Path]::GetFullPath($_.MainModule.FileName) -ieq $want){$r=$true}}catch{}};return $r}
 if(-not(Test-Path -LiteralPath $Static -PathType Leaf)){throw 'Registre statique PTAR absent.'};if(-not(Test-Path -LiteralPath $Dirs -PathType Leaf)){throw 'Registre dossiers PTAR absent.'}
