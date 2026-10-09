@@ -1,0 +1,116 @@
+name: LAB D3D11 floating notice parity D3D9 20261009
+
+on:
+  push:
+    branches: [lab/d3d11-floating-notice-parity-d3d9-20261009]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prove production render and FG core untouched
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $base='4516e2359b395af38d06e2fbf3e30e67a588dc94'
+          foreach($core in @(
+            'compat/x86_d3d9/ptar_d3d9_proxy.cpp',
+            'compat/x86_d3d9/ptar_hud.h',
+            'compat/x86_d3d9/ptar_gw16i_hud_d3d9.h',
+            'compat/x86_d3d9/ptar_diag_ui_bridge.h',
+            'compat/x86_d3d9/ptar_fg_pacer.h',
+            'compat/x86_d3d9/ptar_fg_me_coarse_ps.hlsl',
+            'compat/x86_d3d9/ptar_fg_me_refine_ps.hlsl',
+            'compat/x86_d3d9/ptar_fg_interpolate_ps.hlsl'
+          )){
+            $d=git diff --name-only $base HEAD -- $core
+            if($d){throw "Production core changed unexpectedly: $core"}
+          }
+          Write-Host 'D3D9_PRODUCTION_CORE_UNTOUCHED=PASS'
+
+      - name: Validate existing in-game feedback box contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $p=Get-Content compat\x86_d3d9\ptar_gw16i_hud_d3d9.h -Raw
+          foreach($token in @(
+            'originX+440,originY+96',
+            'D3DCOLOR_XRGB(3,3,5)',
+            'case 19:',
+            'case 20:',
+            'case 21:',
+            'case 22:',
+            'case 23:',
+            'case 24:',
+            'case 25:',
+            'case 26:',
+            'case 27:',
+            'case 28:'
+          )){
+            if($p -notmatch [regex]::Escape($token)){throw "Floating-box contract token missing: $token"}
+          }
+          Write-Host 'D3D11_STYLE_BOX_GEOMETRY_440X96=PASS'
+          Write-Host 'D3D11_STYLE_BOX_BACKGROUND_030305=PASS'
+          Write-Host 'CTRL_F1_F5_NOTICE_TYPES=PASS'
+
+      - name: Compile and prove no external WinForms surface
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force artifact | Out-Null
+          $csc="$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+          & $csc /nologo /target:exe /optimize+ /platform:x64 /reference:System.Windows.Forms.dll /out:artifact\NoExternalWinFormsProbe.exe lab\d3d9_floating_notice_parity\NoExternalWinFormsProbe.cs
+          if($LASTEXITCODE -ne 0){throw 'NoExternalWinFormsProbe compile failed'}
+          & artifact\NoExternalWinFormsProbe.exe | Tee-Object artifact\NO_EXTERNAL_WINFORMS.txt
+          if($LASTEXITCODE -ne 0){throw "External HWND visibility regression rc=$LASTEXITCODE"}
+          $t=Get-Content artifact\NO_EXTERNAL_WINFORMS.txt -Raw
+          if($t -notmatch 'NO_EXTERNAL_WINFORMS_UI=PASS'){throw 'Hidden-controller PASS marker missing'}
+          Write-Host 'EXTERNAL_WINFORMS_SURFACE=DISABLED_PASS'
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      - name: Render all CTRL F1/F5 notices on real D3D9 render target
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I compat\x86_d3d9 lab\ctrl_ui_real_visibility\d3d9_diag_ui_bridge_gpu_smoke.cpp /link user32.lib /OUT:artifact\d3d9_diag_ui_bridge_gpu_smoke.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){throw 'bridge GPU smoke compile failed'}
+          & artifact\d3d9_diag_ui_bridge_gpu_smoke.exe | Tee-Object artifact\D3D9_FLOATING_NOTICE_GPU.txt
+          if($LASTEXITCODE -ne 0){throw "bridge GPU smoke failed rc=$LASTEXITCODE"}
+          $t=Get-Content artifact\D3D9_FLOATING_NOTICE_GPU.txt -Raw
+          foreach($token in @('F5_PRE','F5_FG_ACTIVE','F5_POST','F5_MEASURE','F5_DONE','F1_READY','F1_MEASURE','F1_DONE','F1_ERROR','F5_ERROR')){
+            if($t -notmatch ($token+' type=[0-9]+ changed=[1-9][0-9]{3,}')){throw "No visible D3D9 pixels for $token"}
+          }
+          if($t -notmatch 'D3D9_DIAG_UI_BRIDGE_GPU_SMOKE=PASS'){throw 'D3D9 notice GPU PASS marker missing'}
+          Write-Host 'D3D9_IN_GAME_FLOATING_NOTICES=PASS'
+
+      - name: Package lab evidence
+        shell: pwsh
+        run: |
+          @(
+            'D3D11_STYLE_FLOATING_NOTICE_PARITY=PASS',
+            'EXTERNAL_WINFORMS_UI=DISABLED',
+            'D3D9_IN_GAME_FEEDBACK_BOX=PRIMARY_UI',
+            'D3D9_BOX_SIZE=440x96',
+            'D3D9_RENDER_CORE_CHANGED=NO',
+            ('SOURCE_COMMIT='+$env:GITHUB_SHA)
+          ) | Set-Content artifact\PTAR_D3D9_FLOATING_NOTICE_PARITY.txt -Encoding ASCII
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-D3D9-FLOATING-NOTICE-PARITY-LAB
+          path: |
+            artifact/NO_EXTERNAL_WINFORMS.txt
+            artifact/D3D9_FLOATING_NOTICE_GPU.txt
+            artifact/PTAR_D3D9_FLOATING_NOTICE_PARITY.txt
