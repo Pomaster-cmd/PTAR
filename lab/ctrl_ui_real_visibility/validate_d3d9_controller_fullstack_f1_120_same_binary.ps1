@@ -45,6 +45,13 @@ $src=$src.Replace("if((Count-Match `$f1log 'DONE PRESENTSHED60') -ne 1)","if((Co
 $src=$src.Replace("'F1_PRESENTSHED60=PASS'","'F1_PRESENTSHED120=PASS'")
 $src=$src.Replace("'F1_60=PASS'","'F1_120=PASS'")
 
+# The HUD bridge encodes the selected F1 mode in A: 0=60 s, 1=120 s.
+# The generic 60 s harness expects a=0; this 120 s variant must require a=1.
+$old="'EMIT type=26 a=0 .*reason=F1_DONE'"
+$new="'EMIT type=26 a=1 .*reason=F1_DONE'"
+if(([regex]::Matches($src,[regex]::Escape($old))).Count -ne 1){throw 'F1 bridge 120-mode assertion patch point mismatch'}
+$src=$src.Replace($old,$new)
+
 # Make the final markers unambiguous so the 60 s and 120 s gates cannot be confused.
 $src=$src.Replace("PTAR_D3D9_CONTROLLER_FULLSTACK=PASS","PTAR_D3D9_CONTROLLER_FULLSTACK_F1_120=PASS")
 $src=$src.Replace("PTAR_D3D9_SAME_BINARY_FULLSTACK=PASS","PTAR_D3D9_SAME_BINARY_FULLSTACK_F1_120=PASS")
@@ -52,5 +59,5 @@ $src=$src.Replace("PTAR_D3D9_SAME_BINARY_FULLSTACK=PASS","PTAR_D3D9_SAME_BINARY_
 
 & (Join-Path (Get-Location) $inner)
 if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
-Write-Host 'PTAR_D3D9_CONTROLLER_FULLSTACK_F1_120_V1=PASS'
+Write-Host 'PTAR_D3D9_CONTROLLER_FULLSTACK_F1_120_V2=PASS'
 exit 0
