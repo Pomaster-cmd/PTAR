@@ -32,12 +32,13 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          $src='lab/d3d9_visual_feedback/VisualFeedbackProbe.cs'
+          $src=(Resolve-Path 'lab/d3d9_visual_feedback/VisualFeedbackProbe.cs').Path
           $c32="$env:WINDIR\Microsoft.NET\Framework\v4.0.30319\csc.exe"
           $c64="$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
-          & $c32 /nologo /target:winexe /optimize+ /platform:x86 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /out:probe_x86.exe $src
+          $x86=Join-Path $PWD 'probe_x86.exe';$x64=Join-Path $PWD 'probe_x64.exe'
+          & $c32 /nologo /target:winexe /optimize+ /platform:x86 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll (('/out:{0}' -f $x86)) $src
           if($LASTEXITCODE -ne 0){throw 'x86 compile failed'}
-          & $c64 /nologo /target:winexe /optimize+ /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /out:probe_x64.exe $src
+          & $c64 /nologo /target:winexe /optimize+ /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll (('/out:{0}' -f $x64)) $src
           if($LASTEXITCODE -ne 0){throw 'x64 compile failed'}
           Write-Host 'COMPILE_X86=PASS'
           Write-Host 'COMPILE_X64=PASS'
