@@ -66,19 +66,27 @@ try
         if($startup -notmatch 'CREATEDEVICE_PP[^\r\n]*windowed=1'){throw 'windowed mode mismatch'}
     }
     if($startup -notmatch 'PTAR_ACTIVE'){throw 'PTAR runtime did not reach active state'}
-    # HOOK_DEVICE_DONE can be logged immediately before the first HookPresent.
-    # Wait independently for PRESENT_REAL instead of requiring it in the same
-    # snapshot, otherwise a fast runner can produce a false race failure.
     $presentStartup=Wait-Text $runtimeLog 'stage=PRESENT_REAL' 10
     if($presentStartup -notmatch 'stage=PRESENT_REAL'){throw 'actual HookPresent did not reach PRESENT_REAL'}
     if($p.HasExited){throw "real D3D9 game exited early code=$($p.ExitCode)"}
 
+    # A proxy process correctly contains TWO d3d9.dll modules: the game-local
+    # PTAR proxy and the real system D3D9 loaded by that proxy.  The previous
+    # assertion that there must be only one was invalid.  Require exactly one
+    # module at the candidate path, and record all D3D9 module paths.
     $mods=@($p.Modules | Where-Object {$_.ModuleName -ieq 'd3d9.dll'})
-    if($mods.Count -ne 1){throw "expected exactly one d3d9.dll module, got $($mods.Count)"}
-    $loaded=[IO.Path]::GetFullPath($mods[0].FileName)
     $expected=[IO.Path]::GetFullPath((Join-Path $root 'd3d9.dll'))
-    if(-not [string]::Equals($loaded,$expected,[StringComparison]::OrdinalIgnoreCase)){throw "system/other d3d9 loaded instead of candidate: $loaded"}
-    Set-Content build_x86\REAL_GAME_MODULE.txt ("LOADED_D3D9="+$loaded) -Encoding ASCII
+    $candidate=@($mods | Where-Object {
+        try {[string]::Equals([IO.Path]::GetFullPath($_.FileName),$expected,[StringComparison]::OrdinalIgnoreCase)} catch {$false}
+    })
+    if($candidate.Count -ne 1)
+    {
+        $paths=($mods | ForEach-Object {try{$_.FileName}catch{'<unreadable>'}}) -join ' | '
+        throw "candidate d3d9.dll module count=$($candidate.Count); all=$paths"
+    }
+    $moduleLines=@('EXPECTED_PROXY='+$expected,'D3D9_MODULE_COUNT='+$mods.Count)
+    foreach($m in $mods){try{$moduleLines+=('MODULE='+[IO.Path]::GetFullPath($m.FileName))}catch{$moduleLines+='MODULE=<unreadable>'}}
+    $moduleLines | Set-Content build_x86\REAL_GAME_MODULE.txt -Encoding ASCII
 
     & artifact\ptar_rawcadence3_d3d9_autostart.exe 20 --autostart
     if($LASTEXITCODE -ne 0){throw "real PRE_FG verifier failed rc=$LASTEXITCODE"}
