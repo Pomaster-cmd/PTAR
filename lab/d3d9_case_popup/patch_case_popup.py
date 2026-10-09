@@ -2,7 +2,9 @@
 from pathlib import Path
 
 p = Path('compat/x86_d3d9/ptar_gw16i_hud_d3d9.h')
-s = p.read_text(encoding='utf-8')
+raw = p.read_bytes()
+eol = '\r\n' if b'\r\n' in raw else '\n'
+s = raw.decode('utf-8').replace('\r\n','\n')
 
 anchor = '''static void PtGw16FeedbackPanel(\n'''
 if s.count(anchor) != 1:
@@ -58,7 +60,8 @@ for tok in (
     if tok not in s:
         raise SystemExit('POST_FAIL '+tok)
 
-p.write_text(s, encoding='utf-8', newline='\n')
+out = s if eol == '\n' else s.replace('\n','\r\n')
+p.write_bytes(out.encode('utf-8'))
 print('D3D9_CASE_POPUP_PATCH=PASS')
 print('FOOTPRINT=440x96')
 print('OUTER_FRAME=RGB_86_98_116')
@@ -66,3 +69,4 @@ print('CELLS=2')
 print('CELL1=4,4..436,44')
 print('CELL2=4,52..436,92')
 print('LEGACY_TYPES_4_18_POSITION=UNCHANGED')
+print('SOURCE_EOL_PRESERVED='+('CRLF' if eol=='\r\n' else 'LF'))
