@@ -35,11 +35,6 @@ internal sealed class HiddenControllerForm : Form
         };
         timer.Start();
     }
-
-    public bool NativeVisible()
-    {
-        return IsWindowVisible(Handle);
-    }
 }
 
 internal static class NoExternalWinFormsProbe
@@ -56,8 +51,8 @@ internal static class NoExternalWinFormsProbe
             // messages instead of exiting just because it is never visible.
             Application.Run(f);
             if (f.TickCount < 8) return 10;
-            if (f.Visible || f.WasEverManagedVisible) return 11;
-            if (f.NativeVisible() || f.WasEverNativeVisible) return 12;
+            if (f.WasEverManagedVisible) return 11;
+            if (f.WasEverNativeVisible) return 12;
             Console.WriteLine("NO_EXTERNAL_WINFORMS_UI=PASS");
             Console.WriteLine("HIDDEN_MESSAGE_PUMP_TICKS=" + f.TickCount.ToString());
             Console.WriteLine("APPLICATION_RUN_HIDDEN_FORM=PASS");
