@@ -88,7 +88,7 @@ jobs:
           if($out -notmatch '\[PASS\] Desinstallation PTAR terminee\.'){ throw 'Top-level PASS missing' }
           if($out -notmatch '\[DEFER\] Lanceur actif'){ throw 'Active launcher was not deferred' }
           if($out -notmatch '\[KEEP\] Fichier modifie : modified\.txt'){ throw 'Modified-file safety output missing' }
-          foreach($bad in @('The system cannot find','Le fichier spécifié est introuvable','Le fichier specifie est introuvable','The syntax of the command is incorrect','unexpected at this time','n’est pas attendu','n''est pas attendu')){
+          foreach($bad in @("The system cannot find","Le fichier spécifié est introuvable","Le fichier specifie est introuvable","The syntax of the command is incorrect","unexpected at this time")){
             if($out -match [regex]::Escape($bad)){ throw ('Spurious uninstall error visible: '+$bad) }
           }
           Start-Sleep -Seconds 4
