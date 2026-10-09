@@ -1,0 +1,222 @@
+name: LAB D3D9 boxed case popup UI 20261009
+
+on:
+  push:
+    branches: [lab/d3d9-case-popup-ui-20261009]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prove scope before patch
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $base='0314bdb4efaa21002955c7c518655bccd6ea581e'
+          foreach($core in @(
+            'compat/x86_d3d9/ptar_d3d9_proxy.cpp',
+            'compat/x86_d3d9/ptar_hud.h',
+            'compat/x86_d3d9/ptar_gw16i_hud_d3d9.h',
+            'compat/x86_d3d9/ptar_diag_ui_bridge.h',
+            'compat/x86_d3d9/ptar_fg_pacer.h',
+            'compat/x86_d3d9/ptar_fg_me_coarse_ps.hlsl',
+            'compat/x86_d3d9/ptar_fg_me_refine_ps.hlsl',
+            'compat/x86_d3d9/ptar_fg_interpolate_ps.hlsl'
+          )){
+            $d=git diff --name-only $base HEAD -- $core
+            if($d){throw "Production core changed before controlled patch: $core"}
+          }
+          Write-Host 'PREPATCH_PRODUCTION_CORE=UNCHANGED_PASS'
+
+      - name: Apply tightly locked case-popup patch
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Copy-Item compat\x86_d3d9\ptar_gw16i_hud_d3d9.h artifact_before.h
+          python lab\d3d9_case_popup\patch_case_popup.py | Tee-Object patch_case_popup.txt
+          if($LASTEXITCODE -ne 0){throw 'case popup patch failed'}
+          $r=Get-Content patch_case_popup.txt -Raw
+          foreach($token in @('D3D9_CASE_POPUP_PATCH=PASS','FOOTPRINT=440x96','CELLS=2','LEGACY_TYPES_4_18_POSITION=UNCHANGED')){
+            if($r -notmatch [regex]::Escape($token)){throw "patch marker missing: $token"}
+          }
+
+      - name: Prove legacy notice cases stayed source-identical
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $before=Get-Content artifact_before.h -Raw
+          $after=Get-Content compat\x86_d3d9\ptar_gw16i_hud_d3d9.h -Raw
+          $rx='(?s)        case 4:.*?        case 18:.*?            break;'
+          $a=[regex]::Match($before,$rx).Value
+          $b=[regex]::Match($after,$rx).Value
+          if(-not $a -or -not $b){throw 'legacy type 4..18 extraction failed'}
+          if($a -cne $b){throw 'legacy type 4..18 code changed'}
+          foreach($token in @('"NV ON"','"NV OFF"','"F8 STATUS"')){
+            if($b -notmatch [regex]::Escape($token)){throw "legacy activation token missing: $token"}
+          }
+          Write-Host 'LEGACY_D3D11_DERIVED_NOTICE_TYPES_4_18=BYTE_TEXT_IDENTICAL_PASS'
+
+      - name: Compile and prove controllers never surface external WinForms
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force artifact | Out-Null
+          $csc="$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+          & $csc /nologo /target:exe /optimize+ /platform:x64 /reference:System.Windows.Forms.dll /out:artifact\NoExternalWinFormsProbe.exe lab\d3d9_floating_notice_parity\NoExternalWinFormsProbe.cs
+          if($LASTEXITCODE -ne 0){throw 'NoExternalWinFormsProbe compile failed'}
+          & artifact\NoExternalWinFormsProbe.exe | Tee-Object artifact\NO_EXTERNAL_WINFORMS.txt
+          if($LASTEXITCODE -ne 0){throw "hidden WinForms probe failed rc=$LASTEXITCODE"}
+          $t=Get-Content artifact\NO_EXTERNAL_WINFORMS.txt -Raw
+          foreach($token in @('NO_EXTERNAL_WINFORMS_UI=PASS','HIDDEN_MESSAGE_PUMP_TICKS=8','APPLICATION_RUN_HIDDEN_FORM=PASS')){
+            if($t -notmatch [regex]::Escape($token)){throw "hidden controller marker missing: $token"}
+          }
+          Write-Host 'EXTERNAL_WINFORMS_SURFACE=DISABLED_PASS'
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      - name: Locate FXC and compile production shader headers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force build_x86 | Out-Null
+          $fxc=Get-Command fxc.exe -ErrorAction SilentlyContinue
+          if(-not $fxc){
+            $roots=@("$env:ProgramFiles(x86)\Windows Kits\10\bin","$env:ProgramFiles(x86)\Windows Kits\8.1\bin")
+            foreach($root in $roots){
+              if(Test-Path $root){
+                $fxc=Get-ChildItem $root -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1
+                if($fxc){break}
+              }
+            }
+          }
+          if(-not $fxc){throw 'fxc.exe not found'}
+          $fxcPath=if($fxc.Path){$fxc.Path}else{$fxc.FullName}
+          $jobs=@(
+            @('ps_3_0','main','ptar_ps_bytecode.h','g_ptarPs','compat\x86_d3d9\ptar_moe_d3d9_ps.hlsl'),
+            @('ps_3_0','main','ptar_universal_ps_bytecode.h','g_ptarUniversalPs','compat\x86_d3d9\ptar_moe_universal_d3d9_ps.hlsl'),
+            @('ps_2_0','main','ptar_bilinear_ps_bytecode.h','g_ptarBilinearPs','compat\x86_d3d9\ptar_bilinear_ref_ps.hlsl'),
+            @('ps_3_0','main','ptar_gw16i_hud_ps_bytecode.h','g_ptarGw16iHudPs','compat\x86_d3d9\ptar_gw16i_hud_ps.hlsl'),
+            @('ps_3_0','main','ptar_gw16i_feedback_ps_bytecode.h','g_ptarGw16iFeedbackPs','compat\x86_d3d9\ptar_gw16i_feedback_ps.hlsl'),
+            @('ps_3_0','main','ptar_fg_me_coarse_ps_bytecode.h','g_ptarFgMeCoarsePs','compat\x86_d3d9\ptar_fg_me_coarse_ps.hlsl'),
+            @('ps_3_0','main','ptar_fg_me_refine_ps_bytecode.h','g_ptarFgMeRefinePs','compat\x86_d3d9\ptar_fg_me_refine_ps.hlsl'),
+            @('ps_3_0','main','ptar_fg_interpolate_ps_bytecode.h','g_ptarFgInterpolatePs','compat\x86_d3d9\ptar_fg_interpolate_ps.hlsl')
+          )
+          foreach($j in $jobs){
+            & $fxcPath /nologo /T $j[0] /E $j[1] /O3 /Fh ("build_x86\"+$j[2]) /Vn $j[3] $j[4]
+            if($LASTEXITCODE -ne 0){throw "FXC failed: $($j[4])"}
+          }
+          Write-Host "FXC=$fxcPath"
+
+      - name: GPU prove explicit two-cell case topology
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I compat\x86_d3d9 lab\d3d9_case_popup\d3d9_case_popup_gpu_smoke.cpp /link user32.lib /OUT:artifact\d3d9_case_popup_gpu_smoke.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){throw 'case popup GPU smoke compile failed'}
+          & artifact\d3d9_case_popup_gpu_smoke.exe | Tee-Object artifact\D3D9_CASE_POPUP_GPU.txt
+          if($LASTEXITCODE -ne 0){throw "case popup GPU smoke failed rc=$LASTEXITCODE"}
+          $t=Get-Content artifact\D3D9_CASE_POPUP_GPU.txt -Raw
+          foreach($token in @(
+            'F5_PRE type=19','F5_FG_ACTIVE type=20','F5_POST type=21','F5_MEASURE type=22','F5_DONE type=23',
+            'F1_READY_60 type=24 a=0','F1_READY_120 type=24 a=1','F1_MEASURE_60 type=25 a=0','F1_MEASURE_120 type=25 a=1',
+            'F1_DONE type=26','F1_ERROR type=27','F5_ERROR type=28','D3D9_CASE_POPUP_GPU_TOPOLOGY=PASS',
+            'CASE_FOOTPRINT=440x96 OUTER_FRAME=YES INNER_CELLS=2 ROWS=2'
+          )){
+            if($t -notmatch [regex]::Escape($token)){throw "GPU topology marker missing: $token"}
+          }
+          if(-not(Test-Path artifact\F5_PRE_CASE.bmp)){throw 'F5 snapshot missing'}
+          if(-not(Test-Path artifact\F1_READY_120_CASE.bmp)){throw 'F1 snapshot missing'}
+          Write-Host 'BOXED_CASE_PIXEL_TOPOLOGY=PASS'
+
+      - name: Build actual 32-bit D3D9 runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /LD /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I build_x86 compat\x86_d3d9\ptar_d3d9_proxy.cpp /link user32.lib /DEF:compat\x86_d3d9\d3d9_proxy.def /OUT:artifact\d3d9.dll /SUBSYSTEM:WINDOWS,6.03
+          if($LASTEXITCODE -ne 0){throw 'd3d9.dll compile failed'}
+          if(-not(Test-Path artifact\d3d9.dll)){throw 'd3d9.dll missing'}
+
+      - name: Static PE export dependency gates
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          dumpbin /headers artifact\d3d9.dll | Tee-Object artifact\D3D9_HEADERS.txt
+          dumpbin /exports artifact\d3d9.dll | Tee-Object artifact\D3D9_EXPORTS.txt
+          dumpbin /dependents artifact\d3d9.dll | Tee-Object artifact\D3D9_DEPENDENTS.txt
+          $h=Get-Content artifact\D3D9_HEADERS.txt -Raw
+          $e=Get-Content artifact\D3D9_EXPORTS.txt -Raw
+          $d=Get-Content artifact\D3D9_DEPENDENTS.txt -Raw
+          if($h -notmatch '14C machine \(x86\)'){throw 'PE is not I386'}
+          foreach($n in @('Direct3DCreate9','Direct3DCreate9Ex','D3DPERF_BeginEvent','D3DPERF_EndEvent')){
+            if($e -notmatch [regex]::Escape($n)){throw "missing export $n"}
+          }
+          foreach($bad in @('VCRUNTIME','MSVCP','UCRTBASE','API-MS-WIN-CRT')){
+            if($d -match $bad){throw "forbidden runtime dependency $bad"}
+          }
+          $sha=(Get-FileHash artifact\d3d9.dll -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "D3D9_DLL_SHA256=$sha"
+          Write-Host 'WIN81_X86_STATIC_RUNTIME_GATE=PASS'
+
+      - name: Prove FG and pacing source unchanged
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $base='0314bdb4efaa21002955c7c518655bccd6ea581e'
+          foreach($f in @(
+            'compat/x86_d3d9/ptar_fg_pacer.h',
+            'compat/x86_d3d9/ptar_fg_me_coarse_ps.hlsl',
+            'compat/x86_d3d9/ptar_fg_me_refine_ps.hlsl',
+            'compat/x86_d3d9/ptar_fg_interpolate_ps.hlsl',
+            'compat/x86_d3d9/ptar_d3d9_proxy.cpp',
+            'compat/x86_d3d9/ptar_hud.h',
+            'compat/x86_d3d9/ptar_diag_ui_bridge.h'
+          )){
+            $baseHash=(git show "$base`:$f" | git hash-object --stdin).Trim()
+            $nowHash=(git hash-object $f).Trim()
+            if($baseHash -ne $nowHash){throw "non-UI production source changed: $f"}
+          }
+          Write-Host 'FG_PACER_SHADERS_AND_PROXY_SOURCE=UNCHANGED_PASS'
+
+      - name: Package evidence
+        shell: pwsh
+        run: |
+          $dll=(Get-FileHash artifact\d3d9.dll -Algorithm SHA256).Hash.ToLowerInvariant()
+          @(
+            'D3D9_DIAGNOSTIC_POPUP_PRESENTATION=EXPLICIT_BOXED_CASES',
+            'D3D9_CASE_SIZE=440x96',
+            'D3D9_CASE_OUTER_FRAME=RGB_86_98_116',
+            'D3D9_CASE_INNER_CELLS=2',
+            'D3D9_CASE_ROWS=2',
+            'D3D9_EXTERNAL_WINFORMS_UI=DISABLED',
+            'D3D9_LEGACY_NOTICE_TYPES_4_18=UNCHANGED',
+            'D3D9_FG_PACER_SHADERS_CHANGED=NO',
+            ('D3D9_DLL_SHA256='+$dll),
+            ('SOURCE_COMMIT='+$env:GITHUB_SHA)
+          ) | Set-Content artifact\PTAR_D3D9_CASE_POPUP_VALIDATION.txt -Encoding ASCII
+          Copy-Item patch_case_popup.txt artifact\PATCH_CASE_POPUP.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-D3D9-CASE-POPUP-UI-VALIDATED
+          path: |
+            artifact/d3d9.dll
+            artifact/PTAR_D3D9_CASE_POPUP_VALIDATION.txt
+            artifact/PATCH_CASE_POPUP.txt
+            artifact/NO_EXTERNAL_WINFORMS.txt
+            artifact/D3D9_CASE_POPUP_GPU.txt
+            artifact/F5_PRE_CASE.bmp
+            artifact/F1_READY_120_CASE.bmp
+            artifact/D3D9_HEADERS.txt
+            artifact/D3D9_EXPORTS.txt
+            artifact/D3D9_DEPENDENTS.txt
