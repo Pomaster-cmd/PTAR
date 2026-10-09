@@ -38,7 +38,7 @@ jobs:
           [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $ps),[ref]$tokens,[ref]$errors)
           if($errors.Count){ $errors | ForEach-Object { Write-Host $_.Message }; throw 'PowerShell parse failed' }
           $bat=Get-Content 'lab/complete_uninstaller_clean/06-DESINSTALLER_PTAR_AUTO.bat' -Raw
-          foreach($token in @('DisableDelayedExpansion','PTAR_FINAL_CLEANUP.cmd','start "" /b "%ComSpec%"','pause >nul')){
+          foreach($token in @('DisableDelayedExpansion','PTAR_FINAL_CLEANUP.cmd','PACKAGE_SHA256SUMS.txt','start "" /b "%ComSpec%"','pause >nul')){
             if($bat -notmatch [regex]::Escape($token)){ throw ('Missing BAT token: '+$token) }
           }
           $safe=Get-Content $ps -Raw
@@ -61,6 +61,7 @@ jobs:
           Copy-Item 'lab/complete_uninstaller_clean/PTAR_SAFE_UNINSTALL.ps1' (Join-Path $u 'PTAR_SAFE_UNINSTALL.ps1')
           Set-Content -LiteralPath (Join-Path $root 'owned.txt') -Value 'owned' -Encoding ASCII
           Set-Content -LiteralPath (Join-Path $root 'modified.txt') -Value 'original' -Encoding ASCII
+          Set-Content -LiteralPath (Join-Path $root 'PACKAGE_SHA256SUMS.txt') -Value 'synthetic package checksum manifest' -Encoding ASCII
           @('# PTAR STATIC DIRS | depth | relpath','1|1|_PTAR_UNINSTALL') | Set-Content -LiteralPath (Join-Path $u 'PTAR_STATIC_DIRS.tsv') -Encoding ASCII
 
           function Get-TestHash([string]$p){ (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() }
@@ -94,10 +95,12 @@ jobs:
           Start-Sleep -Seconds 4
           if(Test-Path -LiteralPath (Join-Path $root 'owned.txt')){ throw 'Owned file was not removed' }
           if(-not(Test-Path -LiteralPath (Join-Path $root 'modified.txt'))){ throw 'Modified user file was incorrectly removed' }
+          if(Test-Path -LiteralPath (Join-Path $root 'PACKAGE_SHA256SUMS.txt')){ throw 'Checksum manifest deferred cleanup failed' }
           if(Test-Path -LiteralPath (Join-Path $root '06-DESINSTALLER_PTAR_AUTO.bat')){ throw 'Launcher self-cleanup failed' }
           if(Test-Path -LiteralPath $u){ throw '_PTAR_UNINSTALL directory was not cleaned' }
           Write-Host 'REAL_BAT_EXECUTION=PASS'
           Write-Host 'NO_SPURIOUS_VISIBLE_ERRORS=PASS'
           Write-Host 'SAFE_HASH_OWNERSHIP=PASS'
+          Write-Host 'DEFERRED_CHECKSUM_DELETE=PASS'
           Write-Host 'DEFERRED_SELF_DELETE=PASS'
           Remove-Item -LiteralPath $sandbox -Recurse -Force -ErrorAction SilentlyContinue
