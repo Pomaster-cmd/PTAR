@@ -54,7 +54,7 @@ static void PtD3D9DiagEnsureFrequency()
     if(!QueryPerformanceFrequency(&f) || f.QuadPart<=0)
         f.QuadPart=1;
     InterlockedCompareExchange64(
-        const_cast<volatile LONGLONG*>(&PTAR_D3D9_DIAG_STATE.qpcFrequency),
+        &PTAR_D3D9_DIAG_STATE.qpcFrequency,
         f.QuadPart,
         0);
 }
