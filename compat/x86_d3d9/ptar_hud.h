@@ -4,6 +4,7 @@
 #include <d3d9.h>
 #include "ptar_runtime_metrics.h"
 #include "ptar_capture.h"
+#include "ptar_diag_ui_bridge.h"
 
 // State/input side of the GW16I HUD contract. Rendering is performed by the
 // exact production-HUD shader port in ptar_gw16i_hud_ps.hlsl and
@@ -63,6 +64,10 @@ static void PtHudLoadConfig(HMODULE selfModule)
         return;
     g_ptarHudConfigLoaded=true;
 
+    // Initialize the fullscreen-safe controller -> in-game HUD bridge from
+    // the same module path as the runtime. Failure is intentionally fail-open.
+    PtDiagUiInit(selfModule);
+
     wchar_t dllPath[MAX_PATH]={0};
     DWORD n=GetModuleFileNameW(selfModule,dllPath,MAX_PATH);
     if(!n || n>=MAX_PATH)
@@ -118,12 +123,17 @@ static bool PtHudFeedbackActive()
 
 static int PtHudFeedbackType()
 {
+    // External CTRL+F1/F5 diagnostic notices take priority because this path
+    // is rendered inside the actual D3D9 backbuffer and remains visible in
+    // fullscreen/exclusive modes where a separate WinForms HWND may not.
+    if(PtDiagUiActive())
+        return PtDiagUiType();
     return PtHudFeedbackActive()?g_ptarHudFeedbackType:0;
 }
 
-static int PtHudFeedbackArgA(){return g_ptarHudFeedbackA;}
-static int PtHudFeedbackArgB(){return g_ptarHudFeedbackB;}
-static int PtHudFeedbackArgC(){return g_ptarHudFeedbackC;}
+static int PtHudFeedbackArgA(){return PtDiagUiActive()?PtDiagUiArgA():g_ptarHudFeedbackA;}
+static int PtHudFeedbackArgB(){return PtDiagUiActive()?PtDiagUiArgB():g_ptarHudFeedbackB;}
+static int PtHudFeedbackArgC(){return PtDiagUiActive()?PtDiagUiArgC():g_ptarHudFeedbackC;}
 
 static void PtHudStateFeedback(int state)
 {
@@ -286,6 +296,7 @@ static void PtHudUpdateInput()
 
 static void PtHudFrameTick()
 {
+    PtDiagUiTick();
     PtHudUpdateInput();
     PtHudRecordRealFrame();
 }
