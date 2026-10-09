@@ -1,5 +1,6 @@
 param([Parameter(Mandatory=$true)][ValidateSet('PRE_FG','FG_ACTIVE','POST_FG')][string]$Label)
 $ErrorActionPreference='Stop'
+function Get-Sha256([string]$Path){$sha=[Security.Cryptography.SHA256]::Create();try{$fs=[IO.File]::OpenRead($Path);try{$bytes=$sha.ComputeHash($fs)}finally{$fs.Dispose()}}finally{$sha.Dispose()};return ([BitConverter]::ToString($bytes).Replace('-','').ToLowerInvariant())}
 $D9=Split-Path -Parent $PSScriptRoot
 $PsExe=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 $expected='20e7f725d9aa391de43e11c0d0496135b6fa89347e6defad9b0481137b553846'
@@ -9,14 +10,13 @@ $gameExe=(Get-Content -LiteralPath $targetFile -TotalCount 1).Trim().Trim([char]
 if(-not(Test-Path -LiteralPath $gameExe -PathType Leaf)){exit 21}
 $g=Split-Path -Parent $gameExe
 $runtime=Join-Path $g 'd3d9.dll';if(-not(Test-Path -LiteralPath $runtime -PathType Leaf)){exit 22}
-$got=(Get-FileHash -LiteralPath $runtime -Algorithm SHA256).Hash.ToLowerInvariant();if($got -ne $expected){exit 23}
+$got=Get-Sha256 $runtime;if($got -ne $expected){exit 23}
 $log=Join-Path $g 'PTAR_X86_D3D9.log'
 $env:PTAR_GAME_ROOT=$g;$env:PTAR_TARGET_EXE=$gameExe
 $stamp=Get-Date -Format 'yyyyMMdd_HHmmss_fff';$session=[string]$env:PTAR_RAWCOMPARE3_SESSION_ID;if([string]::IsNullOrWhiteSpace($session)){$session='NOSESSION'};$prefix='PTAR_RAWCOMPARE_'+$session+'_'+$Label+'_'+$stamp
 $metrics=Join-Path $g ($prefix+'_METRICS.txt')
 if($Label -eq 'FG_ACTIVE'){
-  $helper=Join-Path $PSScriptRoot 'set_vblank_diagnostics.ps1';$vsrc=Join-Path $PSScriptRoot 'visible_pacing\PTARVisiblePacingVerifier.cs';$an=Join-Path $PSScriptRoot 'analyze_raw_visible.ps1'
-  $state=1;$ini=Join-Path $g 'win81_nis.ini'
+  $state=1;$ini=Join-Path $g 'win81_nis.ini';$an=Join-Path $PSScriptRoot 'analyze_raw_visible.ps1'
   if(Test-Path -LiteralPath $ini -PathType Leaf){
     if(-not ('PTARD3D9ReadIni' -as [type])){Add-Type @"
 using System; using System.Runtime.InteropServices;
