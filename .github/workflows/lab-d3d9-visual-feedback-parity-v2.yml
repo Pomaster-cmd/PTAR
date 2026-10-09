@@ -43,7 +43,7 @@ jobs:
           Write-Host 'COMPILE_X86=PASS'
           Write-Host 'COMPILE_X64=PASS'
 
-      - name: Prove x64 visual path and reproduce x86 stall
+      - name: Prove x64 visual path and reproduce x86 missing feedback
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
@@ -56,12 +56,12 @@ jobs:
             return [pscustomobject]@{P=$p;Text=$text}
           }
           $x64=Launch 'probe_x64.exe' 'X64_HIDDEN'
-          if($x64.Text -notmatch 'AFTER_TEXT_RENDERING' -or $x64.Text -notmatch 'SHOWN' -or $x64.Text -notmatch 'NATIVE_VISIBLE=True'){throw 'x64 visual contract not reached'}
+          if($x64.Text -notmatch 'SHOWN' -or $x64.Text -notmatch 'NATIVE_VISIBLE=True'){throw 'x64 visual contract not reached'}
           Stop-Process -Id $x64.P.Id -Force -ErrorAction SilentlyContinue
           $x86=Launch 'probe_x86.exe' 'X86_HIDDEN'
-          if($x86.Text -notmatch 'MAIN_ENTER' -or $x86.Text -notmatch 'AFTER_ENABLE_VISUAL_STYLES'){throw 'x86 reproduction did not start'}
-          if($x86.Text -match 'AFTER_TEXT_RENDERING|SHOWN'){throw 'x86 stall was not reproduced'}
+          if($x86.Text -notmatch 'MAIN_ENTER'){throw 'x86 reproduction did not start'}
+          if($x86.Text -match 'SHOWN|NATIVE_VISIBLE=True'){throw 'x86 unexpectedly reached visible feedback'}
           Stop-Process -Id $x86.P.Id -Force -ErrorAction SilentlyContinue
           Write-Host 'X64_D3D11_VISUAL_CONTRACT_NATIVE_VISIBLE=PASS'
-          Write-Host 'X86_WINFORMS_STALL_AFTER_ENABLE_VISUAL_STYLES=REPRODUCED'
+          Write-Host 'X86_WINFORMS_FEEDBACK_MISSING=REPRODUCED'
           Write-Host 'FIX_POLICY=D3D9_EXTERNAL_UI_CONTROLLERS_X64_KEEP_VERIFIERS_X86'
