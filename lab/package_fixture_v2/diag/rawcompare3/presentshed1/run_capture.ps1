@@ -1,11 +1,12 @@
 param([ValidateSet('PRESENTSHED60','PRESENTSHED120')][string]$Mode='PRESENTSHED60')
 $ErrorActionPreference='Stop'
+function Get-Sha256([string]$Path){$sha=[Security.Cryptography.SHA256]::Create();try{$fs=[IO.File]::OpenRead($Path);try{$bytes=$sha.ComputeHash($fs)}finally{$fs.Dispose()}}finally{$sha.Dispose()};return ([BitConverter]::ToString($bytes).Replace('-','').ToLowerInvariant())}
 $Tools=$PSScriptRoot;$RawCompare3=Split-Path -Parent $Tools;$Diag=Split-Path -Parent $RawCompare3;$D9=Split-Path -Parent $Diag
 $expected='20e7f725d9aa391de43e11c0d0496135b6fa89347e6defad9b0481137b553846'
 function Fail([int]$Code,[string]$Message){Write-Host ('[FAIL] '+$Message);exit $Code}
 $targetFile=Join-Path $D9 'PTAR_X86_D3D9_LAST_TARGET.txt';if(-not(Test-Path -LiteralPath $targetFile -PathType Leaf)){Fail 20 'Installation D3D9 non memorisee.'}
 $gameExe=(Get-Content -LiteralPath $targetFile -TotalCount 1).Trim().Trim([char]0xFEFF).Trim('"');if(-not(Test-Path -LiteralPath $gameExe -PathType Leaf)){Fail 21 'Cible jeu invalide.'};$g=Split-Path -Parent $gameExe
-$runtime=Join-Path $g 'd3d9.dll';if(-not(Test-Path -LiteralPath $runtime -PathType Leaf)){Fail 22 'd3d9.dll actif absent.'};$got=(Get-FileHash -LiteralPath $runtime -Algorithm SHA256).Hash.ToLowerInvariant();if($got -ne $expected){Fail 23 ('D3D9 Legacy Repair V1 requis. Runtime actif: '+$got)};$variant='D3D9_LEGACY_REPAIR_V1_D3D11_DIAG_PORT_V2'
+$runtime=Join-Path $g 'd3d9.dll';if(-not(Test-Path -LiteralPath $runtime -PathType Leaf)){Fail 22 'd3d9.dll actif absent.'};$got=Get-Sha256 $runtime;if($got -ne $expected){Fail 23 ('D3D9 Legacy Repair V1 requis. Runtime actif: '+$got)};$variant='D3D9_LEGACY_REPAIR_V1_D3D11_DIAG_PORT_V2'
 $ini=Join-Path $g 'win81_nis.ini';if(Test-Path -LiteralPath $ini -PathType Leaf){if(-not ('PTARD3D9ReadIniF1' -as [type])){Add-Type @"
 using System; using System.Runtime.InteropServices;
 public static class PTARD3D9ReadIniF1 { [DllImport("kernel32.dll",CharSet=CharSet.Unicode,EntryPoint="GetPrivateProfileIntW")] public static extern int GetPrivateProfileInt(string app,string key,int def,string fileName); }
