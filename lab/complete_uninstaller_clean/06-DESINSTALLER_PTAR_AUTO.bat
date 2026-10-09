@@ -53,6 +53,7 @@ pause >nul
 if "%RC%"=="0" (
   >"%TMP%\PTAR_FINAL_CLEANUP.cmd" echo @echo off
   >>"%TMP%\PTAR_FINAL_CLEANUP.cmd" echo ping -n 3 127.0.0.1 ^>nul 2^>^&1
+  >>"%TMP%\PTAR_FINAL_CLEANUP.cmd" echo del /f /q "%ROOT%\PACKAGE_SHA256SUMS.txt" ^>nul 2^>^&1
   >>"%TMP%\PTAR_FINAL_CLEANUP.cmd" echo del /f /q "%ROOT%\06-DESINSTALLER_PTAR_AUTO.bat" ^>nul 2^>^&1
   >>"%TMP%\PTAR_FINAL_CLEANUP.cmd" echo rd /s /q "%TMP%" ^>nul 2^>^&1
   start "" /b "%ComSpec%" /d /c call "%TMP%\PTAR_FINAL_CLEANUP.cmd" >nul 2>&1
