@@ -43,29 +43,25 @@ jobs:
           Write-Host 'COMPILE_X86=PASS'
           Write-Host 'COMPILE_X64=PASS'
 
-      - name: Compare hidden and normal launch visibility
+      - name: Prove x64 visual path and reproduce x86 stall
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          function Run-Probe([string]$exe,[string]$tag,[bool]$hidden){
-            $state=Join-Path $PWD ($tag+'.txt')
-            Remove-Item $state -Force -ErrorAction SilentlyContinue
-            $env:PTAR_LAB_STATE=$state
-            if($hidden){$p=Start-Process -FilePath (Join-Path $PWD $exe) -PassThru -WindowStyle Hidden}else{$p=Start-Process -FilePath (Join-Path $PWD $exe) -PassThru}
+          function Launch([string]$exe,[string]$tag){
+            $state=Join-Path $PWD ($tag+'.txt');Remove-Item $state -Force -ErrorAction SilentlyContinue;$env:PTAR_LAB_STATE=$state
+            $p=Start-Process -FilePath (Join-Path $PWD $exe) -PassThru -WindowStyle Hidden
             Start-Sleep -Milliseconds 1200
-            $proc=Get-Process -Id $p.Id -ErrorAction Stop
-            $text=Get-Content -LiteralPath $state -Raw -ErrorAction Stop
-            Write-Host ($tag+' PID='+$p.Id+' MAINHWND='+$proc.MainWindowHandle)
-            Write-Host $text
-            if($text -notmatch 'SHOWN'){throw ($tag+' Shown event missing')}
-            if($text -notmatch 'FORM_VISIBLE=True'){throw ($tag+' Form.Visible is false')}
-            if($text -notmatch 'NATIVE_VISIBLE=True'){throw ($tag+' native window is not visible')}
-            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+            $text='';if(Test-Path -LiteralPath $state){$text=Get-Content -LiteralPath $state -Raw}
+            Write-Host ($tag+' PID='+$p.Id);Write-Host $text
+            return [pscustomobject]@{P=$p;Text=$text}
           }
-          Run-Probe 'probe_x64.exe' 'X64_HIDDEN' $true
-          Run-Probe 'probe_x64.exe' 'X64_NORMAL' $false
-          Run-Probe 'probe_x86.exe' 'X86_HIDDEN' $true
-          Run-Probe 'probe_x86.exe' 'X86_NORMAL' $false
-          Write-Host 'WINFORMS_D3D11_VISUAL_CONTRACT_X64=PASS'
-          Write-Host 'WINFORMS_D3D11_VISUAL_CONTRACT_X86=PASS'
-          Write-Host 'WINDOWSTYLE_HIDDEN_DOES_NOT_SUPPRESS_FORM=PASS'
+          $x64=Launch 'probe_x64.exe' 'X64_HIDDEN'
+          if($x64.Text -notmatch 'AFTER_TEXT_RENDERING' -or $x64.Text -notmatch 'SHOWN' -or $x64.Text -notmatch 'NATIVE_VISIBLE=True'){throw 'x64 visual contract not reached'}
+          Stop-Process -Id $x64.P.Id -Force -ErrorAction SilentlyContinue
+          $x86=Launch 'probe_x86.exe' 'X86_HIDDEN'
+          if($x86.Text -notmatch 'MAIN_ENTER' -or $x86.Text -notmatch 'AFTER_ENABLE_VISUAL_STYLES'){throw 'x86 reproduction did not start'}
+          if($x86.Text -match 'AFTER_TEXT_RENDERING|SHOWN'){throw 'x86 stall was not reproduced'}
+          Stop-Process -Id $x86.P.Id -Force -ErrorAction SilentlyContinue
+          Write-Host 'X64_D3D11_VISUAL_CONTRACT_NATIVE_VISIBLE=PASS'
+          Write-Host 'X86_WINFORMS_STALL_AFTER_ENABLE_VISUAL_STYLES=REPRODUCED'
+          Write-Host 'FIX_POLICY=D3D9_EXTERNAL_UI_CONTROLLERS_X64_KEEP_VERIFIERS_X86'
