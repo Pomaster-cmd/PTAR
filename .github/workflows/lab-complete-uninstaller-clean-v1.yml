@@ -42,7 +42,9 @@ jobs:
             if($bat -notmatch [regex]::Escape($token)){ throw ('Missing BAT token: '+$token) }
           }
           $safe=Get-Content $ps -Raw
-          if($safe -notmatch [regex]::Escape("if($rel -ieq '06-DESINSTALLER_PTAR_AUTO.bat')")){ throw 'Active launcher deferral missing' }
+          foreach($token in @('06-DESINSTALLER_PTAR_AUTO.bat','[DEFER] Lanceur actif : suppression reportee apres fermeture.')){
+            if($safe -notmatch [regex]::Escape($token)){ throw ('Active launcher deferral token missing: '+$token) }
+          }
           Write-Host 'POWERSHELL_PARSE=PASS'
           Write-Host 'BAT_CLEANUP_CONTRACT=PASS'
           Write-Host 'ACTIVE_LAUNCHER_DEFER=PASS'
