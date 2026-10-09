@@ -1,2 +1,3 @@
 D3D11 diagnostic path is the canonical contract for D3D9 adaptation.
+D3D9 acquisition backend: read-only successful-Present runtime ring; no desktop pixel capture.
 No merge to SOURCE/main without explicit approval.
