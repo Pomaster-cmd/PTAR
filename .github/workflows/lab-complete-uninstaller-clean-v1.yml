@@ -63,14 +63,14 @@ jobs:
           Set-Content -LiteralPath (Join-Path $root 'modified.txt') -Value 'original' -Encoding ASCII
           @('# PTAR STATIC DIRS | depth | relpath','1|1|_PTAR_UNINSTALL') | Set-Content -LiteralPath (Join-Path $u 'PTAR_STATIC_DIRS.tsv') -Encoding ASCII
 
-          function H([string]$p){ (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() }
+          function Get-TestHash([string]$p){ (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() }
           $rows=@(
             '# PTAR STATIC OWNERSHIP | relpath | sha256',
-            ('1|06-DESINSTALLER_PTAR_AUTO.bat|'+(H (Join-Path $root '06-DESINSTALLER_PTAR_AUTO.bat'))),
-            ('2|owned.txt|'+(H (Join-Path $root 'owned.txt'))),
-            ('3|modified.txt|'+(H (Join-Path $root 'modified.txt'))),
-            ('4|_PTAR_UNINSTALL/PTAR_SAFE_UNINSTALL.ps1|'+(H (Join-Path $u 'PTAR_SAFE_UNINSTALL.ps1'))),
-            ('5|_PTAR_UNINSTALL/PTAR_STATIC_DIRS.tsv|'+(H (Join-Path $u 'PTAR_STATIC_DIRS.tsv')))
+            ('1|06-DESINSTALLER_PTAR_AUTO.bat|'+(Get-TestHash (Join-Path $root '06-DESINSTALLER_PTAR_AUTO.bat'))),
+            ('2|owned.txt|'+(Get-TestHash (Join-Path $root 'owned.txt'))),
+            ('3|modified.txt|'+(Get-TestHash (Join-Path $root 'modified.txt'))),
+            ('4|_PTAR_UNINSTALL/PTAR_SAFE_UNINSTALL.ps1|'+(Get-TestHash (Join-Path $u 'PTAR_SAFE_UNINSTALL.ps1'))),
+            ('5|_PTAR_UNINSTALL/PTAR_STATIC_DIRS.tsv|'+(Get-TestHash (Join-Path $u 'PTAR_STATIC_DIRS.tsv')))
           )
           $rows | Set-Content -LiteralPath (Join-Path $u 'PTAR_STATIC_OWNERSHIP.tsv') -Encoding ASCII
           Set-Content -LiteralPath (Join-Path $root 'modified.txt') -Value 'user changed' -Encoding ASCII
