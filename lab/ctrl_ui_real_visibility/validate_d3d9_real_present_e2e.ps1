@@ -9,8 +9,13 @@ function Wait-Text([string]$Path,[string]$Pattern,[int]$TimeoutSec)
     {
         if(Test-Path -LiteralPath $Path -PathType Leaf)
         {
-            $t=Get-Content -LiteralPath $Path -Raw -ErrorAction SilentlyContinue
-            if($t -match $Pattern){return $t}
+            try
+            {
+                $fs=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete)
+                try {$sr=New-Object IO.StreamReader($fs); try {$t=$sr.ReadToEnd()} finally {$sr.Dispose()}} finally {$fs.Dispose()}
+                if($t -match $Pattern){return $t}
+            }
+            catch {}
         }
         Start-Sleep -Milliseconds 200
     }
@@ -19,7 +24,7 @@ function Wait-Text([string]$Path,[string]$Pattern,[int]$TimeoutSec)
 function Assert-Contains([string]$Path,[string]$Pattern,[string]$Label)
 {
     if(-not(Test-Path -LiteralPath $Path -PathType Leaf)){throw "$Label missing: $Path"}
-    $t=Get-Content -LiteralPath $Path -Raw
+    $t=Wait-Text $Path $Pattern 5
     if($t -notmatch $Pattern){throw "$Label failed: pattern '$Pattern' absent in $Path`n$t"}
 }
 
@@ -30,10 +35,8 @@ function Assert-Contains([string]$Path,[string]$Pattern,[string]$Label)
 & .\lab\ctrl_ui_real_visibility\validate_d3d9_d3d11_diag_port.ps1
 if($LASTEXITCODE -ne 0){throw "base diagnostic-port validation failed: $LASTEXITCODE"}
 
-# Compile an actual x86 D3D9 application.  It imports Direct3DCreate9 normally,
-# so Windows DLL search loads the candidate proxy from the game directory.  The
-# app creates a real D3D9 device, calls the real proxy HookPresent path, and holds
-# CTRL+F6 across one Present to enable the runtime FG path exactly as a game does.
+# Compile an actual x86 D3D9 application. It imports Direct3DCreate9 normally,
+# so Windows DLL search loads the candidate proxy from the game directory.
 & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DUNICODE /D_UNICODE /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 lab\ctrl_ui_real_visibility\d3d9_real_present_e2e_game.cpp /link d3d9.lib user32.lib /OUT:artifact\ptar_real_d3d9_game.exe /SUBSYSTEM:WINDOWS,6.03
 if($LASTEXITCODE -ne 0){throw 'real D3D9 game harness compile failed'}
 
@@ -47,8 +50,6 @@ if(Test-Path -LiteralPath $root){Remove-Item -LiteralPath $root -Recurse -Force}
 New-Item -ItemType Directory -Force $root | Out-Null
 Copy-Item artifact\d3d9.dll (Join-Path $root 'd3d9.dll') -Force
 Copy-Item artifact\ptar_real_d3d9_game.exe (Join-Path $root 'game.exe') -Force
-# Explicitly enable runtime logging for forensic proof that the proxy itself,
-# not the harness, receives the hotkey and enters FG.
 Set-Content -LiteralPath (Join-Path $root 'PTAR_D3D9_DIAGNOSTICS.ON') -Value 'enabled' -Encoding ASCII
 
 $env:PTAR_GAME_ROOT=$root
@@ -60,13 +61,24 @@ if($Exclusive){$args+=' --exclusive'}
 $p=Start-Process -FilePath (Join-Path $root 'game.exe') -ArgumentList $args -WorkingDirectory $root -PassThru
 try
 {
-    $gameResult=Join-Path $root 'PTAR_E2E_GAME_RESULT.txt'
-    $first=Wait-Text $gameResult 'CREATE_DEVICE=PASS' 20
-    if($Exclusive -and $first -notmatch 'EXCLUSIVE=1'){throw 'exclusive mode not actually created'}
-    if((-not $Exclusive) -and $first -notmatch 'EXCLUSIVE=0'){throw 'windowed mode mismatch'}
+    # The CRT result file stays open for the lifetime of the harness.  The first
+    # revision waited on it and produced a false timeout despite a live device.
+    # Use the proxy's own share-readable forensic log as the authoritative gate.
+    $runtimeLog=Join-Path $root 'PTAR_X86_D3D9.log'
+    $startup=Wait-Text $runtimeLog 'HOOK_DEVICE_DONE' 25
+    if($Exclusive)
+    {
+        if($startup -notmatch 'CREATEDEVICE_PP[^\r\n]*windowed=0'){throw 'exclusive mode not actually created'}
+    }
+    else
+    {
+        if($startup -notmatch 'CREATEDEVICE_PP[^\r\n]*windowed=1'){throw 'windowed mode not actually created'}
+    }
+    if($startup -notmatch 'PTAR_ACTIVE'){throw 'PTAR runtime did not reach active state'}
+    if($startup -notmatch 'stage=PRESENT_REAL'){throw 'actual HookPresent did not reach PRESENT_REAL'}
     if($p.HasExited){throw "real D3D9 game exited early code=$($p.ExitCode)"}
 
-    # Prove the candidate proxy is the module loaded by the process, not system d3d9.
+    # Prove the exact candidate proxy is what the live game process loaded.
     $mods=@($p.Modules | Where-Object {$_.ModuleName -ieq 'd3d9.dll'})
     if($mods.Count -ne 1){throw "expected exactly one d3d9.dll module, got $($mods.Count)"}
     $loaded=[IO.Path]::GetFullPath($mods[0].FileName)
@@ -82,14 +94,12 @@ try
     Assert-Contains (Join-Path $root 'PTAR_RAWCADENCE_LAST_OUTPUT.txt') 'GENERATED_CONTENTS=0' 'PRE_FG generated gate'
     Copy-Item (Join-Path $root 'PTAR_RAWCADENCE_LAST_OUTPUT.txt') ("build_x86\REAL_PRE_"+$mode+".txt") -Force
 
-    # The game holds CTRL+F6 across an actual Present at ~26 s.  Require the
-    # runtime's own diagnostic log to confirm that FrameGeneration became ON.
-    $runtimeLog=Join-Path $root 'PTAR_X86_D3D9.log'
+    # The game holds CTRL+F6 across an actual Present at ~26 s. Require the
+    # runtime itself to confirm that it entered FG.
     $hot=Wait-Text $runtimeLog 'HOTKEY CTRL\+F6 FrameGeneration=ON' 20
     if($p.HasExited){throw "real D3D9 game exited before FG phase code=$($p.ExitCode)"}
 
-    # F5 FG_ACTIVE: exact runtime Present ring must now contain both REAL and
-    # GENERATED events produced by the proxy's actual PresentPTARTexture path.
+    # F5 FG_ACTIVE: exact runtime Present ring must contain both REAL and GENERATED.
     & artifact\ptar_vblank3_d3d9_autostart.exe 20 --autostart
     if($LASTEXITCODE -ne 0){throw "real FG_ACTIVE verifier failed rc=$LASTEXITCODE"}
     Assert-Contains (Join-Path $root 'PTAR_VISIBLE_VERIFIER_LAST_STATUS.txt') 'RESULT=PASS' 'FG_ACTIVE status'
@@ -99,8 +109,7 @@ try
     if($r -lt 10 -or $g -lt 10){throw "actual FG telemetry insufficient R=$r G=$g"}
     Copy-Item (Join-Path $root 'PTAR_VISIBLE_VERIFIER_LAST_OUTPUT.txt') ("build_x86\REAL_FG_"+$mode+".txt") -Force
 
-    # F1 PRESENTSHED1: run the actual 60-second duration used by the shipped UI,
-    # not a shortened smoke.  Require all analysis-input outputs.
+    # F1 PRESENTSHED1: exact shipped 60-second duration, with all output products.
     & artifact\ptar_presentshed1_visible.exe 60 --autostart
     if($LASTEXITCODE -ne 0){throw "real F1 PRESENTSHED1 verifier failed rc=$LASTEXITCODE"}
     foreach($suffix in @('_OUTPUT.txt','_SAMPLES.csv','_STATUS.txt','_RR_FOCUS.txt','_LONG_HOLD_FOCUS.txt','_GEN_PRESSURE_FOCUS.txt'))
@@ -114,17 +123,12 @@ try
     $f1g=@($f1 | Where-Object {$_.type -eq 'G'}).Count
     if($f1r -lt 20 -or $f1g -lt 20){throw "actual F1 telemetry insufficient R=$f1r G=$f1g"}
 
-    # Verify the game process stayed alive through all measurement phases and
-    # that the actual Present calls did not start failing under instrumentation.
     if($p.HasExited){throw "real D3D9 game exited during diagnostic measurement code=$($p.ExitCode)"}
-    Stop-Process -Id $p.Id -Force
-    Start-Sleep -Milliseconds 250
-    # The harness final epilogue is bypassed by the forced stop; inspect the
-    # runtime log instead for the absence of Present failures and the presence
-    # of real/generated stages.
-    Assert-Contains $runtimeLog 'HOTKEY CTRL\+F6 FrameGeneration=ON' 'runtime FG activation'
-    Assert-Contains $runtimeLog 'FG_PRESENT_GENERATED' 'runtime generated-present stage'
-    Assert-Contains $runtimeLog 'PRESENT_REAL' 'runtime real-present stage'
+    # Re-read while process is still alive so buffered runtime evidence cannot be
+    # manufactured by process teardown.
+    $liveLog=Wait-Text $runtimeLog 'FG_PRESENT_GENERATED' 5
+    if($liveLog -notmatch 'stage=PRESENT_REAL'){throw 'runtime real-present stage absent'}
+    if($liveLog -match 'PRESENT_STATE_CAPTURE_FAIL|FG_PRESENT_GENERATED_FAIL|SPATIAL_CURRENT_REAL_FAIL'){throw 'runtime Present path logged a hard rendering/presentation failure'}
 
     @(
       'PTAR_D3D9_REAL_PRESENT_E2E=PASS',
@@ -132,6 +136,7 @@ try
       'SYNTHETIC_RING_WRITER_ACCEPTED_AS_PROOF=NO',
       'ACTUAL_D3D9_DEVICE=YES',
       'ACTUAL_PROXY_HOOKPRESENT=YES',
+      'EXACT_CANDIDATE_DLL_LOADED=YES',
       'PRE_FG_20S=PASS',
       'FG_ACTIVE_20S=PASS',
       'PRESENTSHED1_60S=PASS',
