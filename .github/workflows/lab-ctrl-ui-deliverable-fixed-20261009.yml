@@ -1,0 +1,131 @@
+name: LAB CTRL UI deliverable fixed 20261009
+
+on:
+  push:
+    branches: [lab/ctrl-ui-real-visibility-20261009]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply final HUD and bridge patches
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $nl=[Environment]::NewLine
+          $hud='compat\x86_d3d9\ptar_gw16i_hud_d3d9.h'
+          $bridge='lab\ctrl_ui_real_visibility\PTARD3D9DiagHudBridgeController.cs'
+          $h=Get-Content $hud -Raw
+          $h=$h.Replace('PtGw16Text(dev,&batch,x,y,"C+F5 MEASURE",fg);','PtGw16Text(dev,&batch,x,y,"C+F5 MEASURE",fg);'+$nl+'            PtGw16Text(dev,&batch,x,originY+48,a==0?"PRE FG 20 SEC":a==1?"FG ACTIVE 20 SEC":"POST FG 20 SEC",fg);')
+          $h=$h.Replace('PtGw16Text(dev,&batch,x,y,"C+F5 DONE",fg);','PtGw16Text(dev,&batch,x,y,"C+F5 DONE",fg);'+$nl+'            PtGw16Text(dev,&batch,x,originY+48,a==0?"PRE FG":a==1?"FG ACTIVE":"POST FG",fg);')
+          $h=$h.Replace('PtGw16Text(dev,&batch,x,y,"C+F1 READY",fg);','PtGw16Text(dev,&batch,x,y,"C+F1 MODE",fg);'+$nl+'            PtGw16Text(dev,&batch,x,originY+48,a==0?"60 SEC":"120 SEC",fg);')
+          $h=$h.Replace('PtGw16Text(dev,&batch,x,y,"C+F1 MEASURE",fg);','PtGw16Text(dev,&batch,x,y,"C+F1 MEASURE",fg);'+$nl+'            PtGw16Text(dev,&batch,x,originY+48,a==0?"60 SEC":"120 SEC",fg);')
+          $h=$h.Replace('PtGw16Text(dev,&batch,x,y,"C+F1 DONE",fg);','PtGw16Text(dev,&batch,x,y,"C+F1 DONE",fg);'+$nl+'            PtGw16Text(dev,&batch,x,originY+48,a==0?"60 SEC":"120 SEC",fg);')
+          $h=$h.Replace('PtGw16Text(dev,&batch,x,y,"C+F1 ERROR",fg);','PtGw16Text(dev,&batch,x,y,"C+F1 ERROR",fg);'+$nl+'            PtGw16Text(dev,&batch,x,originY+48,a==0?"60 SEC":"120 SEC",fg);')
+          $h=$h.Replace('PtGw16Text(dev,&batch,x,y,"C+F5 ERROR",fg);','PtGw16Text(dev,&batch,x,y,"C+F5 ERROR",fg);'+$nl+'            PtGw16Text(dev,&batch,x,originY+48,a==0?"PRE FG":a==1?"FG ACTIVE":"POST FG",fg);')
+          Set-Content -LiteralPath $hud -Value $h -Encoding ASCII
+
+          $b=Get-Content $bridge -Raw
+          $old='string[] logs=Directory.GetFiles(gameRoot,"PTAR_PRESENTSHED1_CTRL_F1_*.log");'
+          $new='string f1Dir=Path.Combine(gameRoot,"diag","PTAR_PRESENTSHED1");'+$nl+'                string[] logs=Directory.Exists(f1Dir)?Directory.GetFiles(f1Dir,"PTAR_PRESENTSHED1_CTRL_F1_*.log"):new string[0];'
+          if(-not $b.Contains($old)){throw 'Expected F1 log lookup not found'}
+          $b=$b.Replace($old,$new)
+          Set-Content -LiteralPath $bridge -Value $b -Encoding UTF8
+          foreach($token in @('PRE FG 20 SEC','FG ACTIVE 20 SEC','POST FG 20 SEC','C+F1 MODE','60 SEC','120 SEC')){if((Get-Content $hud -Raw) -notmatch [regex]::Escape($token)){throw "Missing $token"}}
+          if((Get-Content $bridge -Raw) -notmatch 'diag","PTAR_PRESENTSHED1'){throw 'F1 result path fix missing'}
+          Write-Host 'FINAL_SOURCE_PATCH=PASS'
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      - name: Compile shaders and runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force build_x86,artifact | Out-Null
+          $fxc=Get-Command fxc.exe -ErrorAction SilentlyContinue
+          if(-not $fxc){foreach($root in @("$env:ProgramFiles(x86)\Windows Kits\10\bin","$env:ProgramFiles(x86)\Windows Kits\8.1\bin")){if(Test-Path $root){$fxc=Get-ChildItem $root -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue|Sort-Object FullName -Descending|Select-Object -First 1;if($fxc){break}}}}
+          if(-not $fxc){throw 'fxc.exe not found'}
+          $fxcPath=if($fxc.Path){$fxc.Path}else{$fxc.FullName}
+          $jobs=@(
+            @('ps_3_0','compat\x86_d3d9\ptar_moe_d3d9_ps.hlsl','build_x86\ptar_ps_bytecode.h','g_ptarPs'),
+            @('ps_3_0','compat\x86_d3d9\ptar_moe_universal_d3d9_ps.hlsl','build_x86\ptar_universal_ps_bytecode.h','g_ptarUniversalPs'),
+            @('ps_2_0','compat\x86_d3d9\ptar_bilinear_ref_ps.hlsl','build_x86\ptar_bilinear_ps_bytecode.h','g_ptarBilinearPs'),
+            @('ps_3_0','compat\x86_d3d9\ptar_gw16i_hud_ps.hlsl','build_x86\ptar_gw16i_hud_ps_bytecode.h','g_ptarGw16iHudPs'),
+            @('ps_3_0','compat\x86_d3d9\ptar_gw16i_feedback_ps.hlsl','build_x86\ptar_gw16i_feedback_ps_bytecode.h','g_ptarGw16iFeedbackPs'),
+            @('ps_3_0','compat\x86_d3d9\ptar_fg_me_coarse_ps.hlsl','build_x86\ptar_fg_me_coarse_ps_bytecode.h','g_ptarFgMeCoarsePs'),
+            @('ps_3_0','compat\x86_d3d9\ptar_fg_me_refine_ps.hlsl','build_x86\ptar_fg_me_refine_ps_bytecode.h','g_ptarFgMeRefinePs'),
+            @('ps_3_0','compat\x86_d3d9\ptar_fg_interpolate_ps.hlsl','build_x86\ptar_fg_interpolate_ps_bytecode.h','g_ptarFgInterpolatePs'))
+          foreach($j in $jobs){& $fxcPath /nologo /T $j[0] /E main /O3 /Fh $j[2] /Vn $j[3] $j[1];if($LASTEXITCODE -ne 0){throw "FXC failed $($j[1])"}}
+          & cl.exe /nologo /LD /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I build_x86 compat\x86_d3d9\ptar_d3d9_proxy.cpp /link user32.lib /DEF:compat\x86_d3d9\d3d9_proxy.def /OUT:artifact\d3d9.dll /SUBSYSTEM:WINDOWS,6.03
+          if($LASTEXITCODE -ne 0){throw 'runtime compile failed'}
+          dumpbin /headers artifact\d3d9.dll | Tee-Object build_x86\HEADERS.txt
+          dumpbin /dependents artifact\d3d9.dll | Tee-Object build_x86\DEPENDENTS.txt
+          $hh=Get-Content build_x86\HEADERS.txt -Raw;$dd=Get-Content build_x86\DEPENDENTS.txt -Raw
+          if($hh -notmatch '14C machine \(x86\)' -or $hh -notmatch '6\.03 operating system version'){throw 'PE/Win8.1 target invalid'}
+          foreach($bad in @('VCRUNTIME','MSVCP','UCRTBASE','API-MS-WIN-CRT')){if($dd -match $bad){throw "Forbidden dependency $bad"}}
+          Write-Host 'RUNTIME_BUILD=PASS'
+
+      - name: Build and selftest x64 bridge
+        shell: pwsh
+        run: |
+          $csc="$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+          & $csc /nologo /target:exe /optimize+ /platform:x64 /out:artifact\PTARD3D9DiagHudBridgeController.exe lab\ctrl_ui_real_visibility\PTARD3D9DiagHudBridgeController.cs
+          if($LASTEXITCODE -ne 0){throw 'bridge compile failed'}
+          & artifact\PTARD3D9DiagHudBridgeController.exe --selftest | Tee-Object build_x86\BRIDGE_SELFTEST.txt
+          if($LASTEXITCODE -ne 0 -or (Get-Content build_x86\BRIDGE_SELFTEST.txt -Raw) -notmatch 'SELFTEST=PASS'){throw 'bridge selftest failed'}
+          Write-Host 'BRIDGE_SELFTEST=PASS'
+
+      - name: GPU smoke all visual states
+        shell: pwsh
+        run: |
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I compat\x86_d3d9 compat\x86_d3d9\d3d9_gw16i_hud_gpu_smoke.cpp /link user32.lib /OUT:artifact\basehud.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){throw 'base HUD compile failed'}
+          & artifact\basehud.exe | Tee-Object build_x86\BASE_HUD.txt
+          if($LASTEXITCODE -ne 0){throw 'base HUD smoke failed'}
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I compat\x86_d3d9 lab\ctrl_ui_real_visibility\d3d9_diag_ui_bridge_gpu_smoke.cpp /link user32.lib /OUT:artifact\bridgehud.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){throw 'bridge HUD compile failed'}
+          & artifact\bridgehud.exe | Tee-Object build_x86\BRIDGE_HUD.txt
+          if($LASTEXITCODE -ne 0){throw 'bridge HUD smoke failed'}
+          $t=Get-Content build_x86\BRIDGE_HUD.txt -Raw
+          foreach($token in @('F5_PRE','F5_FG_ACTIVE','F5_POST','F5_MEASURE','F5_DONE','F1_READY','F1_MEASURE','F1_DONE','F1_ERROR','F5_ERROR')){if($t -notmatch ($token+' type=[0-9]+ changed=[1-9][0-9]{3,}')){throw "Missing visible pixels for $token"}}
+          if($t -notmatch 'DIAG_UI_EXPIRY=PASS'){throw 'expiry gate failed'}
+          Write-Host 'ALL_VISUAL_STATES=PASS'
+
+      - name: Verify protected cores and package payload
+        shell: pwsh
+        run: |
+          $base='0066c7d4b32aed167d2a74030801e896b8fe9aa4'
+          foreach($core in @('compat/x86_d3d9/ptar_d3d9_proxy.cpp','compat/x86_d3d9/ptar_fg_pacer.h','compat/x86_d3d9/ptar_fg_me_coarse_ps.hlsl','compat/x86_d3d9/ptar_fg_me_refine_ps.hlsl','compat/x86_d3d9/ptar_fg_interpolate_ps.hlsl','compat/x86_d3d9/ptar_moe_d3d9_ps.hlsl','compat/x86_d3d9/ptar_moe_universal_d3d9_ps.hlsl')){if(git diff --name-only $base HEAD -- $core){throw "Protected core changed: $core"}}
+          $sha=(Get-FileHash artifact\d3d9.dll -Algorithm SHA256).Hash.ToLowerInvariant()
+          $bsha=(Get-FileHash artifact\PTARD3D9DiagHudBridgeController.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          @('PTAR_D3D9_CTRL_UI_DELIVERABLE=PASS','D3D9_UI_PATH=IN_GAME_BACKBUFFER_CLEAR_RECTS','F1_RESULT_PATH=diag\PTAR_PRESENTSHED1','F1_MODE_DETAILS=60_SEC_120_SEC','F5_MEASURE_DETAILS=MODE_PLUS_20_SEC','FG_CORE_UNTOUCHED=YES',('D3D9_DLL_SHA256='+$sha),('BRIDGE_SHA256='+$bsha)) | Set-Content artifact\VERSION.txt -Encoding ASCII
+          Copy-Item compat\x86_d3d9\ptar_gw16i_hud_d3d9.h artifact\ptar_gw16i_hud_d3d9_DELIVERABLE.h
+          Copy-Item lab\ctrl_ui_real_visibility\PTARD3D9DiagHudBridgeController.cs artifact\PTARD3D9DiagHudBridgeController_DELIVERABLE.cs
+          Write-Host "D3D9_DLL_SHA256=$sha"
+          Write-Host "BRIDGE_SHA256=$bsha"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-D3D9-CTRL-UI-DELIVERABLE-FIXED
+          path: |
+            artifact/d3d9.dll
+            artifact/PTARD3D9DiagHudBridgeController.exe
+            artifact/VERSION.txt
+            artifact/ptar_gw16i_hud_d3d9_DELIVERABLE.h
+            artifact/PTARD3D9DiagHudBridgeController_DELIVERABLE.cs
+            build_x86/HEADERS.txt
+            build_x86/DEPENDENTS.txt
+            build_x86/BASE_HUD.txt
+            build_x86/BRIDGE_HUD.txt
+            build_x86/BRIDGE_SELFTEST.txt
