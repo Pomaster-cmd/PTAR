@@ -1,0 +1,13 @@
+name: LAB D3D9 D3D11 diagnostic port 20261009
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  placeholder:
+    runs-on: windows-2022
+    steps:
+      - run: echo placeholder
