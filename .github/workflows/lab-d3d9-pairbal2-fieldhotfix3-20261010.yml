@@ -1,0 +1,78 @@
+name: LAB D3D9 PAIRBAL2 FIELDHOTFIX3 20261010
+
+on:
+  push:
+    branches: [lab/d3d9-pairbal2-fieldhotfix3-20261010]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+      - name: Compile shaders
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force build_x86,artifact | Out-Null
+          $fxc=Get-Command fxc.exe -ErrorAction SilentlyContinue
+          if(-not $fxc){
+            foreach($root in @("$env:ProgramFiles(x86)\Windows Kits\10\bin","$env:ProgramFiles(x86)\Windows Kits\8.1\bin")){
+              if(Test-Path $root){$fxc=Get-ChildItem $root -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue|Sort-Object FullName -Descending|Select-Object -First 1;if($fxc){break}}
+            }
+          }
+          if(-not $fxc){throw 'fxc.exe not found'}
+          $f=if($fxc.Path){$fxc.Path}else{$fxc.FullName}
+          $jobs=@(
+            @('ps_3_0','main','ptar_ps_bytecode.h','g_ptarPs','ptar_moe_d3d9_ps.hlsl'),
+            @('ps_3_0','main','ptar_universal_ps_bytecode.h','g_ptarUniversalPs','ptar_moe_universal_d3d9_ps.hlsl'),
+            @('ps_2_0','main','ptar_bilinear_ps_bytecode.h','g_ptarBilinearPs','ptar_bilinear_ref_ps.hlsl'),
+            @('ps_3_0','main','ptar_fg_me_coarse_ps_bytecode.h','g_ptarFgMeCoarsePs','ptar_fg_me_coarse_ps.hlsl'),
+            @('ps_3_0','main','ptar_fg_me_refine_ps_bytecode.h','g_ptarFgMeRefinePs','ptar_fg_me_refine_ps.hlsl'),
+            @('ps_3_0','main','ptar_fg_interpolate_ps_bytecode.h','g_ptarFgInterpolatePs','ptar_fg_interpolate_ps.hlsl')
+          )
+          foreach($j in $jobs){& $f /nologo /T $j[0] /E $j[1] /O3 /Fh ("build_x86\"+$j[2]) /Vn $j[3] ("compat\x86_d3d9\"+$j[4]);if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}}
+      - name: Build D3D9 runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /LD /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I build_x86 compat\x86_d3d9\ptar_d3d9_proxy.cpp /link user32.lib /DEF:compat\x86_d3d9\d3d9_proxy.def /OUT:artifact\d3d9.dll /SUBSYSTEM:WINDOWS,6.03
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          dumpbin /headers artifact\d3d9.dll | Out-File artifact\HEADERS.txt -Encoding ascii
+          dumpbin /exports artifact\d3d9.dll | Out-File artifact\EXPORTS.txt -Encoding ascii
+          dumpbin /dependents artifact\d3d9.dll | Out-File artifact\DEPENDENTS.txt -Encoding ascii
+          $h=Get-Content artifact\HEADERS.txt -Raw;$e=Get-Content artifact\EXPORTS.txt -Raw;$d=Get-Content artifact\DEPENDENTS.txt -Raw
+          if($h -notmatch '14C machine \(x86\)'){throw 'not x86'}
+          foreach($n in @('Direct3DCreate9','Direct3DCreate9Ex','D3DPERF_BeginEvent','D3DPERF_EndEvent')){if($e -notmatch [regex]::Escape($n)){throw "missing export $n"}}
+          foreach($bad in @('VCRUNTIME','MSVCP','UCRTBASE','API-MS-WIN-CRT')){if($d -match $bad){throw "forbidden dependency $bad"}}
+          (Get-FileHash artifact\d3d9.dll -Algorithm SHA256).Hash.ToLowerInvariant() | Set-Content artifact\D3D9_SHA256.txt -Encoding ascii
+      - name: Build and run PAIRBAL2 pacer smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I compat\x86_d3d9 compat\x86_d3d9\d3d9_fg_pacer_smoke.cpp /link /OUT:artifact\d3d9_fg_pacer_smoke.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          & artifact\d3d9_fg_pacer_smoke.exe | Tee-Object artifact\D3D9_FG_PACER_SMOKE.txt
+          if($LASTEXITCODE -ne 0){throw "pacer smoke failed rc=$LASTEXITCODE"}
+          $s=Get-Content artifact\D3D9_FG_PACER_SMOKE.txt -Raw
+          foreach($m in @('D3D11_MAINPERF2_PAIRBAL2_SELECTOR_PORT=PASS','D3D9_FG_PACER_SMOKE=PASS','PAIRBAL2_LOW_20MS','PAIRBAL2_HIGH_80MS','PAIRBAL2_MID_50MS_A','PAIRBAL2_MID_50MS_B')){if($s -notmatch [regex]::Escape($m)){throw "missing gate $m"}}
+      - name: Static source contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $p=Get-Content compat\x86_d3d9\ptar_fg_pacer.h -Raw
+          foreach($m in @('D3D11_MAINPERF2_PAIRBAL2_PORT','PtFgPacerSelectPairBudget','budget==3','first=1','second=2','first=2','second=1','first=2','second=2','lastVisibleQpc+period')){if($p -notmatch [regex]::Escape($m)){throw "PAIRBAL2 contract missing $m"}}
+          if($p -match 'pairFirstSlots=3|pairSecondSlots=3'){throw 'forbidden 3-vblank member'}
+          'D3D9_PAIRBAL2_STATIC_CONTRACT=PASS' | Set-Content artifact\D3D9_PAIRBAL2_STATIC_CONTRACT.txt -Encoding ascii
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-D3D9-PAIRBAL2-FIELDHOTFIX3
+          path: artifact/
+          if-no-files-found: error
