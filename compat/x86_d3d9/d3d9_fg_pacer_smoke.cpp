@@ -76,20 +76,43 @@ int main()
         return 15;
     }
 
+    // Model a driver-blocking Sync1 Present.  Each fake Present consumes one
+    // ~60-Hz interval.  The PTAR Prepare calls must add essentially zero time,
+    // so a GENERATED+REAL pair remains ~32-40 ms instead of the ~64-70 ms
+    // produced by FIELDHOTFIX3's software-wait + driver-wait stacking.
+    PtFgPacerReset();
+    PtFgPacerRecordVisible(false);
+    LARGE_INTEGER pair0={0},pair1={0};
+    QueryPerformanceCounter(&pair0);
+    if(!PtFgPacerPrepareGenerated()) return 16;
+    Sleep(16); // stand-in for synchronized GENERATED Present
+    PtFgPacerRecordVisible(true);
+    PtFgPacerPrepareReal(true);
+    Sleep(16); // stand-in for synchronized REAL Present
+    PtFgPacerRecordVisible(false);
+    QueryPerformanceCounter(&pair1);
+    const double sync1Pair=Ms(pair1.QuadPart-pair0.QuadPart,freq);
+    std::printf("NOLOCK30_SYNC1_DRIVER_MODEL_PAIR_MS=%.3f\n",sync1Pair);
+    if(sync1Pair<25.0 || sync1Pair>50.0)
+    {
+        std::printf("FAIL synchronized-Present pair indicates extra pacing delay\n");
+        return 17;
+    }
+
     // Simulate a long source workload. NOLOCK30_1 must still return
     // immediately: it never compensates source work with an additional wait.
     Sleep(60);
     LARGE_INTEGER s0={0},s1={0};
     QueryPerformanceCounter(&s0);
     if(!PtFgPacerPrepareGenerated())
-        return 16;
+        return 18;
     QueryPerformanceCounter(&s1);
     const double stallWait=Ms(s1.QuadPart-s0.QuadPart,freq);
     std::printf("NOLOCK30_AFTER_STALL_WAIT_MS=%.3f\n",stallWait);
     if(stallWait>5.0)
     {
         std::printf("FAIL post-stall software wait reintroduced\n");
-        return 17;
+        return 19;
     }
 
     PtFgPacerRecordVisible(true);
@@ -100,11 +123,12 @@ int main()
     {
         std::printf("FAIL presentation counters inconsistent G=%lu R=%lu\n",
             PtFgPacerGeneratedCount(),PtFgPacerRealCount());
-        return 18;
+        return 20;
     }
 
     std::printf("D3D11_NOLOCK30_SYNC1_POLICY_PORT=PASS\n");
     std::printf("D3D9_NO_EXTRA_SOFTWARE_PACING=PASS\n");
+    std::printf("D3D9_SYNC1_DOUBLE_WAIT_REGRESSION=PASS\n");
     std::printf("D3D9_FG_PACER_SMOKE=PASS\n");
     return 0;
 }
