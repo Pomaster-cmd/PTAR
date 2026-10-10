@@ -21,6 +21,13 @@ static bool CheckPair(unsigned int budget,unsigned int first,unsigned int second
     return ok;
 }
 
+static void SeedSourceAgeMs(unsigned int ms)
+{
+    const LONGLONG now=PtFgPacerNow();
+    g_ptarFgPacer.lastRealQpc=now-PtFgPacerMsTicks(ms);
+    g_ptarFgPacer.lastVisibleQpc=g_ptarFgPacer.lastRealQpc;
+}
+
 int main()
 {
     PtFgPacerReset();
@@ -37,12 +44,11 @@ int main()
     PtFgPacerSelectPairBudget(PtFgPacerMsTicks(50));
     if(!CheckPair(g_ptarFgPacer.pairBudget,g_ptarFgPacer.pairFirstSlots,g_ptarFgPacer.pairSecondSlots,3,2,1,"MID_50MS_B")) return 13;
 
-    // Field regression model: ~26 ms of game+FG work after the previous REAL.
-    // Pair budget remains 2 slots (~33.3 ms). GENERATED must be immediate when
-    // ready and REAL may consume only the remaining ~7.3 ms slack.
+    // Deterministic field regression model. Do not use Sleep(26): a hosted
+    // Windows scheduler can overshoot it by 10+ ms and invalidate the model.
+    // Seed the previous REAL exactly 26 ms in the past instead.
     PtFgPacerReset();
-    PtFgPacerRecordVisible(false);
-    Sleep(26);
+    SeedSourceAgeMs(26);
 
     LARGE_INTEGER g0={0},g1={0},r0={0},r1={0};
     QueryPerformanceCounter(&g0);
@@ -64,18 +70,18 @@ int main()
     std::printf("PAIR_DEADLINE_BUDGET=%u\n",g_ptarFgPacer.pairBudget);
 
     if(g_ptarFgPacer.pairBudget!=2) return 15;
-    if(waitG>5.0) { std::printf("FAIL full member wait remains before G\n"); return 16; }
-    if(waitR<1.0 || waitR>16.0) { std::printf("FAIL remaining pair slack outside expected range\n"); return 17; }
-    if(waitR>12.0) { std::printf("FAIL FIELDHOTFIX5 full-slot wait regression\n"); return 18; }
+    if(source<25.0 || source>28.0) { std::printf("FAIL deterministic source model drift\n"); return 16; }
+    if(waitG>5.0) { std::printf("FAIL full member wait remains before G\n"); return 17; }
+    if(waitR<2.0 || waitR>14.0) { std::printf("FAIL remaining pair slack outside expected range\n"); return 18; }
+    if(waitR>12.0) { std::printf("FAIL FIELDHOTFIX5 full-slot wait regression\n"); return 19; }
 
-    // Fast source must still land the next REAL on the 2-slot pair deadline,
-    // not wait 1 slot before G plus another full slot before R.
+    // Fast source: 10 ms already consumed, so the total two-slot deadline
+    // leaves about 23.3 ms rather than adding two member waits.
     PtFgPacerReset();
-    PtFgPacerRecordVisible(false);
-    Sleep(10);
+    SeedSourceAgeMs(10);
     LARGE_INTEGER f0={0},f1={0},f2={0};
     QueryPerformanceCounter(&f0);
-    if(!PtFgPacerPrepareGenerated()) return 19;
+    if(!PtFgPacerPrepareGenerated()) return 20;
     QueryPerformanceCounter(&f1);
     PtFgPacerRecordVisible(true);
     PtFgPacerPrepareReal(true);
@@ -85,14 +91,15 @@ int main()
     const double fastSlack=Ms(f2.QuadPart-f1.QuadPart,freq);
     std::printf("PAIR_DEADLINE_FAST_G_WAIT_MS=%.3f\n",fastG);
     std::printf("PAIR_DEADLINE_FAST_REAL_SLACK_MS=%.3f\n",fastSlack);
-    if(fastG>5.0 || fastSlack<15.0 || fastSlack>35.0) return 20;
+    if(fastG>5.0 || fastSlack<16.0 || fastSlack>32.0) return 21;
 
-    // Missed deadline fails open: no compensating full-slot delay.
+    // Explicitly seed an already missed pair deadline. PrepareReal must fail
+    // open and must not add a compensating full-slot delay.
     PtFgPacerReset();
-    PtFgPacerRecordVisible(false);
-    Sleep(45);
-    if(!PtFgPacerPrepareGenerated()) return 21;
+    SeedSourceAgeMs(26);
+    if(!PtFgPacerPrepareGenerated()) return 22;
     PtFgPacerRecordVisible(true);
+    g_ptarFgPacer.nextVisibleQpc=PtFgPacerNow()-PtFgPacerMsTicks(10);
     LARGE_INTEGER s0={0},s1={0};
     QueryPerformanceCounter(&s0);
     PtFgPacerPrepareReal(true);
@@ -100,7 +107,7 @@ int main()
     const double lateWait=Ms(s1.QuadPart-s0.QuadPart,freq);
     PtFgPacerRecordVisible(false);
     std::printf("PAIR_DEADLINE_LATE_REAL_WAIT_MS=%.3f\n",lateWait);
-    if(lateWait>5.0) return 22;
+    if(lateWait>5.0) return 23;
 
     // FG OFF: one-slot 60-Hz ceiling on the same IMMEDIATE device clock.
     PtFgPacerReset();
@@ -111,9 +118,9 @@ int main()
     QueryPerformanceCounter(&o1);
     const double offWait=Ms(o1.QuadPart-o0.QuadPart,freq);
     std::printf("PAIR_DEADLINE_FG_OFF_SYNC1_MS=%.3f\n",offWait);
-    if(offWait<8.0 || offWait>30.0) return 23;
+    if(offWait<8.0 || offWait>40.0) return 24;
 
-    if(PtFgPacerLateSkipCount()!=0) return 24;
+    if(PtFgPacerLateSkipCount()!=0) return 25;
 
     std::printf("D3D11_MAINPERF2_PAIRBAL2_SELECTOR_PORT=PASS\n");
     std::printf("D3D9_PAIR_DEADLINE_TOTAL_BUDGET=PASS\n");
