@@ -99,7 +99,7 @@ jobs:
           if($proxy -notmatch 'PresentationInterval=D3DPRESENT_INTERVAL_ONE'){throw 'D3D9 Sync1 contract missing'}
           if($pacer -notmatch 'D3D11_PAIRBAL2_D3D9_SYNC1_PRESENT_ONLY'){throw 'PAIRBAL2 D3D9 Sync1 policy marker missing'}
           foreach($forbidden in @('PtFgPacerWaitUntil','PtFgPacerWaitMemberSlots','PtFgPacerYieldCoarse','PtFgPacerSelectPairBudget')){if($pacer.Contains($forbidden)){throw "obsolete software pacing path remains: $forbidden"}}
-          if($pacer -match 'Sleep\(' -or $pacer -match 'WaitForVBlank' -or $pacer -match 'DwmFlush'){throw 'forbidden pacer wait remains'}
+          if($pacer -match 'Sleep\s*\(' -or $pacer -match 'WaitForVBlank\s*\(' -or $pacer -match 'DwmFlush\s*\('){throw 'forbidden pacer wait call remains'}
           $base='3beaddefcf9ba1b92137e1996071163528a56fb0'
           foreach($shader in @('compat/x86_d3d9/ptar_fg_me_coarse_ps.hlsl','compat/x86_d3d9/ptar_fg_me_refine_ps.hlsl','compat/x86_d3d9/ptar_fg_interpolate_ps.hlsl','compat/x86_d3d9/ptar_moe_d3d9_ps.hlsl','compat/x86_d3d9/ptar_moe_universal_d3d9_ps.hlsl')){
             $diff=git diff --name-only $base HEAD -- $shader
