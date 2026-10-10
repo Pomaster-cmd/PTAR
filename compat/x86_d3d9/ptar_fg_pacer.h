@@ -3,23 +3,26 @@
 #include <windows.h>
 #include "ptar_runtime_metrics.h"
 
-// D3D9 adaptation of the accepted D3D11 GW16F/G NOLOCK30_1 presentation
-// policy.  This deliberately does NOT create a new pacing algorithm.
+// D3D9 adaptation of the validated D3D11 MAINPERF2/PAIRBAL2 presentation
+// architecture. This deliberately does NOT invent a second pacing mechanism.
 //
-// The validated D3D11 production contract is:
-//   FG OFF : REAL target up to 60/s, Present SyncInterval=1
-//   FG ON  : REAL+GENERATED stream, Present SyncInterval=1
-//   no extra Sleep, WaitForVBlank, DwmFlush or per-frame pacing detour.
+// The current D3D11 production contract selects SyncInterval=1 or 2 directly
+// on IDXGISwapChain::Present and explicitly introduces no extra Sleep,
+// WaitForVBlank, DwmFlush or per-frame pacing detour. Regular D3D9 has no
+// per-Present SyncInterval parameter: its PresentationInterval is fixed on the
+// device at CreateDevice/Reset time.
 //
-// D3D9 cannot choose a DXGI SyncInterval per Present.  The corresponding
-// contract is therefore established once on the D3D9 presentation parameters
-// (D3DPRESENT_INTERVAL_ONE) and this helper becomes bookkeeping only.  The
-// driver/vblank-blocking Present is the sole cadence authority.
+// Therefore D3D9 reuses the PAIRBAL2 Sync1 presentation branch as the only
+// directly representable production path:
+//   FG OFF : synchronized REAL Present, interval one
+//   FG ON  : GENERATED then REAL, each synchronized by D3D9 Present interval one
+//   no additional software timing wait around either Present.
 //
-// FIELDHOTFIX3 incorrectly added a QPC wait before an already synchronized
-// D3D9 Present.  Field telemetry then showed GENERATED residence locked around
-// one extra 60-Hz vblank (~17.2 ms) while REAL throughput collapsed.  Keeping
-// any software wait here would recreate that double-synchronization defect.
+// FIELDHOTFIX3 attempted to emulate dynamic Sync1/Sync2 with a QPC wait before
+// an already synchronized D3D9 Present. Field telemetry exposed the resulting
+// double synchronization: GENERATED residence locked near one 60-Hz vblank
+// while REAL throughput collapsed. Keeping any software wait here would
+// recreate that defect.
 
 struct PTFGPacerState
 {
@@ -55,7 +58,7 @@ static void PtFgPacerInit()
 
     g_ptarFgPacer.initialized=true;
     PtDiagLogA(
-        "FG_PACER_INIT qpc_freq=%lld policy=D3D11_NOLOCK30_SYNC1_PRESENT_ONLY",
+        "FG_PACER_INIT qpc_freq=%lld policy=D3D11_PAIRBAL2_D3D9_SYNC1_PRESENT_ONLY",
         (long long)g_ptarFgPacer.frequency.QuadPart);
 }
 
@@ -84,15 +87,16 @@ static void PtFgPacerReset()
     g_ptarFgPacer.pairFirstSlots=1;
     g_ptarFgPacer.pairSecondSlots=1;
     g_ptarFgPacer.budget3Orientation=false;
-    PtDiagLogA("FG_PACER_RESET policy=D3D11_NOLOCK30_SYNC1_PRESENT_ONLY");
+    PtDiagLogA("FG_PACER_RESET policy=D3D11_PAIRBAL2_D3D9_SYNC1_PRESENT_ONLY");
 }
 
 static bool PtFgPacerPrepareGenerated()
 {
     PtFgPacerInit();
 
-    // Match D3D11 NOLOCK30_1: no software pacing wait before GENERATED.
-    // D3DPRESENT_INTERVAL_ONE on the real Present is the cadence authority.
+    // Match the D3D11 production architecture: no software pacing wait before
+    // GENERATED. D3DPRESENT_INTERVAL_ONE on the D3D9 device is the cadence
+    // authority for this directly representable PAIRBAL2 branch.
     const LONGLONG now=PtFgPacerNow();
     if(g_ptarFgPacer.lastRealQpc>0 && now>g_ptarFgPacer.lastRealQpc)
         g_ptarFgPacer.lastSourceWorkQpc=now-g_ptarFgPacer.lastRealQpc;
@@ -107,9 +111,8 @@ static void PtFgPacerPrepareReal(bool fgPair)
     PtFgPacerInit();
     (void)fgPair;
 
-    // Match D3D11 NOLOCK30_1: no extra wait between GENERATED and REAL.
-    // The preceding GENERATED Present and this REAL Present each synchronize
-    // once through the same presentation mechanism.
+    // No extra wait between GENERATED and REAL. The preceding GENERATED
+    // Present and this REAL Present each synchronize exactly once through D3D9.
 }
 
 static void PtFgPacerRecordVisible(bool generated)
@@ -149,7 +152,7 @@ static unsigned long PtFgPacerRealCount()
 
 static unsigned long PtFgPacerLateSkipCount()
 {
-    // Kept for HUD/diagnostic continuity.  NOLOCK30_1 has no software
-    // late-skip path; synchronized Present is the only pacing authority.
+    // Kept for HUD/diagnostic continuity. The D3D9 Sync1 adaptation has no
+    // software late-skip path; synchronized Present is the pacing authority.
     return g_ptarFgPacer.generatedLateSkips;
 }
