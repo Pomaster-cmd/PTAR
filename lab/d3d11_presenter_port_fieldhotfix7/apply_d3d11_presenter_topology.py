@@ -3,10 +3,104 @@ import re
 
 p=Path('compat/x86_d3d9/ptar_d3d9_proxy.cpp')
 s=p.read_text(encoding='utf-8')
+hp=Path('compat/x86_d3d9/ptar_d3d9_isolated_presenter.h')
+h=hp.read_text(encoding='utf-8')
 
 # FIELDHOTFIX7 is a topology port, not a new pacing algorithm. It reuses the
 # validated D3D11 GW12->GW16 contract: separate display presenter, nonblocking
-# producer/mailbox, REAL then GENERATED, and soft-OFF REAL_ONLY ownership.
+# producer/mailbox, generated-midpoint before the matching current REAL, and
+# soft-OFF REAL_ONLY ownership.
+#
+# The current D3D11 STALEGUARD1 order key is GENERATED=2*seq, REAL=2*seq+1.
+# For a pair built from previous/current source frames that means G01 then R1.
+# Preserve that temporal ordering here; do not derive order from old diagnostic
+# wording that described residence after an already displayed preceding REAL.
+
+# Adapt the D3D9 presenter header to the exact current D3D11 order semantics.
+h=h.replace(
+    '// - display presents REAL then GENERATED with one VBlank each;',
+    '// - display presents GENERATED then matching REAL with one VBlank each;')
+
+old_present='''        hr=PtD3D9IsoPresentOne(
+            dev,realSurf[slotIndex],false,slot->realMarker);
+        if(SUCCEEDED(hr) && slot->hasGenerated)
+        {
+            hr=PtD3D9IsoPresentOne(
+                dev,genSurf[slotIndex],true,slot->generatedMarker);
+        }
+'''
+new_present='''        // D3D11 STALEGUARD1 ordering: GENERATED=2*seq, REAL=2*seq+1.
+        // Initial activation publishes REAL_ONLY; every complete later pair is
+        // the midpoint GENERATED first, then its matching current REAL.
+        if(slot->hasGenerated)
+        {
+            hr=PtD3D9IsoPresentOne(
+                dev,genSurf[slotIndex],true,slot->generatedMarker);
+        }
+        else
+        {
+            hr=S_OK;
+        }
+        if(SUCCEEDED(hr))
+        {
+            hr=PtD3D9IsoPresentOne(
+                dev,realSurf[slotIndex],false,slot->realMarker);
+        }
+'''
+if old_present not in h:
+    raise SystemExit('presenter REAL->G order anchor missing')
+h=h.replace(old_present,new_present,1)
+
+old_submit='''    PTARD3D9IsoSlot* slot=&g_ptarD3D9Iso.slots[i];
+    HRESULT hr=g_ptar.device->StretchRect(
+        realSurface,0,slot->realSurface,0,D3DTEXF_NONE);
+    if(SUCCEEDED(hr))
+        hr=PtD3D9IsoDrawHudToSurface(
+            slot->realSurface,false,hasGenerated,&slot->realMarker);
+
+    slot->hasGenerated=hasGenerated?TRUE:FALSE;
+    slot->generatedMarker=0;
+
+    if(SUCCEEDED(hr) && hasGenerated && generatedSurface)
+    {
+        hr=g_ptar.device->StretchRect(
+            generatedSurface,0,slot->generatedSurface,0,D3DTEXF_NONE);
+        if(SUCCEEDED(hr))
+            hr=PtD3D9IsoDrawHudToSurface(
+                slot->generatedSurface,true,true,&slot->generatedMarker);
+    }
+'''
+new_submit='''    PTARD3D9IsoSlot* slot=&g_ptarD3D9Iso.slots[i];
+    slot->hasGenerated=hasGenerated?TRUE:FALSE;
+    slot->generatedMarker=0;
+    slot->realMarker=0;
+
+    // Bake markers in the same order they will be displayed. This preserves
+    // the existing verifier serial contract and prevents a synthetic backward
+    // marker transition when the presenter outputs G before matching R.
+    HRESULT hr=S_OK;
+    if(hasGenerated && generatedSurface)
+    {
+        hr=g_ptar.device->StretchRect(
+            generatedSurface,0,slot->generatedSurface,0,D3DTEXF_NONE);
+        if(SUCCEEDED(hr))
+            hr=PtD3D9IsoDrawHudToSurface(
+                slot->generatedSurface,true,true,&slot->generatedMarker);
+    }
+
+    if(SUCCEEDED(hr))
+    {
+        hr=g_ptar.device->StretchRect(
+            realSurface,0,slot->realSurface,0,D3DTEXF_NONE);
+        if(SUCCEEDED(hr))
+            hr=PtD3D9IsoDrawHudToSurface(
+                slot->realSurface,false,hasGenerated,&slot->realMarker);
+    }
+'''
+if old_submit not in h:
+    raise SystemExit('producer HUD order anchor missing')
+h=h.replace(old_submit,new_submit,1)
+hp.write_text(h,encoding='utf-8',newline='\n')
 
 anchor='static PTARContext g_ptar={};'
 if s.count(anchor)!=1:
@@ -67,8 +161,9 @@ new='''    {
         }
 
         // D3D11 GW12->GW16 topology: publish completed source work into the
-        // nonblocking mailbox. The display worker presents REAL then GENERATED
-        // at Sync1. Do not block the game thread on either VBlank.
+        // nonblocking mailbox. The display worker presents midpoint GENERATED
+        // then matching REAL at Sync1 (STALEGUARD1 order key). Do not block the
+        // game thread on either VBlank.
         const bool presenterOwnsDisplay=PtD3D9IsolatedPresenterSubmit(
             g_ptar.currentRealSurface,
             (fgSession && fgPipelineReady)?g_ptar.generatedSurface:0,
@@ -151,6 +246,7 @@ p.write_text(s,encoding='utf-8',newline='\n')
 # Static gates: the active block must not call a second Present or PairBal2 REAL
 # wait, and the port must use the existing isolated presenter header.
 t=p.read_text(encoding='utf-8')
+h=hp.read_text(encoding='utf-8')
 checks={
     'header include':'#include "ptar_d3d9_isolated_presenter.h"',
     'producer windowed':'actual->Windowed=TRUE;',
@@ -158,17 +254,24 @@ checks={
     'submit':'PtD3D9IsolatedPresenterSubmit(',
     'start':'PtD3D9IsolatedPresenterStart(',
     'stop':'PtD3D9IsolatedPresenterStop();',
-    'order comment':'display worker presents REAL then GENERATED',
+    'order comment':'display worker presents midpoint GENERATED',
 }
 for name,needle in checks.items():
     if needle not in t:
         raise SystemExit('missing gate '+name)
+
+if 'dev,genSurf[slotIndex],true,slot->generatedMarker' not in h:
+    raise SystemExit('generated presenter leg missing')
+if 'dev,realSurf[slotIndex],false,slot->realMarker' not in h:
+    raise SystemExit('real presenter leg missing')
+if h.index('dev,genSurf[slotIndex],true,slot->generatedMarker') > h.index('dev,realSurf[slotIndex],false,slot->realMarker'):
+    raise SystemExit('wrong display order: D3D11 requires G before matching R')
 
 active=t[t.index('// D3D11 GW12->GW16 topology:'):t.index('restore_game_state:')]
 if 'PtFgPacerPrepareReal(true)' in active or 'FG_PRESENT_GENERATED' in active:
     raise SystemExit('obsolete same-device FG presentation remains active')
 
 print('D3D11_ISOLATED_PRESENTER_TOPOLOGY_PORT=PASS')
-print('ACTIVE_ORDER=REAL_THEN_GENERATED')
+print('ACTIVE_ORDER=GENERATED_THEN_MATCHING_REAL')
 print('SOURCE_THREAD_DISPLAY_WAIT=NONE')
 print('FG_OFF=REAL_ONLY_PRESENTER_OWNERSHIP')
