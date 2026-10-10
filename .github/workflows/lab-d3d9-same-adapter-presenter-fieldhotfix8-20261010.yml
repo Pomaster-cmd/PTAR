@@ -1,0 +1,109 @@
+name: LAB D3D9 SAME ADAPTER PRESENTER FIELDHOTFIX8 20261010
+
+on:
+  push:
+    branches: [lab/d3d9-same-adapter-presenter-fieldhotfix8-20261010]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+
+      - name: Apply inherited D3D11 presenter topology and hybrid adapter fix
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          .\lab\pairbal2_singleclock_fieldhotfix5\apply_d3d9_immediate_present_policy.ps1
+          .\lab\pairbal2_fieldhotfix3\apply_existing_diag_ring.ps1
+          python .\lab\d3d11_presenter_port_fieldhotfix7\apply_d3d11_presenter_topology.py
+          python .\lab\d3d11_presenter_port_fieldhotfix7\apply_d3d9_nonblocking_mailbox.py
+          python .\lab\d3d9_same_adapter_fieldhotfix8\apply_same_adapter_presenter.py
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with: {arch: x86}
+
+      - name: Compile exact shader set and Win81 x86 runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force build_x86,artifact,smoke_game | Out-Null
+          $fxc=Get-Command fxc.exe -ErrorAction SilentlyContinue
+          if(-not $fxc){foreach($root in @("$env:ProgramFiles(x86)\Windows Kits\10\bin","$env:ProgramFiles(x86)\Windows Kits\8.1\bin")){if(Test-Path $root){$fxc=Get-ChildItem $root -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue|Sort-Object FullName -Descending|Select-Object -First 1;if($fxc){break}}}}
+          if(-not $fxc){throw 'fxc.exe not found'}
+          $f=if($fxc.Path){$fxc.Path}else{$fxc.FullName}
+          $jobs=@(
+            @('ps_3_0','ptar_moe_d3d9_ps.hlsl','ptar_ps_bytecode.h','g_ptarPs'),
+            @('ps_3_0','ptar_moe_universal_d3d9_ps.hlsl','ptar_universal_ps_bytecode.h','g_ptarUniversalPs'),
+            @('ps_2_0','ptar_bilinear_ref_ps.hlsl','ptar_bilinear_ps_bytecode.h','g_ptarBilinearPs'),
+            @('ps_3_0','ptar_gw16i_hud_ps.hlsl','ptar_gw16i_hud_ps_bytecode.h','g_ptarGw16iHudPs'),
+            @('ps_3_0','ptar_gw16i_feedback_ps.hlsl','ptar_gw16i_feedback_ps_bytecode.h','g_ptarGw16iFeedbackPs'),
+            @('ps_3_0','ptar_fg_me_coarse_ps.hlsl','ptar_fg_me_coarse_ps_bytecode.h','g_ptarFgMeCoarsePs'),
+            @('ps_3_0','ptar_fg_me_refine_ps.hlsl','ptar_fg_me_refine_ps_bytecode.h','g_ptarFgMeRefinePs'),
+            @('ps_3_0','ptar_fg_interpolate_ps.hlsl','ptar_fg_interpolate_ps_bytecode.h','g_ptarFgInterpolatePs'))
+          foreach($j in $jobs){& $f /nologo /T $j[0] /E main /O3 /Fh ("build_x86\"+$j[2]) /Vn $j[3] ("compat\x86_d3d9\"+$j[1]);if($LASTEXITCODE){throw "FXC failed $($j[1])"}}
+          & cl.exe /nologo /LD /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I build_x86 compat\x86_d3d9\ptar_d3d9_proxy.cpp /link user32.lib /DEF:compat\x86_d3d9\d3d9_proxy.def /OUT:artifact\d3d9.dll /SUBSYSTEM:WINDOWS,6.03
+          if($LASTEXITCODE){throw 'runtime compile failed'}
+          dumpbin /headers artifact\d3d9.dll|Out-File artifact\HEADERS.txt -Encoding ascii
+          dumpbin /exports artifact\d3d9.dll|Out-File artifact\EXPORTS.txt -Encoding ascii
+          dumpbin /dependents artifact\d3d9.dll|Out-File artifact\DEPENDENTS.txt -Encoding ascii
+          $hd=Get-Content artifact\HEADERS.txt -Raw;$ex=Get-Content artifact\EXPORTS.txt -Raw;$dp=Get-Content artifact\DEPENDENTS.txt -Raw
+          if($hd -notmatch '14C machine \(x86\)' -or $hd -notmatch '6\.03 subsystem version'){throw 'Win8.1 x86 PE contract failed'}
+          foreach($n in @('Direct3DCreate9','Direct3DCreate9Ex','PTAR_D3D9_DIAG_STATE')){if($ex -notmatch [regex]::Escape($n)){throw "missing export $n"}}
+          foreach($bad in @('VCRUNTIME','MSVCP','UCRTBASE','API-MS-WIN-CRT')){if($dp -match $bad){throw "forbidden dependency $bad"}}
+          $sha=(Get-FileHash artifact\d3d9.dll -Algorithm SHA256).Hash.ToLowerInvariant();$sha|Set-Content artifact\D3D9_SHA256.txt -Encoding ascii;Write-Host "D3D9_DLL_SHA256=$sha"
+
+      - name: Validate exact inherited topology plus same-adapter binding
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $p=Get-Content compat\x86_d3d9\ptar_d3d9_proxy.cpp -Raw
+          $h=Get-Content compat\x86_d3d9\ptar_d3d9_isolated_presenter.h -Raw
+          foreach($m in @('PtD3D9IsolatedPresenterSubmit(','actual->Windowed=TRUE;','actual->PresentationInterval=D3DPRESENT_INTERVAL_IMMEDIATE;')){if($p -notmatch [regex]::Escape($m)){throw "proxy gate missing $m"}}
+          foreach($m in @('D3DSWAPEFFECT_FLIPEX','D3DPRESENT_INTERVAL_ONE','PTAR_D3D9_ISO_GPU_PENDING','PtD3D9IsoPromotePendingSlots','GetCreationParameters(&producerCp)','g_ptarD3D9Iso.adapterOrdinal=producerCp.AdapterOrdinal','GetAdapterDisplayMode(g_ptarD3D9Iso.adapterOrdinal','g_ptarD3D9Iso.adapterOrdinal,g_ptarD3D9Iso.deviceType')){if($h -notmatch [regex]::Escape($m)){throw "presenter gate missing $m"}}
+          $thread=$h.Substring($h.IndexOf('static DWORD WINAPI PtD3D9IsoPresenterThread'),$h.IndexOf('static void PtD3D9IsolatedPresenterStop')-$h.IndexOf('static DWORD WINAPI PtD3D9IsoPresenterThread'))
+          if($thread -match 'D3DADAPTER_DEFAULT'){throw 'hybrid GPU default adapter hazard remains'}
+          $g=$h.IndexOf('dev,genSurf[slotIndex],true,slot->generatedMarker');$r=$h.IndexOf('dev,realSurf[slotIndex],false,slot->realMarker');if($g -lt 0 -or $r -lt 0 -or $g -gt $r){throw 'G-before-R order lost'}
+          if($h -match 'PtD3D9IsoFenceProducer'){throw 'blocking producer fence remains'}
+          @('D3D11_ISOLATED_PRESENTER_TOPOLOGY=PASS','D3D11_STALEGUARD1_ORDER=G_THEN_R','SOURCE_GPU_WAIT_LOOP=NONE','PRESENTER_ADAPTER=SOURCE_ADAPTER','HYBRID_GPU_DEFAULT_ADAPTER_HAZARD=REMOVED')|Set-Content artifact\HF8_TOPOLOGY.txt -Encoding ascii
+
+      - name: Compile and selftest existing F5 F1 verifiers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop';$csc="$env:WINDIR\Microsoft.NET\Framework\v4.0.30319\csc.exe";$shared='lab\ctrl_ui_real_visibility\PTARD3D9PresentTelemetryReader.cs'
+          & $csc /nologo /target:exe /optimize+ /platform:x86 /out:artifact\ptar_vblank3_d3d9_autostart.exe $shared lab\ctrl_ui_real_visibility\PTARVisiblePacingVerifier_D3D9RuntimeRing.cs;if($LASTEXITCODE){throw 'F5 compile failed'}
+          & $csc /nologo /target:exe /optimize+ /platform:x86 /out:artifact\ptar_presentshed1_visible.exe $shared lab\ctrl_ui_real_visibility\PTARVisiblePacingVerifierPresentShed1_D3D9RuntimeRing.cs;if($LASTEXITCODE){throw 'F1 compile failed'}
+          & artifact\ptar_vblank3_d3d9_autostart.exe --selftest|Tee-Object artifact\F5_VERIFIER_SELFTEST.txt;if($LASTEXITCODE){throw 'F5 selftest failed'}
+          & artifact\ptar_presentshed1_visible.exe --selftest|Tee-Object artifact\F1_VERIFIER_SELFTEST.txt;if($LASTEXITCODE){throw 'F1 selftest failed'}
+
+      - name: Validate diagnostic ring ABI end to end
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 lab\ctrl_ui_real_visibility\d3d9_diag_ring_harness.cpp /link /OUT:smoke_game\game.exe /SUBSYSTEM:CONSOLE,6.03;if($LASTEXITCODE){throw 'harness compile failed'}
+          Copy-Item artifact\d3d9.dll smoke_game\d3d9.dll -Force
+          $root=(Resolve-Path smoke_game).Path;$game=(Resolve-Path smoke_game\game.exe).Path;$dll=(Resolve-Path smoke_game\d3d9.dll).Path;$env:PTAR_GAME_ROOT=$root;$env:PTAR_TARGET_EXE=$game
+          $proc=Start-Process $game -ArgumentList ('"'+$dll+'" mixed 20000') -PassThru -RedirectStandardOutput artifact\HARNESS.txt;Start-Sleep -Milliseconds 300
+          & artifact\ptar_vblank3_d3d9_autostart.exe 5 --autostart 2>&1|Tee-Object artifact\F5_RUNTIME_RING_SMOKE.txt;if($LASTEXITCODE){throw 'F5 ring failed'}
+          $env:PTAR_FG_PRESENTSHED1_OUTPUT_PREFIX=Join-Path $root 'F1_SMOKE'; & artifact\ptar_presentshed1_visible.exe 5 --autostart 2>&1|Tee-Object artifact\F1_RUNTIME_RING_SMOKE.txt;if($LASTEXITCODE){throw 'F1 ring failed'}
+          if(-not $proc.HasExited){Stop-Process -Id $proc.Id -Force}
+
+      - name: Package evidence
+        shell: pwsh
+        run: |
+          Copy-Item compat\x86_d3d9\ptar_d3d9_isolated_presenter.h artifact\ptar_d3d9_isolated_presenter.h -Force
+          Copy-Item compat\x86_d3d9\ptar_d3d9_proxy.cpp artifact\ptar_d3d9_proxy_patched.cpp -Force
+          @('PTAR_D3D9_FIELDHOTFIX8=SAME_ADAPTER_ISOLATED_PRESENTER',('SOURCE_COMMIT='+$env:GITHUB_SHA),('D3D9_SHA256='+(Get-Content artifact\D3D9_SHA256.txt -Raw).Trim()),'FIELD_EVIDENCE=HF7_CODE43_EVENTS2536_REAL2536_GENERATED0','FIELD_GPU=NVIDIA_GTX960M_PLUS_INTEL_HD4600','ROOT_CAUSE_CLASS=ISOLATED_PRESENTER_NOT_REACHING_FG_PATH','CORRECTION=PRESENTER_USES_SOURCE_DEVICE_ADAPTER_ORDINAL','DISPLAY_ORDER=GENERATED_THEN_MATCHING_REAL','SOURCE_DISPLAY_WAIT=NONE','SOURCE_GPU_WAIT_LOOP=NONE','CTRL_F5_F1_PRESERVED=YES')|Set-Content artifact\PTAR_D3D9_FIELDHOTFIX8_VERSION.txt -Encoding ascii
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PTAR-D3D9-SAME-ADAPTER-FIELDHOTFIX8
+          path: artifact/
+          if-no-files-found: error
