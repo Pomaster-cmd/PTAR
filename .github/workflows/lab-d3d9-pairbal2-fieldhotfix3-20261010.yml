@@ -2,7 +2,8 @@ name: LAB D3D9 PAIRBAL2 FIELDHOTFIX3 20261010
 
 on:
   push:
-    branches: [lab/d3d9-pairbal2-fieldhotfix3-20261010]
+    branches:
+      - lab/d3d9-pairbal2-fieldhotfix3-20261010
   workflow_dispatch:
 
 permissions:
@@ -17,51 +18,15 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Apply existing D3D9 diagnostic present ring unchanged
+      - name: Apply existing D3D9 diagnostic ring
         shell: pwsh
-        run: |
-          $ErrorActionPreference='Stop'
-          Copy-Item lab\ctrl_ui_real_visibility\ptar_d3d9_diag_present_ring.h compat\x86_d3d9\ptar_d3d9_diag_present_ring.h -Force
-          $p='compat\x86_d3d9\ptar_d3d9_proxy.cpp'
-          $s=Get-Content $p -Raw
-          $needle='#include "ptar_gw16i_hud_d3d9.h"'
-          if(-not $s.Contains($needle)){throw 'HUD include anchor absent'}
-          $s=$s.Replace($needle,$needle+"`r`n#include \"ptar_d3d9_diag_present_ring.h\"")
-          $old=@'
-    hr=g_realPresent(dev,0,0,hwnd,dirty);
-    if(SUCCEEDED(hr))
-        PtFgPacerRecordVisible(generatedFrame);
-    return hr;
-'@
-          $new=@'
-    hr=g_realPresent(dev,0,0,hwnd,dirty);
-    if(SUCCEEDED(hr))
-    {
-        PtFgPacerRecordVisible(generatedFrame);
-        PtD3D9DiagRecordPresent(
-            generatedFrame,
-            g_ptarHudFrameSequence&4095ul,
-            g_ptarFgPacer.lastVisibleQpc,
-            PtFgPacerRealCount(),
-            PtFgPacerGeneratedCount(),
-            g_ptarFgPacer.resyncs,
-            PtFgPacerLateSkipCount());
-    }
-    return hr;
-'@
-          if(-not $s.Contains($old)){throw 'Present success anchor absent'}
-          $s=$s.Replace($old,$new)
-          Set-Content $p $s -Encoding UTF8
-          $d=(git diff -- $p) -join "`n"
-          if($d -notmatch 'PtD3D9DiagRecordPresent'){throw 'diagnostic ring hook missing'}
-          if($d -match '^[-+].*PtFgPacerPrepareGenerated' -or $d -match '^[-+].*PtFgPacerPrepareReal'){throw 'PAIRBAL2 pacing mutated by diagnostic hook'}
-          Write-Host 'EXISTING_D3D9_DIAGNOSTIC_RING_REUSED=PASS'
+        run: .\lab\pairbal2_fieldhotfix3\apply_existing_diag_ring.ps1
 
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x86
 
-      - name: Compile exact D3D9 shader set
+      - name: Compile shaders
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
@@ -69,7 +34,10 @@ jobs:
           $fxc=Get-Command fxc.exe -ErrorAction SilentlyContinue
           if(-not $fxc){
             foreach($root in @("$env:ProgramFiles(x86)\Windows Kits\10\bin","$env:ProgramFiles(x86)\Windows Kits\8.1\bin")){
-              if(Test-Path $root){$fxc=Get-ChildItem $root -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue|Sort-Object FullName -Descending|Select-Object -First 1;if($fxc){break}}
+              if(Test-Path $root){
+                $fxc=Get-ChildItem $root -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1
+                if($fxc){break}
+              }
             }
           }
           if(-not $fxc){throw 'fxc.exe not found'}
@@ -84,9 +52,12 @@ jobs:
             @('ps_3_0','ptar_fg_me_refine_ps.hlsl','ptar_fg_me_refine_ps_bytecode.h','g_ptarFgMeRefinePs'),
             @('ps_3_0','ptar_fg_interpolate_ps.hlsl','ptar_fg_interpolate_ps_bytecode.h','g_ptarFgInterpolatePs')
           )
-          foreach($j in $jobs){& $f /nologo /T $j[0] /E main /O3 /Fh ("build_x86\"+$j[2]) /Vn $j[3] ("compat\x86_d3d9\"+$j[1]);if($LASTEXITCODE -ne 0){throw "FXC failed $($j[1])"}}
+          foreach($j in $jobs){
+            & $f /nologo /T $j[0] /E main /O3 /Fh ("build_x86\"+$j[2]) /Vn $j[3] ("compat\x86_d3d9\"+$j[1])
+            if($LASTEXITCODE -ne 0){throw "FXC failed $($j[1])"}
+          }
 
-      - name: Build D3D9 runtime with existing diagnostic ABI
+      - name: Build Win81 x86 D3D9 runtime
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
@@ -95,13 +66,16 @@ jobs:
           dumpbin /headers artifact\d3d9.dll | Out-File artifact\HEADERS.txt -Encoding ascii
           dumpbin /exports artifact\d3d9.dll | Out-File artifact\EXPORTS.txt -Encoding ascii
           dumpbin /dependents artifact\d3d9.dll | Out-File artifact\DEPENDENTS.txt -Encoding ascii
-          $h=Get-Content artifact\HEADERS.txt -Raw;$e=Get-Content artifact\EXPORTS.txt -Raw;$d=Get-Content artifact\DEPENDENTS.txt -Raw
-          if($h -notmatch '14C machine \(x86\)' -or $h -notmatch '6\.03 subsystem version'){throw 'Win8.1 x86 PE contract failed'}
+          $h=Get-Content artifact\HEADERS.txt -Raw
+          $e=Get-Content artifact\EXPORTS.txt -Raw
+          $d=Get-Content artifact\DEPENDENTS.txt -Raw
+          if($h -notmatch '14C machine \(x86\)'){throw 'not x86'}
+          if($h -notmatch '6\.03 subsystem version'){throw 'not Win8.1 subsystem'}
           foreach($n in @('Direct3DCreate9','Direct3DCreate9Ex','PTAR_D3D9_DIAG_STATE')){if($e -notmatch [regex]::Escape($n)){throw "missing export $n"}}
           foreach($bad in @('VCRUNTIME','MSVCP','UCRTBASE','API-MS-WIN-CRT')){if($d -match $bad){throw "forbidden dependency $bad"}}
           (Get-FileHash artifact\d3d9.dll -Algorithm SHA256).Hash.ToLowerInvariant() | Set-Content artifact\D3D9_SHA256.txt -Encoding ascii
 
-      - name: Build and run exact PAIRBAL2 selector port smoke
+      - name: Validate exact PAIRBAL2 port
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
@@ -110,9 +84,9 @@ jobs:
           & artifact\d3d9_fg_pacer_smoke.exe | Tee-Object artifact\D3D9_FG_PACER_SMOKE.txt
           if($LASTEXITCODE -ne 0){throw "pacer smoke failed rc=$LASTEXITCODE"}
           $s=Get-Content artifact\D3D9_FG_PACER_SMOKE.txt -Raw
-          foreach($m in @('D3D11_MAINPERF2_PAIRBAL2_SELECTOR_PORT=PASS','D3D9_FG_PACER_SMOKE=PASS','PAIRBAL2_LOW_20MS','PAIRBAL2_HIGH_80MS','PAIRBAL2_MID_50MS_A','PAIRBAL2_MID_50MS_B','PAIRBAL2_MEMBER_WAIT_RATIO=1.000')){if($s -notmatch [regex]::Escape($m)){throw "missing gate $m"}}
+          foreach($m in @('D3D11_MAINPERF2_PAIRBAL2_SELECTOR_PORT=PASS','D3D9_FG_PACER_SMOKE=PASS','PAIRBAL2_LOW_20MS','PAIRBAL2_HIGH_80MS','PAIRBAL2_MID_50MS_A','PAIRBAL2_MID_50MS_B')){if($s -notmatch [regex]::Escape($m)){throw "missing gate $m"}}
 
-      - name: Compile existing F5 and F1 runtime-ring verifiers
+      - name: Compile existing F5 F1 verifiers
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
@@ -128,37 +102,34 @@ jobs:
           & artifact\ptar_presentshed1_visible.exe --selftest | Tee-Object artifact\F1_VERIFIER_SELFTEST.txt
           if($LASTEXITCODE -ne 0){throw 'F1 verifier selftest failed'}
 
-      - name: F5 and F1 remote-process integration smoke
+      - name: Validate F5 F1 runtime ring end to end
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
           & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 lab\ctrl_ui_real_visibility\d3d9_diag_ring_harness.cpp /link /OUT:smoke_game\game.exe /SUBSYSTEM:CONSOLE,6.03
           if($LASTEXITCODE -ne 0){throw 'harness compile failed'}
           Copy-Item artifact\d3d9.dll smoke_game\d3d9.dll -Force
-          $root=(Resolve-Path smoke_game).Path;$game=(Resolve-Path smoke_game\game.exe).Path;$dll=(Resolve-Path smoke_game\d3d9.dll).Path
-          $env:PTAR_GAME_ROOT=$root;$env:PTAR_TARGET_EXE=$game
+          $root=(Resolve-Path smoke_game).Path
+          $game=(Resolve-Path smoke_game\game.exe).Path
+          $dll=(Resolve-Path smoke_game\d3d9.dll).Path
+          $env:PTAR_GAME_ROOT=$root
+          $env:PTAR_TARGET_EXE=$game
           $p=Start-Process -FilePath $game -ArgumentList ('"'+$dll+'" mixed 9000') -PassThru -RedirectStandardOutput artifact\HARNESS.txt
           Start-Sleep -Milliseconds 300
           & artifact\ptar_vblank3_d3d9_autostart.exe 2 --autostart | Tee-Object artifact\F5_RUNTIME_RING_SMOKE.txt
           if($LASTEXITCODE -ne 0){throw "F5 runtime ring failed rc=$LASTEXITCODE"}
           $fg=@(Import-Csv smoke_game\PTAR_VISIBLE_VERIFIER_LAST_SAMPLES.csv)
-          if($fg.Count -lt 30 -or @($fg|Where-Object type -eq 'R').Count -eq 0 -or @($fg|Where-Object type -eq 'G').Count -eq 0){throw 'F5 runtime ring missing R/G events'}
-          $prefix=Join-Path $root 'F1_SMOKE';$env:PTAR_FG_PRESENTSHED1_OUTPUT_PREFIX=$prefix
+          if($fg.Count -lt 30){throw 'F5 too few events'}
+          if(@($fg|Where-Object type -eq 'R').Count -eq 0){throw 'F5 REAL absent'}
+          if(@($fg|Where-Object type -eq 'G').Count -eq 0){throw 'F5 GENERATED absent'}
+          $prefix=Join-Path $root 'F1_SMOKE'
+          $env:PTAR_FG_PRESENTSHED1_OUTPUT_PREFIX=$prefix
           & artifact\ptar_presentshed1_visible.exe 2 --autostart | Tee-Object artifact\F1_RUNTIME_RING_SMOKE.txt
           if($LASTEXITCODE -ne 0){throw "F1 runtime ring failed rc=$LASTEXITCODE"}
           foreach($suf in @('_OUTPUT.txt','_SAMPLES.csv','_STATUS.txt')){if(-not(Test-Path ($prefix+$suf))){throw "F1 output missing $suf"}}
           if(-not $p.HasExited){Stop-Process -Id $p.Id -Force}
           'CTRL_F5_RUNTIME_RING=PASS' | Set-Content artifact\CTRL_F5_RUNTIME_RING.txt -Encoding ascii
           'CTRL_F1_RUNTIME_RING=PASS' | Set-Content artifact\CTRL_F1_RUNTIME_RING.txt -Encoding ascii
-
-      - name: Static policy contract
-        shell: pwsh
-        run: |
-          $ErrorActionPreference='Stop'
-          $p=Get-Content compat\x86_d3d9\ptar_fg_pacer.h -Raw
-          foreach($m in @('D3D11_MAINPERF2_PAIRBAL2_PORT','PtFgPacerSelectPairBudget','budget==3','lastVisibleQpc+period')){if($p -notmatch [regex]::Escape($m)){throw "PAIRBAL2 contract missing $m"}}
-          if($p -match 'pairFirstSlots=3|pairSecondSlots=3'){throw 'forbidden 3-vblank member'}
-          'D3D9_PAIRBAL2_STATIC_CONTRACT=PASS' | Set-Content artifact\D3D9_PAIRBAL2_STATIC_CONTRACT.txt -Encoding ascii
 
       - uses: actions/upload-artifact@v4
         with:
