@@ -1,4 +1,4 @@
-name: LAB D3D9 NOLOCK30 SYNC1 FIELDHOTFIX4 20261010
+name: LAB D3D9 PAIRBAL2 SYNC1 FIELDHOTFIX4 20261010
 
 on:
   push:
@@ -18,7 +18,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Apply D3D11 NOLOCK30 Sync1 presentation policy
+      - name: Apply D3D11 PAIRBAL2 Sync1 presentation policy
         shell: pwsh
         run: .\lab\nolock30_sync1_fieldhotfix4\apply_d3d9_sync1_present_policy.ps1
 
@@ -79,7 +79,7 @@ jobs:
           Set-Content artifact\D3D9_SHA256.txt $sha -Encoding ascii
           Write-Host "D3D9_DLL_SHA256=$sha"
 
-      - name: Validate NOLOCK30 no-extra-wait pacer
+      - name: Validate PAIRBAL2 Sync1 no-extra-wait pacer
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
@@ -88,7 +88,7 @@ jobs:
           & artifact\d3d9_fg_pacer_smoke.exe | Tee-Object artifact\D3D9_FG_PACER_SMOKE.txt
           if($LASTEXITCODE -ne 0){throw "pacer smoke failed rc=$LASTEXITCODE"}
           $s=Get-Content artifact\D3D9_FG_PACER_SMOKE.txt -Raw
-          foreach($m in @('D3D11_NOLOCK30_SYNC1_POLICY_PORT=PASS','D3D9_NO_EXTRA_SOFTWARE_PACING=PASS','D3D9_SYNC1_DOUBLE_WAIT_REGRESSION=PASS','D3D9_FG_PACER_SMOKE=PASS')){if($s -notmatch [regex]::Escape($m)){throw "missing gate $m"}}
+          foreach($m in @('D3D11_PAIRBAL2_D3D9_SYNC1_POLICY_PORT=PASS','D3D9_NO_EXTRA_SOFTWARE_PACING=PASS','D3D9_SYNC1_DOUBLE_WAIT_REGRESSION=PASS','D3D9_FG_PACER_SMOKE=PASS')){if($s -notmatch [regex]::Escape($m)){throw "missing gate $m"}}
 
       - name: Prove presentation policy and protected FG shader scope
         shell: pwsh
@@ -97,7 +97,7 @@ jobs:
           $proxy=Get-Content compat\x86_d3d9\ptar_d3d9_proxy.cpp -Raw
           $pacer=Get-Content compat\x86_d3d9\ptar_fg_pacer.h -Raw
           if($proxy -notmatch 'PresentationInterval=D3DPRESENT_INTERVAL_ONE'){throw 'D3D9 Sync1 contract missing'}
-          if($pacer -notmatch 'D3D11_NOLOCK30_SYNC1_PRESENT_ONLY'){throw 'NOLOCK30 policy marker missing'}
+          if($pacer -notmatch 'D3D11_PAIRBAL2_D3D9_SYNC1_PRESENT_ONLY'){throw 'PAIRBAL2 D3D9 Sync1 policy marker missing'}
           foreach($forbidden in @('PtFgPacerWaitUntil','PtFgPacerWaitMemberSlots','PtFgPacerYieldCoarse','PtFgPacerSelectPairBudget')){if($pacer.Contains($forbidden)){throw "obsolete software pacing path remains: $forbidden"}}
           if($pacer -match 'Sleep\(' -or $pacer -match 'WaitForVBlank' -or $pacer -match 'DwmFlush'){throw 'forbidden pacer wait remains'}
           $base='3beaddefcf9ba1b92137e1996071163528a56fb0'
@@ -106,7 +106,10 @@ jobs:
             if($diff){throw "protected shader changed: $shader"}
           }
           @(
-            'D3D11_REFERENCE_POLICY=GW16F_G_NOLOCK30_1',
+            'D3D11_REFERENCE_POLICY=MAINPERF2_PAIRBAL2',
+            'D3D11_DYNAMIC_PRESENT_SYNC=1_OR_2',
+            'D3D9_API_LIMIT=NO_PER_PRESENT_SYNC_INTERVAL',
+            'D3D9_ADAPTATION=PAIRBAL2_SYNC1_BRANCH',
             'FG_ON_PRESENT_SYNC=1',
             'FG_OFF_PRESENT_SYNC=1',
             'EXTRA_SLEEP=NO',
@@ -115,7 +118,7 @@ jobs:
             'D3D9_PRESENT_INTERVAL_ONE=YES',
             'D3D9_SOFTWARE_PACING_WAIT=NONE',
             'FG_SHADERS_CHANGED=NO'
-          ) | Set-Content artifact\D3D9_NOLOCK30_SYNC1_POLICY.txt -Encoding ascii
+          ) | Set-Content artifact\D3D9_PAIRBAL2_SYNC1_POLICY.txt -Encoding ascii
 
       - name: Compile existing F5 F1 verifiers
         shell: pwsh
@@ -165,7 +168,7 @@ jobs:
           Copy-Item compat\x86_d3d9\d3d9_fg_pacer_smoke.cpp artifact\d3d9_fg_pacer_smoke.cpp -Force
           Copy-Item lab\nolock30_sync1_fieldhotfix4\apply_d3d9_sync1_present_policy.ps1 artifact\apply_d3d9_sync1_present_policy.ps1 -Force
           @(
-            'PTAR_D3D9_FIELDHOTFIX4=NOLOCK30_SYNC1',
+            'PTAR_D3D9_FIELDHOTFIX4=PAIRBAL2_SYNC1_D3D9',
             ('SOURCE_COMMIT='+$env:GITHUB_SHA),
             ('D3D9_SHA256='+(Get-Content artifact\D3D9_SHA256.txt -Raw).Trim()),
             'CTRL_F5_PRESERVED=YES',
@@ -176,6 +179,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: PTAR-D3D9-NOLOCK30-SYNC1-FIELDHOTFIX4
+          name: PTAR-D3D9-PAIRBAL2-SYNC1-FIELDHOTFIX4
           path: artifact/
           if-no-files-found: error
