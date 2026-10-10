@@ -3,25 +3,32 @@
 #include <windows.h>
 #include "ptar_runtime_metrics.h"
 
-// D3D9 FG production-port pacer.
+// D3D9 port of the validated D3D11 MAINPERF2 PAIRBAL2 scheduler.
 //
-// The previous FG1 pacer treated the previous REAL presentation as an absolute
-// 60-Hz clock and rejected GENERATED when shader ME finished after that
-// historical midpoint. Field evidence showed that this creates skip storms:
-// the current frame pair cannot exist until CURRENT has been rendered, so the
-// historical midpoint is frequently already in the past.
+// Do not introduce a new pacing policy here. The pair selector below keeps the
+// exact D3D11 PAIRBAL2 contract:
+//   source work <= 34 ms  -> pair budget 2 VBlanks -> 1+1
+//   source work 34..66 ms -> error-diffused budget 2..4 VBlanks
+//   source work >= 66 ms  -> pair budget 4 VBlanks -> 2+2
+//   budget 3 alternates 1+2 / 2+1
+//   no member may ever request more than 2 VBlanks.
 //
-// PRODPORT1 instead preserves the production present-order invariant:
-// GENERATED then REAL, with an even local display interval. The current pair is
-// anchored when it is ready. We never busy-wait for an already missed
-// historical midpoint and never let one late frame poison following pairs.
+// D3D11 can select SyncInterval per Present. D3D9 cannot. The API adaptation
+// is therefore limited to applying the selected 1/2-slot budget on the same
+// 60-Hz QPC grid already used by the D3D9 backend. Crucially each next member
+// is anchored to the timestamp of the PREVIOUS SUCCESSFUL Present, not to a
+// pre-Present deadline. This preserves the D3D11 pair budget while avoiding
+// the field failure where a blocking Present consumed the deadline and left
+// GENERATED visible for only ~5 ms.
 //
-// Conviction legacy hardening:
-// Ultimate ASI Loader 9.7.2 can leave the EXE Sleep IAT redirected to its
-// CustomSleep wrapper. Do not let PTAR's own pacing path inherit that hook.
-// Resolve the system Sleep export once and call it indirectly for Sleep(0)
-// semantics. This keeps the original scheduler behaviour while removing PTAR's
-// direct Sleep import from the proxy's IAT. SwitchToThread remains the fallback.
+// Source-work sampling mirrors D3D11 AUTO_LAST_WORK: at GENERATED-ready time
+// we measure time elapsed since the previous successful REAL Present. This
+// excludes PTAR's GENERATED->REAL pacing wait and observes the work required to
+// produce the next pair. No shader, interpolation, selector or FG quality path
+// is changed.
+//
+// Conviction legacy hardening is retained: resolve kernel32!Sleep indirectly
+// so PTAR pacing never inherits Ultimate ASI Loader's EXE Sleep-IAT hook.
 
 typedef VOID (WINAPI *PTFN_PtarNativeSleep)(DWORD);
 
@@ -31,12 +38,18 @@ struct PTFGPacerState
     LONGLONG lastRealQpc;
     LONGLONG lastVisibleQpc;
     LONGLONG nextVisibleQpc;
+    LONGLONG lastSourceWorkQpc;
+    LONGLONG pairAccQpc;
     PTARRollingRate visibleRate;
     unsigned long realPresents;
     unsigned long generatedPresents;
     unsigned long generatedLateSkips;
     unsigned long resyncs;
     unsigned long waitYields;
+    unsigned int pairBudget;
+    unsigned int pairFirstSlots;
+    unsigned int pairSecondSlots;
+    bool budget3Orientation;
     bool initialized;
 };
 
@@ -85,23 +98,15 @@ static void PtFgPacerInit()
 
     g_ptarFgPacer.initialized=true;
     PtDiagLogA(
-        "FG_PACER_INIT qpc_freq=%lld policy=PRODPORT1_EVEN_LOCAL_GRID_NATIVE_SLEEP",
+        "FG_PACER_INIT qpc_freq=%lld policy=D3D11_MAINPERF2_PAIRBAL2_PORT_NATIVE_SLEEP",
         (long long)g_ptarFgPacer.frequency.QuadPart);
 }
 
-static void PtFgPacerReset()
+static LONGLONG PtFgPacerNow()
 {
-    PtFgPacerInit();
-    g_ptarFgPacer.lastRealQpc=0;
-    g_ptarFgPacer.lastVisibleQpc=0;
-    g_ptarFgPacer.nextVisibleQpc=0;
-    PtRollingRateReset(&g_ptarFgPacer.visibleRate);
-    g_ptarFgPacer.realPresents=0;
-    g_ptarFgPacer.generatedPresents=0;
-    g_ptarFgPacer.generatedLateSkips=0;
-    g_ptarFgPacer.resyncs=0;
-    g_ptarFgPacer.waitYields=0;
-    PtDiagLogA("FG_PACER_RESET policy=PRODPORT1_NATIVE_SLEEP");
+    LARGE_INTEGER now={};
+    QueryPerformanceCounter(&now);
+    return now.QuadPart;
 }
 
 static LONGLONG PtFgPacerPeriodTicks()
@@ -111,11 +116,33 @@ static LONGLONG PtFgPacerPeriodTicks()
     return ticks>0?ticks:1;
 }
 
-static LONGLONG PtFgPacerNow()
+static LONGLONG PtFgPacerMsTicks(unsigned int ms)
 {
-    LARGE_INTEGER now={};
-    QueryPerformanceCounter(&now);
-    return now.QuadPart;
+    PtFgPacerInit();
+    const LONGLONG ticks=
+        (g_ptarFgPacer.frequency.QuadPart*(LONGLONG)ms)/1000;
+    return ticks>0?ticks:1;
+}
+
+static void PtFgPacerReset()
+{
+    PtFgPacerInit();
+    g_ptarFgPacer.lastRealQpc=0;
+    g_ptarFgPacer.lastVisibleQpc=0;
+    g_ptarFgPacer.nextVisibleQpc=0;
+    g_ptarFgPacer.lastSourceWorkQpc=0;
+    g_ptarFgPacer.pairAccQpc=0;
+    PtRollingRateReset(&g_ptarFgPacer.visibleRate);
+    g_ptarFgPacer.realPresents=0;
+    g_ptarFgPacer.generatedPresents=0;
+    g_ptarFgPacer.generatedLateSkips=0;
+    g_ptarFgPacer.resyncs=0;
+    g_ptarFgPacer.waitYields=0;
+    g_ptarFgPacer.pairBudget=2;
+    g_ptarFgPacer.pairFirstSlots=1;
+    g_ptarFgPacer.pairSecondSlots=1;
+    g_ptarFgPacer.budget3Orientation=false;
+    PtDiagLogA("FG_PACER_RESET policy=D3D11_MAINPERF2_PAIRBAL2_PORT");
 }
 
 static void PtFgPacerWaitUntil(LONGLONG target)
@@ -142,27 +169,109 @@ static void PtFgPacerWaitUntil(LONGLONG target)
     }
 }
 
-static void PtFgPacerResyncIfStale(LONGLONG now)
+static void PtFgPacerSelectPairBudget(LONGLONG sourceWorkQpc)
 {
+    // Exact MAINPERF2_PAIRBAL2 thresholds/model:
+    // T34=34 ms, high=2*T33=66 ms, transition width=32 ms.
+    const LONGLONG low=PtFgPacerMsTicks(34);
+    const LONGLONG high=PtFgPacerMsTicks(66);
+    const LONGLONG width=high-low;
+
+    unsigned int budget=2;
+
+    if(sourceWorkQpc<=0 || sourceWorkQpc<=low)
+    {
+        budget=2;
+        g_ptarFgPacer.pairAccQpc=0;
+    }
+    else if(sourceWorkQpc>=high)
+    {
+        budget=4;
+        g_ptarFgPacer.pairAccQpc=0;
+    }
+    else
+    {
+        // Same pair-level error diffusion as MAINPERF2_PAIRBAL2:
+        // acc += 2*(source-low); consume transition-width quanta twice max.
+        g_ptarFgPacer.pairAccQpc += 2*(sourceWorkQpc-low);
+        budget=2;
+        if(g_ptarFgPacer.pairAccQpc>=width)
+        {
+            g_ptarFgPacer.pairAccQpc-=width;
+            ++budget;
+        }
+        if(g_ptarFgPacer.pairAccQpc>=width)
+        {
+            g_ptarFgPacer.pairAccQpc-=width;
+            ++budget;
+        }
+    }
+
+    unsigned int first=1;
+    unsigned int second=1;
+
+    if(budget==4)
+    {
+        first=2;
+        second=2;
+    }
+    else if(budget==3)
+    {
+        g_ptarFgPacer.budget3Orientation=
+            !g_ptarFgPacer.budget3Orientation;
+        if(g_ptarFgPacer.budget3Orientation)
+        {
+            first=1;
+            second=2;
+        }
+        else
+        {
+            first=2;
+            second=1;
+        }
+    }
+
+    g_ptarFgPacer.pairBudget=budget;
+    g_ptarFgPacer.pairFirstSlots=first;
+    g_ptarFgPacer.pairSecondSlots=second;
+
+    PtDiagLogA(
+        "FG_PAIRBAL2 source_work_ticks=%lld budget=%u split=%u+%u acc=%lld",
+        (long long)sourceWorkQpc,
+        budget,first,second,
+        (long long)g_ptarFgPacer.pairAccQpc);
+}
+
+static void PtFgPacerWaitMemberSlots(unsigned int slots)
+{
+    if(slots<1) slots=1;
+    if(slots>2) slots=2;
+
+    const LONGLONG now=PtFgPacerNow();
     const LONGLONG period=PtFgPacerPeriodTicks();
 
-    if(g_ptarFgPacer.nextVisibleQpc<=0)
+    if(g_ptarFgPacer.lastVisibleQpc<=0)
     {
         g_ptarFgPacer.nextVisibleQpc=now;
         return;
     }
 
-    // If the local grid is more than one visible interval behind, catch up in
-    // one operation. Do not replay stale deadlines or create a skip cascade.
-    if(now>g_ptarFgPacer.nextVisibleQpc+period)
+    // Anchor the selected D3D11 Sync1/Sync2-equivalent slot count to the
+    // previous SUCCESSFUL D3D9 Present. Never reuse a pre-Present deadline.
+    const LONGLONG target=
+        g_ptarFgPacer.lastVisibleQpc+period*(LONGLONG)slots;
+    g_ptarFgPacer.nextVisibleQpc=target;
+
+    if(now>target+period)
     {
         ++g_ptarFgPacer.resyncs;
         PtDiagLogA(
-            "FG_PACER_RESYNC late_ticks=%lld resyncs=%lu",
-            (long long)(now-g_ptarFgPacer.nextVisibleQpc),
-            g_ptarFgPacer.resyncs);
-        g_ptarFgPacer.nextVisibleQpc=now;
+            "FG_PAIRBAL2_RESYNC late_ticks=%lld slots=%u resyncs=%lu",
+            (long long)(now-target),slots,g_ptarFgPacer.resyncs);
+        return;
     }
+
+    PtFgPacerWaitUntil(target);
 }
 
 static bool PtFgPacerPrepareGenerated()
@@ -170,15 +279,13 @@ static bool PtFgPacerPrepareGenerated()
     PtFgPacerInit();
 
     const LONGLONG now=PtFgPacerNow();
-    PtFgPacerResyncIfStale(now);
+    LONGLONG sourceWork=0;
+    if(g_ptarFgPacer.lastRealQpc>0 && now>g_ptarFgPacer.lastRealQpc)
+        sourceWork=now-g_ptarFgPacer.lastRealQpc;
 
-    // GENERATED is already available here. Schedule it on the current/next
-    // local visible slot instead of comparing it with a midpoint that elapsed
-    // while CURRENT + ME were being produced.
-    if(g_ptarFgPacer.nextVisibleQpc<now)
-        g_ptarFgPacer.nextVisibleQpc=now;
-
-    PtFgPacerWaitUntil(g_ptarFgPacer.nextVisibleQpc);
+    g_ptarFgPacer.lastSourceWorkQpc=sourceWork;
+    PtFgPacerSelectPairBudget(sourceWork);
+    PtFgPacerWaitMemberSlots(g_ptarFgPacer.pairFirstSlots);
     return true;
 }
 
@@ -189,21 +296,13 @@ static void PtFgPacerPrepareReal(bool fgPair)
     if(!fgPair)
     {
         g_ptarFgPacer.nextVisibleQpc=0;
+        g_ptarFgPacer.pairBudget=2;
+        g_ptarFgPacer.pairFirstSlots=1;
+        g_ptarFgPacer.pairSecondSlots=1;
         return;
     }
 
-    const LONGLONG period=PtFgPacerPeriodTicks();
-    const LONGLONG now=PtFgPacerNow();
-
-    if(g_ptarFgPacer.nextVisibleQpc<=0)
-        g_ptarFgPacer.nextVisibleQpc=now;
-
-    // GENERATED has just occupied one visible slot. REAL follows exactly one
-    // nominal visible period later. Present itself may block to VBlank; stale
-    // grids are resynchronised on the next pair rather than accumulated.
-    g_ptarFgPacer.nextVisibleQpc+=period;
-    PtFgPacerResyncIfStale(now);
-    PtFgPacerWaitUntil(g_ptarFgPacer.nextVisibleQpc);
+    PtFgPacerWaitMemberSlots(g_ptarFgPacer.pairSecondSlots);
 }
 
 static void PtFgPacerRecordVisible(bool generated)
@@ -212,31 +311,22 @@ static void PtFgPacerRecordVisible(bool generated)
 
     const LONGLONG now=PtFgPacerNow();
     g_ptarFgPacer.lastVisibleQpc=now;
+    g_ptarFgPacer.nextVisibleQpc=now;
     PtRollingRateRecordAt(&g_ptarFgPacer.visibleRate,now);
 
     if(generated)
     {
         ++g_ptarFgPacer.generatedPresents;
-        // Advance to the REAL slot only in PrepareReal(), after the generated
-        // Present actually succeeded.
     }
     else
     {
         ++g_ptarFgPacer.realPresents;
         g_ptarFgPacer.lastRealQpc=now;
-
-        // Complete the pair: reserve the next GENERATED slot one period after
-        // REAL. A slow game/Present will be caught by ResyncIfStale.
-        if(g_ptarFgPacer.nextVisibleQpc>0)
-            g_ptarFgPacer.nextVisibleQpc+=PtFgPacerPeriodTicks();
     }
 }
 
 static double PtFgPacerVisibleFps()
 {
-    // Deliberately wall-clock based. This is the visible throughput over the
-    // recent QPC window, so hitches and pacing gaps reduce the displayed FPS
-    // instead of being hidden by an instantaneous-FPS EMA.
     return PtRollingRateValue(&g_ptarFgPacer.visibleRate);
 }
 
@@ -252,7 +342,7 @@ static unsigned long PtFgPacerRealCount()
 
 static unsigned long PtFgPacerLateSkipCount()
 {
-    // Kept for HUD/ABI continuity. PRODPORT1 replaces historical late skips
-    // with local-grid resynchronisation, so this remains zero by design.
+    // Kept for HUD/ABI continuity. MAINPERF2_PAIRBAL2 does not use a generated
+    // late-skip policy; late members are resynchronised fail-open.
     return g_ptarFgPacer.generatedLateSkips;
 }
