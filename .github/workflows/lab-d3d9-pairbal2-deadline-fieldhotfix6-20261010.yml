@@ -1,0 +1,136 @@
+name: LAB D3D9 PAIRBAL2 DEADLINE FIELDHOTFIX6 20261010
+
+on:
+  push:
+    branches:
+      - lab/d3d9-pairbal2-immediate-fieldhotfix5-20261010
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply existing immediate Present single-clock policy
+        shell: pwsh
+        run: .\lab\pairbal2_singleclock_fieldhotfix5\apply_d3d9_immediate_present_policy.ps1
+
+      - name: Apply existing D3D9 diagnostic ring unchanged
+        shell: pwsh
+        run: .\lab\pairbal2_fieldhotfix3\apply_existing_diag_ring.ps1
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      - name: Compile exact D3D9 shader set
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force build_x86,artifact,smoke_game | Out-Null
+          $fxc=Get-Command fxc.exe -ErrorAction SilentlyContinue
+          if(-not $fxc){
+            foreach($root in @("$env:ProgramFiles(x86)\Windows Kits\10\bin","$env:ProgramFiles(x86)\Windows Kits\8.1\bin")){
+              if(Test-Path $root){$fxc=Get-ChildItem $root -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1;if($fxc){break}}
+            }
+          }
+          if(-not $fxc){throw 'fxc.exe not found'}
+          $f=if($fxc.Path){$fxc.Path}else{$fxc.FullName}
+          $jobs=@(
+            @('ps_3_0','ptar_moe_d3d9_ps.hlsl','ptar_ps_bytecode.h','g_ptarPs'),
+            @('ps_3_0','ptar_moe_universal_d3d9_ps.hlsl','ptar_universal_ps_bytecode.h','g_ptarUniversalPs'),
+            @('ps_2_0','ptar_bilinear_ref_ps.hlsl','ptar_bilinear_ps_bytecode.h','g_ptarBilinearPs'),
+            @('ps_3_0','ptar_gw16i_hud_ps.hlsl','ptar_gw16i_hud_ps_bytecode.h','g_ptarGw16iHudPs'),
+            @('ps_3_0','ptar_gw16i_feedback_ps.hlsl','ptar_gw16i_feedback_ps_bytecode.h','g_ptarGw16iFeedbackPs'),
+            @('ps_3_0','ptar_fg_me_coarse_ps.hlsl','ptar_fg_me_coarse_ps_bytecode.h','g_ptarFgMeCoarsePs'),
+            @('ps_3_0','ptar_fg_me_refine_ps.hlsl','ptar_fg_me_refine_ps_bytecode.h','g_ptarFgMeRefinePs'),
+            @('ps_3_0','ptar_fg_interpolate_ps.hlsl','ptar_fg_interpolate_ps_bytecode.h','g_ptarFgInterpolatePs')
+          )
+          foreach($j in $jobs){& $f /nologo /T $j[0] /E main /O3 /Fh ("build_x86\"+$j[2]) /Vn $j[3] ("compat\x86_d3d9\"+$j[1]);if($LASTEXITCODE -ne 0){throw "FXC failed $($j[1])"}}
+          'D3D9_SHADER_SET_UNCHANGED_BUILD=PASS' | Set-Content artifact\D3D9_SHADER_BUILD.txt -Encoding ascii
+
+      - name: Build Win81 x86 runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /LD /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I build_x86 compat\x86_d3d9\ptar_d3d9_proxy.cpp /link user32.lib /DEF:compat\x86_d3d9\d3d9_proxy.def /OUT:artifact\d3d9.dll /SUBSYSTEM:WINDOWS,6.03
+          if($LASTEXITCODE -ne 0){throw 'runtime compile failed'}
+          dumpbin /headers artifact\d3d9.dll | Out-File artifact\HEADERS.txt -Encoding ascii
+          dumpbin /exports artifact\d3d9.dll | Out-File artifact\EXPORTS.txt -Encoding ascii
+          dumpbin /dependents artifact\d3d9.dll | Out-File artifact\DEPENDENTS.txt -Encoding ascii
+          $h=Get-Content artifact\HEADERS.txt -Raw;$e=Get-Content artifact\EXPORTS.txt -Raw;$d=Get-Content artifact\DEPENDENTS.txt -Raw
+          if($h -notmatch '14C machine \(x86\)' -or $h -notmatch '6\.03 subsystem version'){throw 'Win8.1 x86 PE contract failed'}
+          foreach($n in @('Direct3DCreate9','Direct3DCreate9Ex','PTAR_D3D9_DIAG_STATE')){if($e -notmatch [regex]::Escape($n)){throw "missing export $n"}}
+          foreach($bad in @('VCRUNTIME','MSVCP','UCRTBASE','API-MS-WIN-CRT')){if($d -match $bad){throw "forbidden dependency $bad"}}
+          $sha=(Get-FileHash artifact\d3d9.dll -Algorithm SHA256).Hash.ToLowerInvariant();Set-Content artifact\D3D9_SHA256.txt $sha -Encoding ascii;Write-Host "D3D9_DLL_SHA256=$sha"
+
+      - name: Validate PairBal2 whole-pair deadline
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I compat\x86_d3d9 compat\x86_d3d9\d3d9_fg_pacer_smoke.cpp /link /OUT:artifact\d3d9_fg_pacer_smoke.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE -ne 0){throw 'pacer smoke compile failed'}
+          & artifact\d3d9_fg_pacer_smoke.exe | Tee-Object artifact\D3D9_FG_PACER_SMOKE.txt
+          if($LASTEXITCODE -ne 0){throw "pacer smoke failed rc=$LASTEXITCODE"}
+          $s=Get-Content artifact\D3D9_FG_PACER_SMOKE.txt -Raw
+          foreach($m in @('D3D11_MAINPERF2_PAIRBAL2_SELECTOR_PORT=PASS','D3D9_PAIR_DEADLINE_TOTAL_BUDGET=PASS','D3D9_NO_PRE_GENERATED_MEMBER_WAIT=PASS','D3D9_FIELD_26MS_TARGET_60_MODEL=PASS','D3D9_DEVICE_PRESENT_INTERVAL=IMMEDIATE_REQUIRED','D3D9_FG_OFF_SOFTWARE_SYNC1=PASS','D3D9_FG_PACER_SMOKE=PASS')){if($s -notmatch [regex]::Escape($m)){throw "missing gate $m"}}
+          $p=Get-Content compat\x86_d3d9\ptar_fg_pacer.h -Raw
+          if($p -notmatch 'D3D11_MAINPERF2_PAIRBAL2_D3D9_PAIR_DEADLINE'){throw 'pair-deadline marker missing'}
+          if($p -match 'PtFgPacerWaitMemberSlots'){throw 'obsolete per-member wait path remains'}
+
+      - name: Compile existing F5 F1 verifiers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $csc="$env:WINDIR\Microsoft.NET\Framework\v4.0.30319\csc.exe";$shared='lab\ctrl_ui_real_visibility\PTARD3D9PresentTelemetryReader.cs'
+          & $csc /nologo /target:exe /optimize+ /platform:x86 /out:artifact\ptar_vblank3_d3d9_autostart.exe $shared lab\ctrl_ui_real_visibility\PTARVisiblePacingVerifier_D3D9RuntimeRing.cs;if($LASTEXITCODE -ne 0){throw 'F5 compile failed'}
+          & $csc /nologo /target:exe /optimize+ /platform:x86 /out:artifact\ptar_presentshed1_visible.exe $shared lab\ctrl_ui_real_visibility\PTARVisiblePacingVerifierPresentShed1_D3D9RuntimeRing.cs;if($LASTEXITCODE -ne 0){throw 'F1 compile failed'}
+          & artifact\ptar_vblank3_d3d9_autostart.exe --selftest | Tee-Object artifact\F5_VERIFIER_SELFTEST.txt;if($LASTEXITCODE -ne 0){throw 'F5 selftest failed'}
+          & artifact\ptar_presentshed1_visible.exe --selftest | Tee-Object artifact\F1_VERIFIER_SELFTEST.txt;if($LASTEXITCODE -ne 0){throw 'F1 selftest failed'}
+
+      - name: Validate F5 F1 ring end to end
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 lab\ctrl_ui_real_visibility\d3d9_diag_ring_harness.cpp /link /OUT:smoke_game\game.exe /SUBSYSTEM:CONSOLE,6.03;if($LASTEXITCODE -ne 0){throw 'harness compile failed'}
+          Copy-Item artifact\d3d9.dll smoke_game\d3d9.dll -Force
+          $root=(Resolve-Path smoke_game).Path;$game=(Resolve-Path smoke_game\game.exe).Path;$dll=(Resolve-Path smoke_game\d3d9.dll).Path;$env:PTAR_GAME_ROOT=$root;$env:PTAR_TARGET_EXE=$game
+          $p=Start-Process -FilePath $game -ArgumentList ('"'+$dll+'" mixed 20000') -PassThru -RedirectStandardOutput artifact\HARNESS.txt;Start-Sleep -Milliseconds 300
+          & artifact\ptar_vblank3_d3d9_autostart.exe 5 --autostart 2>&1 | Tee-Object artifact\F5_RUNTIME_RING_SMOKE.txt;if($LASTEXITCODE -ne 0){throw 'F5 runtime ring failed'}
+          $prefix=Join-Path $root 'F1_SMOKE';$env:PTAR_FG_PRESENTSHED1_OUTPUT_PREFIX=$prefix
+          & artifact\ptar_presentshed1_visible.exe 5 --autostart 2>&1 | Tee-Object artifact\F1_RUNTIME_RING_SMOKE.txt;if($LASTEXITCODE -ne 0){throw 'F1 runtime ring failed'}
+          if(-not $p.HasExited){Stop-Process -Id $p.Id -Force}
+          'CTRL_F5_RUNTIME_RING=PASS' | Set-Content artifact\CTRL_F5_RUNTIME_RING.txt -Encoding ascii
+          'CTRL_F1_RUNTIME_RING=PASS' | Set-Content artifact\CTRL_F1_RUNTIME_RING.txt -Encoding ascii
+
+      - name: Package evidence
+        shell: pwsh
+        run: |
+          Copy-Item compat\x86_d3d9\ptar_fg_pacer.h artifact\ptar_fg_pacer.h -Force
+          Copy-Item compat\x86_d3d9\d3d9_fg_pacer_smoke.cpp artifact\d3d9_fg_pacer_smoke.cpp -Force
+          @(
+            'PTAR_D3D9_FIELDHOTFIX6=PAIRBAL2_PAIR_DEADLINE',
+            ('SOURCE_COMMIT='+$env:GITHUB_SHA),
+            ('D3D9_SHA256='+(Get-Content artifact\D3D9_SHA256.txt -Raw).Trim()),
+            'FIELD_BASIS=HF5_VISIBLE45.216_REAL22.589_GEN22.606_REAL_DWELL25.852_GEN_DWELL17.250',
+            'FIELD_TARGET=SOURCE_ABOVE_30_TO_MIXED_NEAR_60',
+            'DEVICE_PRESENT=IMMEDIATE',
+            'PAIRBAL2_BUDGET=TOTAL_REAL_TO_REAL_DEADLINE',
+            'CTRL_F5_PRESERVED=YES',
+            'CTRL_F1_PRESERVED=YES',
+            'COLLECTOR_ROOT_OUTPUT_PRESERVED=YES'
+          ) | Set-Content artifact\PTAR_D3D9_FIELDHOTFIX6_VERSION.txt -Encoding ascii
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PTAR-D3D9-PAIRBAL2-DEADLINE-FIELDHOTFIX6
+          path: artifact/
+          if-no-files-found: error
