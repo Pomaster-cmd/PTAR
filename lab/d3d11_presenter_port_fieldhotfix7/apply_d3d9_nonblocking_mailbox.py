@@ -10,6 +10,14 @@ s=p.read_text(encoding='utf-8')
 # with an EVENT query whose completion is promoted opportunistically on later
 # source-thread entries. Never spin/wait for GPU completion in HookPresent.
 
+# Keep the runtime diagnostic label aligned with the inherited D3D11
+# STALEGUARD1 order. This changes diagnostics only, not the presenter policy.
+old_order_log='order=REAL_THEN_GENERATED'
+new_order_log='order=GENERATED_THEN_MATCHING_REAL'
+if s.count(old_order_log)!=1:
+    raise SystemExit('presenter order log anchor mismatch')
+s=s.replace(old_order_log,new_order_log,1)
+
 states='''#define PTAR_D3D9_ISO_FREE 0
 #define PTAR_D3D9_ISO_WRITING 1
 #define PTAR_D3D9_ISO_READY 2
@@ -153,6 +161,8 @@ if 'PtD3D9IsoFenceProducer' in t:
     raise SystemExit('obsolete blocking fence path remains')
 if 'PTAR_D3D9_ISO_GPU_PENDING' not in t or 'PtD3D9IsoPromotePendingSlots' not in t:
     raise SystemExit('pending mailbox promotion missing')
+if new_order_log not in t or old_order_log in t:
+    raise SystemExit('presenter order diagnostic mismatch')
 segment=t[t.index('static bool PtD3D9IsoIssueProducerFence'):t.index('static int PtD3D9IsoAcquireWriteSlot')]
 if 'for(;;)' in segment or 'GetTickCount()-start' in segment:
     raise SystemExit('source-side GPU wait loop remains')
@@ -160,3 +170,4 @@ if 'for(;;)' in segment or 'GetTickCount()-start' in segment:
 print('D3D9_NONBLOCKING_MAILBOX_FENCE=PASS')
 print('PRODUCER_FENCE=ISSUE_PLUS_ZERO_WAIT_PROMOTION')
 print('SOURCE_GPU_WAIT_LOOP=NONE')
+print('PRESENTER_ORDER_LOG=GENERATED_THEN_MATCHING_REAL')
