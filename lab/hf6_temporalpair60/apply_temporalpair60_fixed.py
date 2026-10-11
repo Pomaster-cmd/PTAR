@@ -27,3 +27,20 @@ text = text.replace(
 
 ns = {'__name__': '__main__', '__file__': str(core)}
 exec(compile(text, str(core), 'exec'), ns, ns)
+
+# The temporal source path no longer calls the old synchronous presenter pacer,
+# but we deliberately keep the exact field-tested HF4 pacer byte-for-byte.
+# Its PrepareGenerated routine performs no wait; it only updates diagnostic
+# source-work state. Keep one harmless call before publishing the pair so MSVC
+# /W4 /WX does not discard it as an unreferenced internal function and the
+# diagnostic semantics remain continuous. This is NOT a timing authority.
+proxy = Path('compat/x86_d3d9/ptar_d3d9_proxy.cpp')
+s = proxy.read_text(encoding='utf-8')
+old = '''                fgPipelineReady=true;\n                PtDiagStage("FG_TEMPORAL_PUBLISH_PAIR");'''
+new = '''                fgPipelineReady=true;\n                (void)PtFgPacerPrepareGenerated();\n                PtDiagStage("FG_TEMPORAL_PUBLISH_PAIR");'''
+if s.count(old) != 1:
+    raise SystemExit('HF4 PrepareGenerated reference anchor mismatch')
+s = s.replace(old, new, 1)
+proxy.write_text(s, encoding='utf-8', newline='\n')
+
+print('HF4_PREPARE_GENERATED_REFERENCE=RESTORED_NO_WAIT')
