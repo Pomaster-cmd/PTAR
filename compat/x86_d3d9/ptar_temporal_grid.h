@@ -166,12 +166,3 @@ static void PtTemporalGridRecordSubmission(
         ++grid->skippedGridSlots;
     }
 }
-
-static double PtTemporalGridTicksToMs(
-    const PTARTemporalGrid* grid,
-    LONGLONG ticks)
-{
-    if(!grid || grid->frequency.QuadPart<=0)
-        return 0.0;
-    return (double)ticks*1000.0/(double)grid->frequency.QuadPart;
-}
