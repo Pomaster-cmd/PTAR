@@ -1,4 +1,5 @@
 #define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
 #include <windows.h>
 #include <algorithm>
 #include <cstdio>
@@ -39,10 +40,6 @@ static bool RunControlledCadenceCase(const char* name, DWORD simulatedPresentMs,
         PtTemporalGridWaitUntilDeadline(&grid,0);
         const LONGLONG callStart=PtTemporalGridNow();
         starts.push_back(callStart);
-
-        // Controlled QPC busy-block isolates the temporal algorithm from the
-        // hosted runner's coarse Sleep scheduling. This models time spent
-        // inside Present without injecting unrelated timer overshoot.
         BusyBlockMs(simulatedPresentMs);
         PtTemporalGridRecordSubmission(&grid,callStart);
     }
@@ -70,8 +67,6 @@ static bool RunControlledCadenceCase(const char* name, DWORD simulatedPresentMs,
     }
     else
     {
-        // A Present longer than one slot may reduce throughput, but must not
-        // trigger a short catch-up interval afterwards.
         pass = pass && median>=19.0;
     }
 
@@ -95,10 +90,6 @@ static bool RunSchedulerNoiseCase()
         PtTemporalGridWaitUntilDeadline(&grid,0);
         const LONGLONG s=PtTemporalGridNow();
         starts.push_back(s);
-
-        // Deliberately yield to the hosted scheduler to create overshoot. The
-        // required property is not perfect p95 under arbitrary OS preemption;
-        // it is that recovery NEVER compresses the next G/R interval.
         Sleep(12);
         PtTemporalGridRecordSubmission(&grid,s);
     }
