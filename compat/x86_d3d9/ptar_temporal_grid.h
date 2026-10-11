@@ -3,17 +3,19 @@
 #include <windows.h>
 
 // Temporal pairing grid used ONLY by the asynchronous D3D9 presentation
-// worker.  The game/source thread never waits on this clock.
+// worker. The game/source thread never waits on this clock.
 //
 // Contract:
 // - nominal display period = 1/60 s;
-// - never catch up a missed slot with a back-to-back Present;
+// - ABSOLUTE no-catchup invariant: two Present call starts are never scheduled
+//   closer than one full period, even after worker descheduling;
 // - after starvation, a new frame may be submitted immediately only when at
 //   least one full grid period has elapsed since the previous submission;
-// - the next member is then scheduled exactly one grid period later.
+// - scheduler lateness is absorbed by rebasing the next deadline forward,
+//   never by shortening the next G/R interval.
 //
 // This is intentionally independent from the FG algorithm and from the HF4
-// diagnostic pacer.  The latter still owns visible counters/ring timestamps.
+// diagnostic pacer. The latter still owns visible counters/ring timestamps.
 
 struct PTARTemporalGrid
 {
@@ -98,8 +100,8 @@ static void PtTemporalGridResumeAfterStarvation(
         return;
     }
 
-    // Never create a recovery burst.  If a whole slot already elapsed since
-    // the previous submitted frame, immediate recovery is safe.  Otherwise
+    // Never create a recovery burst. If a whole slot already elapsed since
+    // the previous submitted frame, immediate recovery is safe. Otherwise
     // preserve the remaining part of the 16.67 ms separation.
     if(grid->lastSubmitQpc>0 &&
        now-grid->lastSubmitQpc<grid->periodTicks)
@@ -129,9 +131,7 @@ static void PtTemporalGridWaitUntilDeadline(
         if(now>=grid->nextDeadlineQpc)
             return;
 
-        // This wait runs only on the presentation worker.  Yielding instead
-        // of sleeping the game thread is the key difference from the broken
-        // FIELDHOTFIX5/6 source-thread pacing attempts.
+        // Worker-only wait. Never sleep/wait on the game/source thread.
         SwitchToThread();
         ++grid->waitYields;
     }
@@ -155,14 +155,19 @@ static void PtTemporalGridRecordSubmission(
         return;
     }
 
+    // Advance the ideal grid by one slot first.
     grid->nextDeadlineQpc += grid->periodTicks;
 
-    // If Present itself blocked or the worker was descheduled, skip elapsed
-    // grid positions.  Do NOT issue catch-up Presents: that would recreate the
-    // 0.5 ms GENERATED/REAL micro-bursts seen in the field trace.
-    while(grid->nextDeadlineQpc<=submitQpc)
+    // Strong no-catchup rule. Hosted-Windows stress showed that merely keeping
+    // the old ideal phase can schedule the next call 15-16 ms after a late
+    // submission. That is still a temporal catch-up and can recreate visible
+    // G/R compression. Therefore the next deadline is never allowed before
+    // submit + one FULL period. Lateness is paid as a longer interval, never
+    // recovered as a shorter interval.
+    const LONGLONG minimumNext=submitQpc+grid->periodTicks;
+    if(grid->nextDeadlineQpc<minimumNext)
     {
-        grid->nextDeadlineQpc += grid->periodTicks;
+        grid->nextDeadlineQpc=minimumNext;
         ++grid->skippedGridSlots;
     }
 }
