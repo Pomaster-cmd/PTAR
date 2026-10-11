@@ -1,0 +1,30 @@
+name: LAB D3D9 HF6 TEMPORALPAIR60 FINAL 20261011
+
+on:
+  push:
+    branches: [lab/d3d9-hf6-temporalpair60-20261011]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  temporal-final:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with: {arch: x86}
+
+      - name: Run complete temporal pairing lab
+        shell: pwsh
+        run: .\lab\hf6_temporalpair60\run_temporal_ci.ps1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-D3D9-HF6-TEMPORALPAIR60-LAB-VALIDATED
+          path: artifact/
+          if-no-files-found: error
