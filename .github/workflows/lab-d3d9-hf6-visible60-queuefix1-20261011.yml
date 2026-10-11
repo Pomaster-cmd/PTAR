@@ -1,0 +1,152 @@
+name: LAB D3D9 HF6 VISIBLE60 QUEUEFIX1 20261011
+
+on:
+  push:
+    branches: [lab/d3d9-hf6-visible60-queuefix1-20261011]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+
+      - name: Restore exact HF6 working FG and apply presentation-only queue fix
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          .\lab\pairbal2_fieldhotfix3\apply_existing_diag_ring.ps1
+          python .\lab\hf6_visible60_queuefix1\apply_visible60_queuefix.py
+
+      - name: Validate deterministic 60 Hz queue model
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python .\lab\hf6_visible60_queuefix1\validate_queue_model.py | Tee-Object queue_model.txt
+          if($LASTEXITCODE){throw 'queue model failed'}
+          $q=Get-Content queue_model.txt -Raw
+          foreach($m in @('WORK_26.0MS_VISIBLE_FPS=60.000 PASS','WORK_30.0MS_VISIBLE_FPS=60.000 PASS','WORK_32.5MS_VISIBLE_FPS=60.000 PASS','SOURCE_LIMIT_34MS_MISSED_VBLANK=PASS','VISIBLE60_QUEUE_MODEL=PASS')){if($q -notmatch [regex]::Escape($m)){throw "queue model gate missing $m"}}
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with: {arch: x86}
+
+      - name: Compile unchanged HF6 shader set and Win81 x86 runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force build_x86,artifact,smoke_game | Out-Null
+          $fxc=Get-Command fxc.exe -ErrorAction SilentlyContinue
+          if(-not $fxc){foreach($root in @("$env:ProgramFiles(x86)\Windows Kits\10\bin","$env:ProgramFiles(x86)\Windows Kits\8.1\bin")){if(Test-Path $root){$fxc=Get-ChildItem $root -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue|Sort-Object FullName -Descending|Select-Object -First 1;if($fxc){break}}}}
+          if(-not $fxc){throw 'fxc.exe not found'}
+          $f=if($fxc.Path){$fxc.Path}else{$fxc.FullName}
+          $jobs=@(
+            @('ps_3_0','ptar_moe_d3d9_ps.hlsl','ptar_ps_bytecode.h','g_ptarPs'),
+            @('ps_3_0','ptar_moe_universal_d3d9_ps.hlsl','ptar_universal_ps_bytecode.h','g_ptarUniversalPs'),
+            @('ps_2_0','ptar_bilinear_ref_ps.hlsl','ptar_bilinear_ps_bytecode.h','g_ptarBilinearPs'),
+            @('ps_3_0','ptar_gw16i_hud_ps.hlsl','ptar_gw16i_hud_ps_bytecode.h','g_ptarGw16iHudPs'),
+            @('ps_3_0','ptar_gw16i_feedback_ps.hlsl','ptar_gw16i_feedback_ps_bytecode.h','g_ptarGw16iFeedbackPs'),
+            @('ps_3_0','ptar_fg_me_coarse_ps.hlsl','ptar_fg_me_coarse_ps_bytecode.h','g_ptarFgMeCoarsePs'),
+            @('ps_3_0','ptar_fg_me_refine_ps.hlsl','ptar_fg_me_refine_ps_bytecode.h','g_ptarFgMeRefinePs'),
+            @('ps_3_0','ptar_fg_interpolate_ps.hlsl','ptar_fg_interpolate_ps_bytecode.h','g_ptarFgInterpolatePs'))
+          foreach($j in $jobs){& $f /nologo /T $j[0] /E main /O3 /Fh ("build_x86\"+$j[2]) /Vn $j[3] ("compat\x86_d3d9\"+$j[1]);if($LASTEXITCODE){throw "FXC failed $($j[1])"}}
+          'D3D9_SHADER_SET_HF6_UNCHANGED_BUILD=PASS'|Set-Content artifact\D3D9_SHADER_BUILD.txt -Encoding ascii
+          & cl.exe /nologo /LD /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I build_x86 compat\x86_d3d9\ptar_d3d9_proxy.cpp /link user32.lib /DEF:compat\x86_d3d9\d3d9_proxy.def /OUT:artifact\d3d9.dll /SUBSYSTEM:WINDOWS,6.03
+          if($LASTEXITCODE){throw 'runtime compile failed'}
+          dumpbin /headers artifact\d3d9.dll|Out-File artifact\HEADERS.txt -Encoding ascii
+          dumpbin /exports artifact\d3d9.dll|Out-File artifact\EXPORTS.txt -Encoding ascii
+          dumpbin /dependents artifact\d3d9.dll|Out-File artifact\DEPENDENTS.txt -Encoding ascii
+          $hd=Get-Content artifact\HEADERS.txt -Raw;$ex=Get-Content artifact\EXPORTS.txt -Raw;$dp=Get-Content artifact\DEPENDENTS.txt -Raw
+          if($hd -notmatch '14C machine \(x86\)' -or $hd -notmatch '6\.03 subsystem version'){throw 'Win8.1 x86 PE contract failed'}
+          foreach($n in @('Direct3DCreate9','Direct3DCreate9Ex','PTAR_D3D9_DIAG_STATE')){if($ex -notmatch [regex]::Escape($n)){throw "missing export $n"}}
+          foreach($bad in @('VCRUNTIME','MSVCP','UCRTBASE','API-MS-WIN-CRT')){if($dp -match $bad){throw "forbidden dependency $bad"}}
+          $sha=(Get-FileHash artifact\d3d9.dll -Algorithm SHA256).Hash.ToLowerInvariant();$sha|Set-Content artifact\D3D9_SHA256.txt -Encoding ascii;Write-Host "D3D9_DLL_SHA256=$sha"
+
+      - name: Prove HF6 FG core is untouched and only presenter queue changed
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -c "from pathlib import Path;import subprocess,hashlib,re; base='9a47a93e1c3cb87975903eb21298408e26c2957a'; p=Path('compat/x86_d3d9/ptar_d3d9_proxy.cpp').read_text(); b=subprocess.check_output(['git','show',base+':compat/x86_d3d9/ptar_d3d9_proxy.cpp'],text=True); grab=lambda s,a,z:s[s.index(a):s.index(z,s.index(a))]; assert grab(p,'static HRESULT RenderFGMotionAndIntermediate','static HRESULT PtRefreshQueuedRealBackBuffer')==grab(b,'static HRESULT RenderFGMotionAndIntermediate','static HRESULT RenderTextureToBackBuffer'); assert grab(p,'static HRESULT STDMETHODCALLTYPE HookPresent','static HRESULT STDMETHODCALLTYPE HookReset')==grab(b,'static HRESULT STDMETHODCALLTYPE HookPresent','static HRESULT STDMETHODCALLTYPE HookReset'); print('HF6_FG_RENDER_FUNCTION_BYTE_TEXT_IDENTICAL=PASS'); print('HF6_HOOKPRESENT_FLOW_IDENTICAL=PASS')" | Tee-Object artifact\HF6_CORE_IDENTITY.txt
+          if($LASTEXITCODE){throw 'HF6 core identity failed'}
+          git diff --exit-code 9a47a93e1c3cb87975903eb21298408e26c2957a -- compat/x86_d3d9/ptar_fg_me_coarse_ps.hlsl compat/x86_d3d9/ptar_fg_me_refine_ps.hlsl compat/x86_d3d9/ptar_fg_interpolate_ps.hlsl
+          if($LASTEXITCODE){throw 'FG shader source changed'}
+          $p=Get-Content compat\x86_d3d9\ptar_d3d9_proxy.cpp -Raw
+          foreach($m in @('actual->BackBufferCount=2','actual->SwapEffect=D3DSWAPEFFECT_DISCARD','actual->PresentationInterval=D3DPRESENT_INTERVAL_ONE','PtRefreshQueuedRealBackBuffer(dev)','VISIBLE60_BACKBUFFER_REFRESH_FAIL')){if($p -notmatch [regex]::Escape($m)){throw "queuefix marker missing $m"}}
+          foreach($bad in @('CreateAdditionalSwapChain','PtD3D9IsolatedPresenterStart(','g_ptarD3D9IsoDisplayDevice')){if($p -match [regex]::Escape($bad)){throw "post-HF6 topology leaked in: $bad"}}
+          $h=(Get-FileHash compat\x86_d3d9\ptar_fg_pacer.h -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($h -ne '9cbc2098f5737698e38c4003664366dce2ce7965b4d517b6cffd0e2a240e86d4'){throw "HF4 Sync1 pacer not exact: $h"}
+          @(
+            'BASE_FIELD_RUNTIME_HF6=46858bf10cc2d0de9bf75e229073e2e63ee807deafd8044f3d8c3fc13aa3ee28',
+            'BASE_FIELD_RESULT=FG_ACTIVE_1632_REAL_1632_GENERATED_VISIBLE54.422',
+            'BASE_ARCH=REGULAR_D3D9_SAME_DEVICE_SAFE_SYNC',
+            'FG_GENERATION_CORE=HF6_UNCHANGED',
+            'FG_SHADERS=HF6_UNCHANGED',
+            'HOOKPRESENT_ORDER=HF6_UNCHANGED_GENERATED_THEN_REAL',
+            'PACING=EXISTING_HF4_SYNC1_NO_SOFTWARE_WAIT',
+            'BACKBUFFER_DOMAIN=FRONT_PLUS_TWO_BACKS',
+            'BACKBUFFER_REACQUIRE=BEFORE_EACH_G_AND_R',
+            'SECOND_DEVICE=NONE',
+            'D3D9EX_PRESENTER=NONE',
+            'ASYNC_WORKER=NONE',
+            'ADDITIONAL_SWAPCHAIN=NONE'
+          )|Set-Content artifact\HF6_VISIBLE60_QUEUEFIX1_CONTRACT.txt -Encoding ascii
+
+      - name: Compile and selftest existing F5 F1 verifiers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop';$csc="$env:WINDIR\Microsoft.NET\Framework\v4.0.30319\csc.exe";$shared='lab\ctrl_ui_real_visibility\PTARD3D9PresentTelemetryReader.cs'
+          & $csc /nologo /target:exe /optimize+ /platform:x86 /out:artifact\ptar_vblank3_d3d9_autostart.exe $shared lab\ctrl_ui_real_visibility\PTARVisiblePacingVerifier_D3D9RuntimeRing.cs;if($LASTEXITCODE){throw 'F5 compile failed'}
+          & $csc /nologo /target:exe /optimize+ /platform:x86 /out:artifact\ptar_presentshed1_visible.exe $shared lab\ctrl_ui_real_visibility\PTARVisiblePacingVerifierPresentShed1_D3D9RuntimeRing.cs;if($LASTEXITCODE){throw 'F1 compile failed'}
+          & artifact\ptar_vblank3_d3d9_autostart.exe --selftest|Tee-Object artifact\F5_VERIFIER_SELFTEST.txt;if($LASTEXITCODE){throw 'F5 selftest failed'}
+          & artifact\ptar_presentshed1_visible.exe --selftest|Tee-Object artifact\F1_VERIFIER_SELFTEST.txt;if($LASTEXITCODE){throw 'F1 selftest failed'}
+
+      - name: Validate existing diagnostic ring ABI end to end
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 lab\ctrl_ui_real_visibility\d3d9_diag_ring_harness.cpp /link /OUT:smoke_game\game.exe /SUBSYSTEM:CONSOLE,6.03;if($LASTEXITCODE){throw 'harness compile failed'}
+          Copy-Item artifact\d3d9.dll smoke_game\d3d9.dll -Force
+          $root=(Resolve-Path smoke_game).Path;$game=(Resolve-Path smoke_game\game.exe).Path;$dll=(Resolve-Path smoke_game\d3d9.dll).Path;$env:PTAR_GAME_ROOT=$root;$env:PTAR_TARGET_EXE=$game
+          $proc=Start-Process $game -ArgumentList ('"'+$dll+'" mixed 20000') -PassThru -RedirectStandardOutput artifact\HARNESS.txt;Start-Sleep -Milliseconds 300
+          & artifact\ptar_vblank3_d3d9_autostart.exe 5 --autostart 2>&1|Tee-Object artifact\F5_RUNTIME_RING_SMOKE.txt;if($LASTEXITCODE){throw 'F5 ring failed'}
+          $env:PTAR_FG_PRESENTSHED1_OUTPUT_PREFIX=Join-Path $root 'F1_SMOKE'; & artifact\ptar_presentshed1_visible.exe 5 --autostart 2>&1|Tee-Object artifact\F1_RUNTIME_RING_SMOKE.txt;if($LASTEXITCODE){throw 'F1 ring failed'}
+          if(-not $proc.HasExited){Stop-Process -Id $proc.Id -Force}
+          'CTRL_F5_RUNTIME_RING_ABI=PASS'|Set-Content artifact\CTRL_F5_RUNTIME_RING.txt -Encoding ascii
+          'CTRL_F1_RUNTIME_RING_ABI=PASS'|Set-Content artifact\CTRL_F1_RUNTIME_RING.txt -Encoding ascii
+
+      - name: Package evidence
+        shell: pwsh
+        run: |
+          Copy-Item compat\x86_d3d9\ptar_fg_pacer.h artifact\ptar_fg_pacer.h -Force
+          Copy-Item compat\x86_d3d9\ptar_d3d9_proxy.cpp artifact\ptar_d3d9_proxy_patched.cpp -Force
+          Copy-Item queue_model.txt artifact\VISIBLE60_QUEUE_MODEL.txt -Force
+          @(
+            'PTAR_D3D9_BRANCH=HF6_VISIBLE60_QUEUEFIX1',
+            ('SOURCE_COMMIT='+$env:GITHUB_SHA),
+            ('D3D9_SHA256='+(Get-Content artifact\D3D9_SHA256.txt -Raw).Trim()),
+            'FIELD_BASE_HF6_SHA256=46858bf10cc2d0de9bf75e229073e2e63ee807deafd8044f3d8c3fc13aa3ee28',
+            'FIELD_BASE_HF6=LAST_FIELD_FUNCTIONAL_FG_BEFORE_ISOLATED_PRESENTER_CHANGES',
+            'HF6_FIELD_VISIBLE_FPS=54.422',
+            'HF6_FIELD_REAL=1632',
+            'HF6_FIELD_GENERATED=1632',
+            'HF6_FIELD_VISIBLE_MULTIPLIER=2.000',
+            'HF6_FIELD_DEFECT=G_R_SUBMISSIONS_CLUSTERED_NOT_EFFECTIVE_60_SCANOUT',
+            'FG_CORE=UNCHANGED_HF6',
+            'PRESENTER_FIX=TRIPLE_BUFFERED_IMPLICIT_SWAPCHAIN_SYNC1_REACQUIRE_EACH_PRESENT',
+            'SECOND_DEVICE=NONE',
+            'D3D9EX_PRESENTER=NONE',
+            'ASYNC_WORKER=NONE',
+            'CTRL_F5_F1=PRESERVED',
+            'HARDWARE_VISIBLE60_STATUS=PENDING_TARGET_RETEST'
+          )|Set-Content artifact\PTAR_D3D9_HF6_VISIBLE60_QUEUEFIX1_VERSION.txt -Encoding ascii
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PTAR-D3D9-HF6-VISIBLE60-QUEUEFIX1
+          path: artifact/
+          if-no-files-found: error
