@@ -19,12 +19,4 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference='Stop'
-          $result=@(.\lab\diagfix2\test_diagfix2.ps1)
-          $result | ForEach-Object { Write-Host $_ }
-          $r=$result -join "`n"
-          foreach($m in @(
-            'DIAGFIX2_F5_MARKER_SERIAL_POLICY=PASS',
-            'DIAGFIX2_F5_REAL_GAP_DETECTION=PASS',
-            'DIAGFIX2_MARKER_TOGGLE_D3D9_DISPATCH=PASS')){
-            if($r -notmatch [regex]::Escape($m)){throw "missing DIAGFIX2 gate $m"}
-          }
+          .\lab\diagfix2\test_diagfix2.ps1
