@@ -1,11 +1,11 @@
-// PTAR D3D9 FULLQUALITY1 - Q720 SPEC5 specialization
-// Exact high-quality branch of the adaptive D3D11/Inquisitor source.
-// Fixed profile: Sharp=2.88, NativeFit40 + selective Detail25.
-// Specialization removes the unused HQ900 dynamic branch on SM3 without
-// changing the SPEC5 equations or source-load topology (5 U() * 4 = 20 loads).
+// PTAR D3D9 FULLQUALITY1 NATIVELIKE2 - Q720 specialization
+// Primary objective: maximize structural resemblance to native 1080p.
+// Profile selected by native-reference lab scoring:
+//   Sharp=1.70, BaseGain=0.600, DetailGain=0.070, BilinearBlend=0.
+// No explicit AA, no extra texture fetches, no extra pass.
 
 sampler2D gSource : register(s0);
-float4 gSizes : register(c0); // xy=source size, zw=fitted destination size
+float4 gSizes : register(c0);
 
 float PtLuma(float3 c)
 {
@@ -25,7 +25,7 @@ float4 PtLoad(float2 p)
 
 float4 PtU(float2 p)
 {
-    const float sharp=2.88f;
+    const float sharp=1.70f;
     float2 q=floor(p);
     float2 f=p-q;
 
@@ -69,12 +69,11 @@ float4 main(float2 uv : TEXCOORD0) : COLOR0
     float y=abs(PtLuma(B.rgb)-PtLuma(T.rgb));
     float hp=abs(PtLuma(c.rgb)-PtLuma(n));
 
-    // Exact SPEC5 Detail25 selector from the D3D11 runtime source.
     float detail=saturate((hp-0.0008f)*100.0f)
                 *saturate(1.0f-max(x,y)/0.15f)
                 *(1.0f-abs(x-y)/(x+y+0.01f));
 
     return float4(
-        saturate(c.rgb+(0.40f+0.25f*detail)*(c.rgb-n)),
+        saturate(c.rgb+(0.600f+0.070f*detail)*(c.rgb-n)),
         c.a);
 }
