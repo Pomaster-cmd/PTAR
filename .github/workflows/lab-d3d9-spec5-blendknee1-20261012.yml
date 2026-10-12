@@ -48,7 +48,7 @@ jobs:
           $rc=$LASTEXITCODE
           Pop-Location
           if($rc){throw "temporal failed rc=$rc"}
-          $t=Get-Content BLENDKNEE_TEMPORAL_LOG.txt -Raw
+          $t=Get-Content artifact\BLENDKNEE_TEMPORAL_LOG.txt -Raw
           foreach($m in @('AALAB_TEMP_B17','AALAB_TEMP_B18','AALAB_TEMP_B19','AALAB_TEMPORAL_GATE=PASS')){if($t -notmatch [regex]::Escape($m)){throw "missing knee marker $m"}}
       - uses: actions/upload-artifact@v4
         with:
