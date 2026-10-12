@@ -9,7 +9,7 @@ if(-not $fxc){
 if(-not $fxc){throw 'fxc.exe not found'}
 $fxcPath=if($fxc.Path){$fxc.Path}else{$fxc.FullName}
 
-$strengths=@(0,40,60,80,100,120,140,160,180,200,240,280,320)
+$strengths=@(0,40,60,80,100,120,140,160,170,180,190,200,240,280,320)
 $rows=@()
 foreach($s in $strengths){
   $tag=('B{0:D2}' -f [int]($s/10))
