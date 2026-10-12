@@ -2,7 +2,7 @@ from pathlib import Path
 import re
 
 ROOT=Path(__file__).resolve().parents[2]
-strengths=[0,40,60,80,100,120,140,160,180,200,240,280,320]
+strengths=[0,40,60,80,100,120,140,160,170,180,190,200,240,280,320]
 names=[f'B{s//10:02d}' for s in strengths]
 
 includes=''.join(f'#include "../../build_x86/ptar_spec5_blend_{n}.h"\n' for n in names)
