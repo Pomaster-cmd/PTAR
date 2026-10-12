@@ -1,0 +1,22 @@
+name: LAB D3D9 DIAGFIX3 20261012
+
+on:
+  push:
+    branches: [lab/d3d9-hf6-temporalpair60-v2fix-20261012]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagfix3:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate DIAGFIX3 with Windows PowerShell
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          .\lab\diagfix3\test_diagfix3.ps1
