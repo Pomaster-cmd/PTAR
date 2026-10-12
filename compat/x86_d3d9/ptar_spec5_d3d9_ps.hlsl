@@ -1,11 +1,11 @@
-// PTAR D3D9 FULLQUALITY1 - Q720 SPEC5 specialization
-// Exact high-quality branch of the adaptive D3D11/Inquisitor source.
-// Fixed profile: Sharp=2.88, NativeFit40 + selective Detail25.
-// Specialization removes the unused HQ900 dynamic branch on SM3 without
-// changing the SPEC5 equations or source-load topology (5 U() * 4 = 20 loads).
+// PTAR D3D9 SPEC5 NATIVEVISUAL2-AA075
+// Primary objective: maximize final visual resemblance to native 1080p.
+// Sharp=1.40, base gain=0.70, detail gain=0.15.
+// Directional AA resolve uses existing SPEC5 cardinal reconstructions only.
+// AA strength=0.075 on alias-risk pixels. No extra texture fetches / no extra pass.
 
 sampler2D gSource : register(s0);
-float4 gSizes : register(c0); // xy=source size, zw=fitted destination size
+float4 gSizes : register(c0);
 
 float PtLuma(float3 c)
 {
@@ -25,7 +25,7 @@ float4 PtLoad(float2 p)
 
 float4 PtU(float2 p)
 {
-    const float sharp=2.88f;
+    const float sharp=1.40f;
     float2 q=floor(p);
     float2 f=p-q;
 
@@ -53,6 +53,15 @@ float4 PtU(float2 p)
     return float4(clamp(b.rgb+(r-b.rgb)*g,lo,hi),b.a);
 }
 
+float PtAliasRisk(float x,float y,float hp)
+{
+    float edge=saturate((max(x,y)-0.018f)*8.0f);
+    float thin=saturate((hp-0.0015f)*55.0f);
+    float anis=abs(x-y)/(x+y+0.01f);
+    float diagonalPreference=0.35f+0.65f*(1.0f-anis);
+    return saturate(edge*thin*diagonalPreference);
+}
+
 float4 main(float2 uv : TEXCOORD0) : COLOR0
 {
     float2 p=uv*gSizes.xy-0.5f;
@@ -65,16 +74,26 @@ float4 main(float2 uv : TEXCOORD0) : COLOR0
     float4 T=PtU(p-float2(0,o.y));
 
     float3 n=(R.rgb+L.rgb+B.rgb+T.rgb)*0.25f;
-    float x=abs(PtLuma(R.rgb)-PtLuma(L.rgb));
-    float y=abs(PtLuma(B.rgb)-PtLuma(T.rgb));
+    float gxSigned=PtLuma(R.rgb)-PtLuma(L.rgb);
+    float gySigned=PtLuma(B.rgb)-PtLuma(T.rgb);
+    float x=abs(gxSigned);
+    float y=abs(gySigned);
     float hp=abs(PtLuma(c.rgb)-PtLuma(n));
 
-    // Exact SPEC5 Detail25 selector from the D3D11 runtime source.
     float detail=saturate((hp-0.0008f)*100.0f)
                 *saturate(1.0f-max(x,y)/0.15f)
                 *(1.0f-abs(x-y)/(x+y+0.01f));
 
-    return float4(
-        saturate(c.rgb+(0.40f+0.25f*detail)*(c.rgb-n)),
+    float4 spec=float4(
+        saturate(c.rgb+(0.70f+0.15f*detail)*(c.rgb-n)),
         c.a);
+
+    float risk=PtAliasRisk(x,y,hp);
+    float chooseHorizontal=step(y,x);
+    float4 aaHorizontal=0.5f*(L+R);
+    float4 aaVertical=0.5f*(T+B);
+    float4 aaTarget=lerp(aaVertical,aaHorizontal,chooseHorizontal);
+    float4 outv=lerp(spec,aaTarget,risk*0.075f);
+
+    return float4(saturate(outv.rgb),outv.a);
 }
