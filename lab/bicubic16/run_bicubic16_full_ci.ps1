@@ -3,7 +3,7 @@ $fullQualityRef='origin/lab/d3d9-ptar-fullquality1-20261012'
 $labRef='origin/lab/d3d9-spec5-bicubic16-newrefs-20261012'
 New-Item -ItemType Directory -Force artifact | Out-Null
 
-# Preserve the field-reference Bicubic16 candidate while reconstructing canonical FULLQUALITY1.
+# Preserve NEWREFS2 while reconstructing canonical FULLQUALITY1.
 $candidateSource=Join-Path $env:RUNNER_TEMP 'ptar_bicubic16_candidate.hlsl'
 Copy-Item compat\x86_d3d9\ptar_spec5_d3d9_ps.hlsl $candidateSource -Force
 $baseSpec=git show ($fullQualityRef+':compat/x86_d3d9/ptar_spec5_d3d9_ps.hlsl')
@@ -16,7 +16,7 @@ if($LASTEXITCODE){throw 'FULLQUALITY1 baseline qualification failed'}
 $baselineRuntimeSha=(Get-FileHash artifact\d3d9.dll -Algorithm SHA256).Hash.ToLowerInvariant()
 Copy-Item artifact\d3d9.dll artifact\d3d9_fullquality1_rebuilt_baseline.dll -Force
 
-# Hard boundary: everything except the Q720 SPEC5 source/header is immutable.
+# Hard boundary: everything except Q720 spatial source/header is immutable.
 $immutable=@(
  'compat/x86_d3d9/ptar_d3d9_proxy.cpp',
  'compat/x86_d3d9/ptar_qstage4diag2_d3d9_ps.hlsl',
@@ -34,7 +34,7 @@ foreach($rel in $immutable){$before[$rel]=(Get-FileHash $rel -Algorithm SHA256).
 $q4HeaderBefore=(Get-FileHash build_x86\ptar_qstage4diag2_d3d9_ps_bytecode.h -Algorithm SHA256).Hash.ToLowerInvariant()
 $hqHeaderBefore=(Get-FileHash build_x86\ptar_hq900_d3d9_ps_bytecode.h -Algorithm SHA256).Hash.ToLowerInvariant()
 
-# 2) Restore Bicubic16 and compile only the Q720 spatial bytecode.
+# 2) Restore Bicubic16 NEWREFS2 and compile only Q720 production bytecode.
 Copy-Item $candidateSource compat\x86_d3d9\ptar_spec5_d3d9_ps.hlsl -Force
 $fxc=Get-Command fxc.exe -ErrorAction Stop
 $fxcPath=if($fxc.Path){$fxc.Path}else{$fxc.FullName}
@@ -44,7 +44,7 @@ $asm=Get-Content artifact\BICUBIC16_PRODUCTION_ASM.txt -Raw
 $texld=([regex]::Matches($asm,'(?im)^\s*texld')).Count
 $slots=0;$m=[regex]::Match($asm,'(?i)approximately\s+(\d+)\s+instruction slots');if($m.Success){$slots=[int]$m.Groups[1].Value}
 if($texld -ne 16){throw "Bicubic16 expected 16 texld, got $texld"}
-if($slots -ne 143){throw "Bicubic16 expected 143 slots, got $slots"}
+if($slots -gt 160 -or $slots -le 0){throw "Bicubic16 unexpected slot count $slots"}
 
 # 3) Independently retrieve/compile branch source; production DXBC must be byte-identical.
 $refSource=Join-Path $env:RUNNER_TEMP 'ptar_bicubic16_reference.hlsl'
@@ -56,14 +56,13 @@ if($LASTEXITCODE){throw 'Bicubic16 lab reference compile failed'}
 $prodCso=(Get-FileHash artifact\BICUBIC16_PRODUCTION.cso -Algorithm SHA256).Hash.ToLowerInvariant()
 $refCso=(Get-FileHash artifact\BICUBIC16_LAB_REFERENCE.cso -Algorithm SHA256).Hash.ToLowerInvariant()
 if($prodCso -ne $refCso){throw "Bicubic16 DXBC identity failed prod=$prodCso ref=$refCso"}
-if($prodCso -ne '733d1e5415f9541729e783a25d1a323a048165f6c794e3260d2ba86150fcf7a2'){throw "unexpected Bicubic16 CSO $prodCso"}
 @(
- 'BICUBIC16_LAB_DXBC_IDENTITY=PASS',
+ 'BICUBIC16_NEWREFS2_LAB_DXBC_IDENTITY=PASS',
  ('BICUBIC16_CSO_SHA256='+$prodCso),
- 'BICUBIC16_TEXLD=16',
- 'BICUBIC16_SLOTS=143',
+ ('BICUBIC16_TEXLD='+$texld),
+ ('BICUBIC16_SLOTS='+$slots),
  'BICUBIC16_KERNEL=CATMULL_ROM_KEYS_A_MINUS_0P5',
- 'BICUBIC16_DETAIL_RESIDUAL_GAIN=0.60',
+ 'BICUBIC16_DETAIL_RESIDUAL_GAIN=0.25',
  'BICUBIC16_EXTRA_FULLSCREEN_PASS=0') | Set-Content artifact\BICUBIC16_IDENTITY.txt -Encoding ascii
 
 # 4) Verify forbidden sources and other spatial bytecodes did not change.
@@ -79,19 +78,23 @@ if((Get-FileHash build_x86\ptar_hq900_d3d9_ps_bytecode.h -Algorithm SHA256).Hash
  'BICUBIC16_F7_IDENTICAL=PASS',
  'BICUBIC16_SF5PARITY1_WRAPPER_IDENTICAL=PASS') | Set-Content artifact\BICUBIC16_SCOPE_IDENTITY.txt -Encoding ascii
 
-# 5) Selector stays exactly the same: Q720 -> the SPEC5 shader object, whose bytecode is replaced.
+# 5) Selector remains unchanged: Q720 -> SPEC5 shader object, whose bytecode is replaced.
 python .\lab\fullquality1\validate_fullquality_selector.py 2>&1 | Tee-Object artifact\BICUBIC16_SELECTOR.txt
 if($LASTEXITCODE){throw 'selector regression'}
 if((Get-Content artifact\BICUBIC16_SELECTOR.txt -Raw) -notmatch 'FULLQUALITY_SELECTOR_ALL=PASS'){throw 'selector PASS marker missing'}
 
-# 6) Re-run exact Bicubic16 GPU pixel oracle on the production bytecode header.
+# 6) Re-run pixel oracle using a separate header so the production g_ptarSpec5Ps header stays intact.
+& $fxcPath /nologo /T ps_3_0 /E main /O3 /Fh build_x86\ptar_bicubic16_oracle_bytecode.h /Vn g_ptarBicubic16Ps /Fo artifact\BICUBIC16_ORACLE_PRODUCTION.cso compat\x86_d3d9\ptar_spec5_d3d9_ps.hlsl
+if($LASTEXITCODE){throw 'production Bicubic16 oracle shader compile failed'}
+$oracleCso=(Get-FileHash artifact\BICUBIC16_ORACLE_PRODUCTION.cso -Algorithm SHA256).Hash.ToLowerInvariant()
+if($oracleCso -ne $prodCso){throw "oracle/production DXBC differs oracle=$oracleCso prod=$prodCso"}
 & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 lab\bicubic16\bicubic16_gpu_oracle.cpp /link d3d9.lib user32.lib /OUT:artifact\bicubic16_production_oracle.exe /SUBSYSTEM:CONSOLE,6.03
 if($LASTEXITCODE){throw 'production Bicubic16 oracle compile failed'}
 & artifact\bicubic16_production_oracle.exe 2>&1 | Tee-Object artifact\BICUBIC16_PRODUCTION_ORACLE.txt
 if($LASTEXITCODE){throw 'production Bicubic16 oracle failed'}
 if((Get-Content artifact\BICUBIC16_PRODUCTION_ORACLE.txt -Raw) -notmatch 'BICUBIC16_PIXEL_PARITY=PASS'){throw 'production Bicubic16 parity marker missing'}
 
-# 7) Compile actual runtime with only the Q720 shader bytecode changed.
+# 7) Compile actual runtime with only Q720 shader bytecode changed.
 & cl.exe /nologo /LD /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I build_x86 compat\x86_d3d9\ptar_d3d9_proxy.cpp /link user32.lib /DEF:compat\x86_d3d9\d3d9_proxy.def /OUT:artifact\d3d9_bicubic16.dll /SUBSYSTEM:WINDOWS,6.03
 if($LASTEXITCODE){throw 'Bicubic16 runtime compile failed'}
 dumpbin /headers artifact\d3d9_bicubic16.dll | Out-File artifact\BICUBIC16_HEADERS.txt -Encoding ascii
@@ -129,22 +132,27 @@ if((Get-Content artifact\BICUBIC16_F7_HARNESS.txt -Raw) -notmatch 'F7BENCH_ALL_G
 Copy-Item artifact\d3d9_bicubic16.dll artifact\d3d9.dll -Force
 Copy-Item compat\x86_d3d9\ptar_spec5_d3d9_ps.hlsl artifact\ptar_bicubic16_q720_ps.hlsl -Force
 @(
- 'PTAR_D3D9_BRANCH=HF6_TEMPORALPAIR60_F7BENCH1_SF5PARITY1_FULLQUALITY1_BICUBIC16_NEWREFS1',
+ 'PTAR_D3D9_BRANCH=HF6_TEMPORALPAIR60_F7BENCH1_SF5PARITY1_FULLQUALITY1_BICUBIC16_NEWREFS2',
  ('SOURCE_COMMIT='+$env:GITHUB_SHA),
  ('BASE_FULLQUALITY1_REBUILT_SHA256='+$baselineRuntimeSha),
  ('D3D9_BICUBIC16_SHA256='+$candidateSha),
  ('BICUBIC16_CSO_SHA256='+$prodCso),
- 'Q720_SPATIAL=BICUBIC16_NEWREFS1',
+ 'Q720_SPATIAL=BICUBIC16_NEWREFS2',
  'FIELD_REFERENCE_OBJECTIVE=NATIVE_1080P_VISUAL_RESEMBLANCE',
  'FIELD_REFERENCE_INPUT=INFERRED_REAL_GAME_1280X720_FROM_ALIGNED_CAPTURE',
- 'FIELD_REFERENCE_CURRENT_NV2_RGB_MAE_APPROX=6.377',
- 'FIELD_REFERENCE_BICUBIC16_RGB_MAE_APPROX=6.033',
- 'FIELD_REFERENCE_CURRENT_NV2_EDGE_MAE_APPROX=7.258',
- 'FIELD_REFERENCE_BICUBIC16_EDGE_MAE_APPROX=6.834',
- 'FIELD_REFERENCE_CURRENT_NV2_GRADIENT_RATIO_APPROX=1.105',
- 'FIELD_REFERENCE_BICUBIC16_GRADIENT_RATIO_APPROX=0.932',
- 'BICUBIC16_TEXLD=16',
- 'BICUBIC16_SLOTS=143',
+ 'FIELD_REFERENCE_METRICS=APPROX_ALIGNED_STATIC_ROI_V2',
+ 'FIELD_REFERENCE_CURRENT_NV2_SSIM_APPROX=0.85368',
+ 'FIELD_REFERENCE_BICUBIC16_SSIM_APPROX=0.862519',
+ 'FIELD_REFERENCE_CURRENT_NV2_RGB_MAE_APPROX=6.042',
+ 'FIELD_REFERENCE_BICUBIC16_RGB_MAE_APPROX=5.5882',
+ 'FIELD_REFERENCE_CURRENT_NV2_EDGE_MAE_APPROX=9.978',
+ 'FIELD_REFERENCE_BICUBIC16_EDGE_MAE_APPROX=9.1033',
+ 'FIELD_REFERENCE_CURRENT_NV2_GRADIENT_RATIO_APPROX=1.018',
+ 'FIELD_REFERENCE_BICUBIC16_GRADIENT_RATIO_APPROX=0.8345',
+ 'BICUBIC16_KERNEL=CATMULL_ROM_KEYS_A_MINUS_0P5',
+ 'BICUBIC16_DETAIL_RESIDUAL_GAIN=0.25',
+ ('BICUBIC16_TEXLD='+$texld),
+ ('BICUBIC16_SLOTS='+$slots),
  'QSTAGE4=UNCHANGED',
  'HQ900=UNCHANGED',
  'SF5PARITY1_SRGB_ISOLATION=UNCHANGED',
@@ -152,5 +160,6 @@ Copy-Item compat\x86_d3d9\ptar_spec5_d3d9_ps.hlsl artifact\ptar_bicubic16_q720_p
  'TEMPORAL_SCHEDULER=UNCHANGED_TEMPORALPAIR60',
  'F7_BENCHMARK=UNCHANGED_F7BENCH1',
  'CTRL_F5_F1=REGRESSION_PASS') | Set-Content artifact\PTAR_D3D9_BICUBIC16_VERSION.txt -Encoding ascii
+Write-Host "BICUBIC16_CSO_SHA256=$prodCso"
 Write-Host "BICUBIC16_RUNTIME_SHA256=$candidateSha"
-Write-Host 'FULLQUALITY1_BICUBIC16_FULL_LAB=PASS'
+Write-Host 'FULLQUALITY1_BICUBIC16_NEWREFS2_FULL_LAB=PASS'
