@@ -1,0 +1,29 @@
+name: LAB D3D9 DIAGFIX2 20261012
+
+on:
+  push:
+    branches: [lab/d3d9-hf6-temporalpair60-v2fix-20261012]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagfix2:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate DIAGFIX2 with Windows PowerShell 5.1 and cmd.exe
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          .\lab\diagfix2\test_diagfix2.ps1 | Tee-Object diagfix2_test.txt
+          $r=Get-Content diagfix2_test.txt -Raw
+          foreach($m in @(
+            'DIAGFIX2_F5_MARKER_SERIAL_POLICY=PASS',
+            'DIAGFIX2_F5_REAL_GAP_DETECTION=PASS',
+            'DIAGFIX2_MARKER_TOGGLE_D3D9_DISPATCH=PASS')){
+            if($r -notmatch [regex]::Escape($m)){throw "missing DIAGFIX2 gate $m"}
+          }
