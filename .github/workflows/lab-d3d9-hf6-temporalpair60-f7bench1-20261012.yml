@@ -1,0 +1,32 @@
+name: LAB D3D9 HF6 TEMPORALPAIR60 F7BENCH1 20261012
+
+on:
+  push:
+    branches: [lab/d3d9-hf6-temporalpair60-f7bench1-20261012]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  f7bench1:
+    runs-on: windows-2022
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      - name: Full TEMPORALPAIR60 plus F7 benchmark qualification
+        shell: pwsh
+        run: .\lab\f7bench1\run_f7bench1_ci.ps1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-D3D9-HF6-TEMPORALPAIR60-F7BENCH1-VALIDATED
+          path: artifact/
+          if-no-files-found: error
