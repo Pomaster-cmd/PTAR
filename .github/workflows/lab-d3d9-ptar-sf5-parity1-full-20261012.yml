@@ -1,0 +1,29 @@
+name: LAB D3D9 PTAR SF5 PARITY1 FULL 20261012
+
+on:
+  push:
+    branches: [lab/d3d9-ptar-sf5-parity1-20261012]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sf5-parity-full:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+      - name: Full field-base reconstruction and SF5 parity qualification
+        shell: pwsh
+        run: .\lab\sf5_parity1\run_sf5_parity1_full_ci.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-D3D9-HF6-TEMPORALPAIR60-F7BENCH1-SF5PARITY1-VALIDATED
+          path: artifact/
+          if-no-files-found: error
