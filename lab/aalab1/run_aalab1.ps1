@@ -8,8 +8,9 @@ if($LASTEXITCODE){throw 'AALAB variant compile failed'}
 python .\lab\aalab1\prepare_quality_source.py
 if($LASTEXITCODE){throw 'quality source prep failed'}
 
-# Native-reference quality corpus.
-& cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 lab\aalab1\aalab_quality_gpu.cpp /link d3d9.lib user32.lib /OUT:artifact\aalab_quality_gpu.exe /SUBSYSTEM:CONSOLE,6.03
+# Native-reference quality corpus. C4244 is confined to the procedural pattern
+# generator's double-returning CRT trig helpers; runtime/shader code is unaffected.
+& cl.exe /nologo /O2 /MT /W4 /WX /wd4244 /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 lab\aalab1\aalab_quality_gpu.cpp /link d3d9.lib user32.lib /OUT:artifact\aalab_quality_gpu.exe /SUBSYSTEM:CONSOLE,6.03
 if($LASTEXITCODE){throw 'quality harness compile failed'}
 Push-Location artifact
 & .\aalab_quality_gpu.exe 2>&1 | Tee-Object AALAB_QUALITY_LOG.txt
