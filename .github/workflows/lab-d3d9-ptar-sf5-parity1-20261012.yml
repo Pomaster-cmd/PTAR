@@ -45,7 +45,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 lab\sf5_parity1\sf5_parity_gpu_harness.cpp /link d3d9.lib user32.lib /OUT:artifact\sf5_parity_gpu_harness.exe /SUBSYSTEM:CONSOLE,6.03
+          & cl.exe /nologo /O2 /MT /W4 /WX /wd4505 /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 lab\sf5_parity1\sf5_parity_gpu_harness.cpp /link d3d9.lib user32.lib /OUT:artifact\sf5_parity_gpu_harness.exe /SUBSYSTEM:CONSOLE,6.03
           if($LASTEXITCODE){throw 'parity harness compile failed'}
           & artifact\sf5_parity_gpu_harness.exe 2>&1 | Tee-Object artifact\SF5_PARITY_GPU_RESULT.txt
           if($LASTEXITCODE){throw 'SF5 parity GPU oracle failed'}
