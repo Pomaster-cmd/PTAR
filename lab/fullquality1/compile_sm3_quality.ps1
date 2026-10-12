@@ -10,8 +10,9 @@ if(-not $fxc){throw 'fxc.exe not found'}
 $fxcPath=if($fxc.Path){$fxc.Path}else{$fxc.FullName}
 
 $jobs=@(
-  @{Name='QSTAGE4'; Source='compat\x86_d3d9\ptar_qstage4diag2_d3d9_ps.hlsl'; Header='build_x86\ptar_qstage4diag2_d3d9_ps_bytecode.h'; Var='g_ptarQstage4Diag2Ps'; Asm='artifact\QSTAGE4_D3D9_SM3_ASM.txt'},
-  @{Name='SPEC5HQ900'; Source='compat\x86_d3d9\ptar_spec5_hq900_d3d9_ps.hlsl'; Header='build_x86\ptar_spec5_hq900_d3d9_ps_bytecode.h'; Var='g_ptarSpec5Hq900Ps'; Asm='artifact\SPEC5_HQ900_D3D9_SM3_ASM.txt'}
+  @{Name='QSTAGE4'; Source='compat\x86_d3d9\ptar_qstage4diag2_d3d9_ps.hlsl'; Header='build_x86\ptar_qstage4diag2_d3d9_ps_bytecode.h'; Var='g_ptarQstage4Diag2Ps'; Asm='artifact\QSTAGE4_D3D9_SM3_ASM.txt'; ExpectedTexld=10},
+  @{Name='SPEC5'; Source='compat\x86_d3d9\ptar_spec5_d3d9_ps.hlsl'; Header='build_x86\ptar_spec5_d3d9_ps_bytecode.h'; Var='g_ptarSpec5Ps'; Asm='artifact\SPEC5_D3D9_SM3_ASM.txt'; ExpectedTexld=20},
+  @{Name='HQ900'; Source='compat\x86_d3d9\ptar_hq900_d3d9_ps.hlsl'; Header='build_x86\ptar_hq900_d3d9_ps_bytecode.h'; Var='g_ptarHq900Ps'; Asm='artifact\HQ900_D3D9_SM3_ASM.txt'; ExpectedTexld=5}
 )
 foreach($j in $jobs){
   & $fxcPath /nologo /T ps_3_0 /E main /O3 /Fh $j.Header /Vn $j.Var $j.Source
@@ -26,19 +27,23 @@ foreach($j in $jobs){
   if($m.Success){$slots=[int]$m.Groups[1].Value}
   Write-Host "$($j.Name)_TEXLD=$texld"
   Write-Host "$($j.Name)_INSTRUCTION_SLOTS=$slots"
-  if($j.Name -eq 'QSTAGE4' -and $texld -ne 10){throw "QSTAGE4 expected 10 D3D9 texture reads, got $texld"}
-  if($j.Name -eq 'SPEC5HQ900' -and $texld -gt 32){throw "SPEC5 exceeds ps_3_0 texture instruction budget: $texld"}
+  if($texld -ne $j.ExpectedTexld){throw "$($j.Name) expected $($j.ExpectedTexld) D3D9 texture reads, got $texld"}
+  if($texld -gt 32){throw "$($j.Name) exceeds ps_3_0 texture instruction budget: $texld"}
   if($slots -gt 512){throw "$($j.Name) exceeds ps_3_0 arithmetic slot budget: $slots"}
 }
 
 $qh=(Get-FileHash build_x86\ptar_qstage4diag2_d3d9_ps_bytecode.h -Algorithm SHA256).Hash.ToLowerInvariant()
-$sh=(Get-FileHash build_x86\ptar_spec5_hq900_d3d9_ps_bytecode.h -Algorithm SHA256).Hash.ToLowerInvariant()
+$sh=(Get-FileHash build_x86\ptar_spec5_d3d9_ps_bytecode.h -Algorithm SHA256).Hash.ToLowerInvariant()
+$hh=(Get-FileHash build_x86\ptar_hq900_d3d9_ps_bytecode.h -Algorithm SHA256).Hash.ToLowerInvariant()
 @(
  'FULLQUALITY1_SM3_COMPILE=PASS',
  ('QSTAGE4_HEADER_SHA256='+$qh),
- ('SPEC5_HQ900_HEADER_SHA256='+$sh),
+ ('SPEC5_HEADER_SHA256='+$sh),
+ ('HQ900_HEADER_SHA256='+$hh),
  'QSTAGE4_EXPECTED_FETCHES=10',
- 'SPEC5_MAX_FETCHES=20_SOURCE_LOADS',
+ 'SPEC5_EXPECTED_FETCHES=20',
+ 'HQ900_EXPECTED_FETCHES=5',
+ 'ADAPTIVE_DYNAMIC_BRANCH=REMOVED_BY_CPU_ROUTE_SPECIALIZATION',
  'PS30_ARITHMETIC_BUDGET=512',
  'PS30_TEXTURE_BUDGET=32') | Set-Content artifact\FULLQUALITY1_SM3_COMPILE_STATUS.txt -Encoding ascii
 Write-Host 'FULLQUALITY1_SM3_COMPILE=PASS'
