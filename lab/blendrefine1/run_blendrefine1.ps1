@@ -23,6 +23,17 @@ Pop-Location
 if($rc){throw "blend temporal runtime failed rc=$rc"}
 if((Get-Content artifact\BLENDREFINE_TEMPORAL_LOG.txt -Raw) -notmatch 'AALAB_TEMPORAL_GATE=PASS'){throw 'blend temporal gate missing'}
 
+# Targeted discriminator for the exact visual defects observed in field captures:
+# ringing/halo on contrast edges, fine-wire contrast/energy, and slanted-edge gradients.
+& cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 lab\blendrefine1\blend_edge_mtf_generated.cpp /link d3d9.lib user32.lib /OUT:artifact\blend_edge_mtf.exe /SUBSYSTEM:CONSOLE,6.03
+if($LASTEXITCODE){throw 'blend edge/MTF compile failed'}
+Push-Location artifact
+& .\blend_edge_mtf.exe 2>&1 | Tee-Object BLENDREFINE_EDGE_MTF_LOG.txt
+$rc=$LASTEXITCODE
+Pop-Location
+if($rc){throw "blend edge/MTF runtime failed rc=$rc"}
+if((Get-Content artifact\BLENDREFINE_EDGE_MTF_LOG.txt -Raw) -notmatch 'BLENDREFINE_EDGE_MTF_GATE=PASS'){throw 'edge/MTF gate missing'}
+
 python .\lab\blendrefine1\analyze_blend_sweep.py 2>&1 | Tee-Object artifact\BLENDREFINE_DECISION_LOG.txt
 if($LASTEXITCODE){throw 'blend decision analysis failed'}
 if((Get-Content artifact\BLENDREFINE_DECISION_LOG.txt -Raw) -notmatch 'BLENDREFINE_DECISION_GATE=PASS'){throw 'blend decision gate missing'}
@@ -34,5 +45,6 @@ if((Get-Content artifact\BLENDREFINE_DECISION_LOG.txt -Raw) -notmatch 'BLENDREFI
  'HF6_CHANGED=NO',
  'TEMPORALPAIR60_CHANGED=NO',
  'F7_CHANGED=NO',
- 'FULLQUALITY1_CHANGED=NO') | Set-Content artifact\BLENDREFINE1_STATUS.txt -Encoding ascii
+ 'FULLQUALITY1_CHANGED=NO',
+ 'EDGE_HALO_LINE_MTF=PASS') | Set-Content artifact\BLENDREFINE1_STATUS.txt -Encoding ascii
 Write-Host 'BLENDREFINE1_FULL_MATRIX=PASS'
