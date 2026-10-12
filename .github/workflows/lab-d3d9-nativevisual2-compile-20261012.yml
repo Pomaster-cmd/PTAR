@@ -1,0 +1,29 @@
+name: LAB D3D9 NATIVEVISUAL2 COMPILE 20261012
+
+on:
+  push:
+    branches: [lab/d3d9-fullquality1-nativevisual2-20261012]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+      - name: Compile and identify NativeVisual2
+        shell: pwsh
+        run: .\lab\nativevisual2\compile_nativevisual2.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-D3D9-NATIVEVISUAL2-COMPILE
+          path: artifact/
+          if-no-files-found: error
