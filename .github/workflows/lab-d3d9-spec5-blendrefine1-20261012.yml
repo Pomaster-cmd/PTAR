@@ -1,0 +1,29 @@
+name: LAB D3D9 SPEC5 BLENDREFINE1 20261012
+
+on:
+  push:
+    branches: [lab/d3d9-spec5-blendrefine1-20261012]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  blendrefine1:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+      - name: Compile and evaluate fine-grained blend strengths
+        shell: pwsh
+        run: .\lab\blendrefine1\run_blendrefine1.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-D3D9-SPEC5-BLENDREFINE1
+          path: artifact/
+          if-no-files-found: error
