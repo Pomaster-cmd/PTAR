@@ -1,0 +1,29 @@
+name: LAB D3D9 PTAR FULLQUALITY1 ORACLE V2 20261012
+
+on:
+  push:
+    branches: [lab/d3d9-ptar-fullquality1-20261012]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  oracle-v2:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+      - name: Compile shaders and run specialized D3D9 GPU pixel oracle v2
+        shell: pwsh
+        run: .\lab\fullquality1\run_fullquality_oracle_v2.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-D3D9-FULLQUALITY1-PIXEL-ORACLE-V2
+          path: artifact/
+          if-no-files-found: error
