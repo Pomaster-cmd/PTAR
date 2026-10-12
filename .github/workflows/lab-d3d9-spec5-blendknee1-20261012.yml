@@ -1,0 +1,57 @@
+name: LAB D3D9 SPEC5 BLENDKNEE1 20261012
+
+on:
+  push:
+    branches: [lab/d3d9-spec5-blendknee1-20261012]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  blend-knee:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+      - name: Compile knee candidates and generate harnesses
+        shell: pwsh
+        run: |
+          .\lab\blendrefine1\compile_blend_sweep.ps1
+          if($LASTEXITCODE){throw 'blend compile failed'}
+          python .\lab\blendrefine1\prepare_blend_harnesses.py
+          if($LASTEXITCODE){throw 'harness generation failed'}
+      - name: Static native-reference knee test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /wd4244 /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 lab\blendrefine1\blend_quality_generated.cpp /link d3d9.lib user32.lib /OUT:artifact\blend_quality.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE){throw 'quality compile failed'}
+          Push-Location artifact
+          & .\blend_quality.exe 2>&1 | Tee-Object BLENDKNEE_QUALITY_LOG.txt
+          $rc=$LASTEXITCODE
+          Pop-Location
+          if($rc){throw "quality failed rc=$rc"}
+      - name: Subpixel temporal knee test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /wd4244 /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 lab\blendrefine1\blend_temporal_generated.cpp /link d3d9.lib user32.lib /OUT:artifact\blend_temporal.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE){throw 'temporal compile failed'}
+          Push-Location artifact
+          & .\blend_temporal.exe 2>&1 | Tee-Object BLENDKNEE_TEMPORAL_LOG.txt
+          $rc=$LASTEXITCODE
+          Pop-Location
+          if($rc){throw "temporal failed rc=$rc"}
+          $t=Get-Content BLENDKNEE_TEMPORAL_LOG.txt -Raw
+          foreach($m in @('AALAB_TEMP_B17','AALAB_TEMP_B18','AALAB_TEMP_B19','AALAB_TEMPORAL_GATE=PASS')){if($t -notmatch [regex]::Escape($m)){throw "missing knee marker $m"}}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-D3D9-SPEC5-BLENDKNEE1
+          path: artifact/
+          if-no-files-found: error
