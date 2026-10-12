@@ -1,4 +1,4 @@
-// PTAR D3D9 Q720 BICUBIC16 NEWREFS1
+// PTAR D3D9 Q720 BICUBIC16 NEWREFS2
 // Objective: make real 1280x720 game output visually closer to native 1920x1080.
 // 16-tap separable Catmull-Rom reconstruction (Keys a=-0.5).
 // Mild detail recovery uses the already available cubic-vs-bilinear residual.
@@ -66,9 +66,9 @@ float4 main(float2 uv : TEXCOORD0) : COLOR0
     float4 by=lerp(s12,s22,f.x);
     float4 bilinear=lerp(bx,by,f.y);
 
-    // Empirical real-game calibration from aligned 720p PTAR / native 1080p
-    // references. 0.60 recovers detail while keeping edge energy below the
-    // over-sharpened SPEC5/NativeVisual2 field output.
-    float4 outv=cubic+0.60f*(cubic-bilinear);
+    // Real-game calibration from the new aligned PTAR 720p / native 1080p pair.
+    // 0.25 minimizes RGB and edge error better than the 0.60 prototype while
+    // retaining a small amount of cubic detail recovery.
+    float4 outv=cubic+0.25f*(cubic-bilinear);
     return saturate(outv);
 }
