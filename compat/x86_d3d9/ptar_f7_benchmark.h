@@ -2,6 +2,7 @@
 
 #include <windows.h>
 #include <cstdio>
+#include <cstring>
 
 // Passive F7 benchmark for the D3D9 backend.
 // Contract inherited from the validated D3D11 F7 meter:
@@ -271,10 +272,11 @@ inline void PtF7BenchmarkRecordVisible(
             InterlockedExchange(
                 &g_ptarF7Benchmark.phase,
                 PTAR_F7BENCH_SETTLING);
+            const unsigned long restarts=g_ptarF7Benchmark.longGapRestarts;
             ReleaseSRWLockExclusive(&g_ptarF7Benchmark.lock);
             PtDiagLogA(
                 "BENCH: long frame gap detected; settling restarted restarts=%lu",
-                g_ptarF7Benchmark.longGapRestarts);
+                restarts);
             return;
         }
 
