@@ -19,8 +19,10 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference='Stop'
-          .\lab\diagfix2\test_diagfix2.ps1 | Tee-Object diagfix2_test.txt
-          $r=Get-Content diagfix2_test.txt -Raw
+          $capture=Join-Path $env:RUNNER_TEMP 'diagfix2_test.txt'
+          $result=@(.\lab\diagfix2\test_diagfix2.ps1)
+          $result | Tee-Object -FilePath $capture
+          $r=Get-Content -LiteralPath $capture -Raw
           foreach($m in @(
             'DIAGFIX2_F5_MARKER_SERIAL_POLICY=PASS',
             'DIAGFIX2_F5_REAL_GAP_DETECTION=PASS',
