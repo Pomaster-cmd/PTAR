@@ -28,5 +28,6 @@ jobs:
           path: |
             artifact/
             build_x86/ptar_qstage4diag2_d3d9_ps_bytecode.h
-            build_x86/ptar_spec5_hq900_d3d9_ps_bytecode.h
+            build_x86/ptar_spec5_d3d9_ps_bytecode.h
+            build_x86/ptar_hq900_d3d9_ps_bytecode.h
           if-no-files-found: error
