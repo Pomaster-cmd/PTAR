@@ -11,7 +11,7 @@ g=hud9.read_text(encoding='utf-8')
 
 # Proxy: module include and passive observation immediately after each successful visible Present.
 old='#include "ptar_resolution_policy.h"\n#include "ptar_hud.h"'
-new='#include "ptar_resolution_policy.h"\n#include "ptar_f7_benchmark.h"\n#include "ptar_hud.h"'
+new='#include "ptar_resolution_policy.h"\n#include "ptar_f7_benchmark.h"\n// F7BENCH1 invariant: TEMPORALPAIR60 DISPLAY_ORDER=GENERATED_THEN_REAL unchanged.\n#include "ptar_hud.h"'
 assert p.count(old)==1, p.count(old)
 p=p.replace(old,new,1)
 
@@ -71,6 +71,7 @@ hud9.write_text(g,encoding='utf-8')
 
 # Static scope gates: the patch must not touch FG generation or pacer source.
 assert '#include "ptar_f7_benchmark.h"' in p
+assert 'DISPLAY_ORDER=GENERATED_THEN_REAL' in p
 assert p.count('PtF7BenchmarkRecordVisible(')==2
 assert 'Benchmark backend is not yet ported to D3D9' not in h
 assert 'PtF7BenchmarkStart(g_ptarHudFgEnabled)' in h
