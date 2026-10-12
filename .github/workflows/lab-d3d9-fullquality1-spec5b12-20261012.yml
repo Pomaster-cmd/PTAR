@@ -21,7 +21,7 @@ jobs:
           arch: x86
       - name: Reconstruct FULLQUALITY1 and qualify only SPEC5-B12 delta
         shell: pwsh
-        run: .\lab\spec5b12\run_spec5b12_full_ci.ps1
+        run: .\lab\spec5b12\run_spec5b12_full_ci_v2.ps1
       - uses: actions/upload-artifact@v4
         with:
           name: PTAR-D3D9-FULLQUALITY1-SPEC5-B12-VALIDATED
