@@ -1,0 +1,29 @@
+name: LAB D3D9 SPEC5 AALAB1 20261012
+
+on:
+  push:
+    branches: [lab/d3d9-spec5-aalab1-20261012]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  aalab1:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+      - name: Compile, quality-test and cost-test AA/bilinear variants
+        shell: pwsh
+        run: .\lab\aalab1\run_aalab1.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-D3D9-SPEC5-AALAB1
+          path: artifact/
+          if-no-files-found: error
