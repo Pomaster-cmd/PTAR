@@ -34,13 +34,13 @@ static bool RunFixedRate(double fps,bool fg,PTF7BenchmarkResult* result)
     const LONGLONG settleEnd=base+Ticks(3.0);
     const LONGLONG step=Ticks(1.0/fps);
     LONGLONG qpc=settleEnd;
-    bool generated=true;
+    bool generated=fg;
 
     PtF7BenchmarkRecordVisible(qpc,generated);
     for(unsigned int i=0;i<(unsigned int)(fps*10.0+8.0);++i)
     {
         qpc+=step;
-        generated=!generated;
+        if(fg) generated=!generated; else generated=false;
         PtF7BenchmarkRecordVisible(qpc,generated);
         if(InterlockedCompareExchange(&g_ptarF7Benchmark.phase,0,0)==PTAR_F7BENCH_READY)
             break;
@@ -113,12 +113,12 @@ int main()
     Gate(gapResult.longGapRestarts==1,"F7BENCH_LONG_GAP_RESTART_COUNT");
     Gate(Near(gapResult.averageVisibleFps,60.0,0.20),"F7BENCH_LONG_GAP_CLEAN_AVG");
 
-    // FG OFF is still a valid passive benchmark: all successful visible Presents are REAL.
+    // FG OFF remains a valid passive benchmark: all visible Presents are REAL.
     PTF7BenchmarkResult off={};
     Gate(RunFixedRate(60.0,false,&off),"F7BENCH_FG_OFF_RESULT");
-    Gate(off.generatedFrames>0,"F7BENCH_HARNESS_GENERATOR_SANITY");
-    // The harness alternates frame tags to exercise both counters. The runtime integration
-    // supplies generated=false for every FG-OFF Present; the state machine itself is tag-neutral.
+    Gate(off.generatedFrames==0,"F7BENCH_FG_OFF_ZERO_GENERATED");
+    Gate(off.realFrames==off.visibleFrames,"F7BENCH_FG_OFF_ALL_REAL");
+    Gate(Near(off.averageVisibleFps,60.0,0.20),"F7BENCH_FG_OFF_AVG");
 
     Gate(g_ptarF7Benchmark.resultPath[0]==0,"F7BENCH_HARNESS_NO_FILE_IO");
 
