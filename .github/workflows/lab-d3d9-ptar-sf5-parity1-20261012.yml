@@ -65,6 +65,18 @@ jobs:
           foreach($m in @('SF5_SRGB_STATE_LEAK_EXPOSED=PASS','SF5_SRGB_STATE_ISOLATION=PASS')){if($r -notmatch [regex]::Escape($m)){throw "missing sRGB gate $m"}}
           'SF5_SRGB_STATE_ISOLATION_MODEL=PASS' | Add-Content artifact\SF5_PARITY_STATUS.txt -Encoding ascii
 
+      - name: Model complete spatial plus final-copy sRGB chain
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /wd4505 /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 lab\sf5_parity1\sf5_two_pass_srgb_harness.cpp /link d3d9.lib user32.lib /OUT:artifact\sf5_two_pass_srgb_harness.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE){throw 'two-pass sRGB harness compile failed'}
+          & artifact\sf5_two_pass_srgb_harness.exe 2>&1 | Tee-Object artifact\SF5_TWO_PASS_SRGB_RESULT.txt
+          if($LASTEXITCODE){throw 'two-pass sRGB chain gate failed'}
+          $r=Get-Content artifact\SF5_TWO_PASS_SRGB_RESULT.txt -Raw
+          if($r -notmatch 'TWO_PASS_SRGB_LEAK_EXPOSED=PASS'){throw 'two-pass sRGB leak was not exposed'}
+          'SF5_TWO_PASS_SRGB_CHAIN_MODEL=PASS' | Add-Content artifact\SF5_PARITY_STATUS.txt -Encoding ascii
+
       - uses: actions/upload-artifact@v4
         with:
           name: PTAR-D3D9-SF5-PARITY1-ORACLE
