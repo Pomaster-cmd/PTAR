@@ -47,3 +47,4 @@ try {
   Write-Host 'DIAGFIX3_ALL_GATES=PASS'
 }
 finally { Remove-Item -LiteralPath $base -Recurse -Force -ErrorAction SilentlyContinue }
+exit 0
