@@ -1,0 +1,54 @@
+name: LAB D3D9 HF6 TEMPORALPAIR60 V2FIX 20261012
+
+on:
+  push:
+    branches: [lab/d3d9-hf6-temporalpair60-v2fix-20261012]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  temporal-v2fix:
+    runs-on: windows-2022
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      - name: Run complete fixed temporal pairing lab
+        shell: pwsh
+        run: .\lab\hf6_temporalpair60\run_temporal_ci.ps1
+
+      - name: Extra live QPC grid stress x5
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if(-not (Test-Path .\temporal_grid_live.exe)){throw 'temporal_grid_live.exe missing after full lab'}
+          $all=''
+          1..5 | ForEach-Object {
+            & .\temporal_grid_live.exe 2>&1 | Tee-Object -Variable one
+            if($LASTEXITCODE){throw "extra temporal live harness pass $_ failed"}
+            $all += (($one | Out-String)+"`r`n")
+          }
+          $all | Set-Content artifact\TEMPORAL_GRID_LIVE_EXTRA_X5.txt -Encoding ascii
+          foreach($m in @(
+            'TEMPORAL_GRID_LIVE_CONTROLLED_60HZ=PASS',
+            'TEMPORAL_GRID_LIVE_SCHEDULER_NO_CATCHUP=PASS',
+            'TEMPORAL_GRID_LIVE_STARVATION_NO_CATCHUP=PASS',
+            'TEMPORAL_GRID_LIVE_NO_MICROBURST=PASS',
+            'TEMPORAL_GRID_LIVE_60HZ_SHORT_PRESENT=PASS')){
+            if(([regex]::Matches($all,[regex]::Escape($m))).Count -ne 5){throw "extra x5 gate failed $m"}
+          }
+          'TEMPORAL_V2FIX_EXTRA_X5=PASS' | Set-Content artifact\TEMPORAL_V2FIX_STATUS.txt -Encoding ascii
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-D3D9-HF6-TEMPORALPAIR60-V2FIX-VALIDATED
+          path: artifact/
+          if-no-files-found: error
