@@ -1,0 +1,60 @@
+name: LAB D3D9 PTAR SF5 PARITY1 20261012
+
+on:
+  push:
+    branches: [lab/d3d9-ptar-sf5-parity1-20261012]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sf5-parity:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      - name: Compile old and parity SF5 shaders
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force build_x86,artifact | Out-Null
+          $fxc=Get-Command fxc.exe -ErrorAction SilentlyContinue
+          if(-not $fxc){
+            foreach($root in @("$env:ProgramFiles(x86)\Windows Kits\10\bin","$env:ProgramFiles(x86)\Windows Kits\8.1\bin")){
+              if(Test-Path $root){$fxc=Get-ChildItem $root -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1;if($fxc){break}}
+            }
+          }
+          if(-not $fxc){throw 'fxc.exe not found'}
+          $fxcPath=if($fxc.Path){$fxc.Path}else{$fxc.FullName}
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 /Fh build_x86\ptar_old_ps_bytecode.h /Vn g_ptarOldPs compat\x86_d3d9\ptar_moe_d3d9_ps.hlsl
+          if($LASTEXITCODE){throw 'old shader compile failed'}
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 /Fh build_x86\ptar_sf5_parity_ps_bytecode.h /Vn g_ptarSf5ParityPs compat\x86_d3d9\ptar_moe_sf5_parity_d3d9_ps.hlsl
+          if($LASTEXITCODE){throw 'parity shader compile failed'}
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 /Fc artifact\SF5_PARITY_ASM.txt compat\x86_d3d9\ptar_moe_sf5_parity_d3d9_ps.hlsl
+          if($LASTEXITCODE){throw 'parity shader asm failed'}
+          'SF5_PARITY_SHADER_COMPILE=PASS' | Set-Content artifact\SF5_PARITY_STATUS.txt -Encoding ascii
+
+      - name: Run D3D9 GPU vs D3D11-semantic oracle
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 lab\sf5_parity1\sf5_parity_gpu_harness.cpp /link d3d9.lib user32.lib /OUT:artifact\sf5_parity_gpu_harness.exe /SUBSYSTEM:CONSOLE,6.03
+          if($LASTEXITCODE){throw 'parity harness compile failed'}
+          & artifact\sf5_parity_gpu_harness.exe 2>&1 | Tee-Object artifact\SF5_PARITY_GPU_RESULT.txt
+          if($LASTEXITCODE){throw 'SF5 parity GPU oracle failed'}
+          $r=Get-Content artifact\SF5_PARITY_GPU_RESULT.txt -Raw
+          foreach($m in @('SF5_PARITY_ABSOLUTE_GATE=PASS','SF5_PARITY_NOT_WORSE_THAN_OLD=PASS')){if($r -notmatch [regex]::Escape($m)){throw "missing parity gate $m"}}
+          'SF5_PARITY_GPU_ORACLE=PASS' | Add-Content artifact\SF5_PARITY_STATUS.txt -Encoding ascii
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-D3D9-SF5-PARITY1-ORACLE
+          path: artifact/
+          if-no-files-found: error
