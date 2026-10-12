@@ -1,0 +1,24 @@
+name: LAB D3D9 BICUBIC16 NEWREFS 20261012
+on:
+  push:
+    branches:
+      - lab/d3d9-spec5-bicubic16-newrefs-20261012
+  workflow_dispatch:
+jobs:
+  compile:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+      - name: Compile Bicubic16 SM3
+        shell: pwsh
+        run: .\lab\bicubic16\compile_bicubic16.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-D3D9-BICUBIC16-NEWREFS
+          path: artifact/
+          if-no-files-found: error
