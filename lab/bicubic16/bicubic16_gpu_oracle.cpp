@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
-#include "../../build_x86/ptar_spec5_d3d9_ps_bytecode.h"
+#include "../../build_x86/ptar_bicubic16_oracle_bytecode.h"
 
 typedef IDirect3D9* (WINAPI *PFN_Direct3DCreate9)(UINT);
 struct Vtx{float x,y,z,rhw,u,v;};
@@ -55,7 +55,7 @@ static F4 RefBicubic16(const std::vector<DWORD>&s,int sw,int sh,int dw,int dh,in
     const F4 s12=Load(s,sw,sh,qx,qy+1);
     const F4 s22=Load(s,sw,sh,qx+1,qy+1);
     const F4 bilinear=Lerp4(Lerp4(s11,s21,fx),Lerp4(s12,s22,fx),fy);
-    F4 out=Add(cubic,Mul(Sub(cubic,bilinear),0.60f));
+    F4 out=Add(cubic,Mul(Sub(cubic,bilinear),0.25f));
     out.r=Sat(out.r);out.g=Sat(out.g);out.b=Sat(out.b);out.a=Sat(out.a);
     return out;
 }
