@@ -33,7 +33,12 @@ def transform(src_path:Path,dst_path:Path,temporal:bool):
         new='float rowOffset=(((int)(py*12.0f))&1)?0.5f:0.0f;float mortar=(std::fmod(px*16.0f+rowOffset,1.0f)<.08f||std::fmod(py*12.0f,1.0f)<.08f)?1.0f:0.0f;'
         assert old in s
         s=s.replace(old,new,1)
-    assert '[9]' not in s
+    # Verify only the legacy *variant-sized* arrays/loops were removed. A local
+    # float[9] slope table in the temporal pattern generator is intentionally valid.
+    for legacy in (
+        'names[9]','codes[9]','ps[9]','agg[9][7]','acc[9][4]',
+        'prevGot[9]','got[9]','v<9','i<9'):
+        assert legacy not in s,legacy
     dst_path.write_text(s,encoding='utf-8')
 
 transform(ROOT/'lab/aalab1/aalab_quality_gpu.cpp',ROOT/'lab/blendrefine1/blend_quality_generated.cpp',False)
