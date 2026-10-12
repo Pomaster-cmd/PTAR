@@ -20,6 +20,9 @@ jobs:
       - name: Run Bicubic16 GPU pixel oracle
         shell: pwsh
         run: .\lab\bicubic16\run_bicubic16_oracle.ps1
+      - name: Benchmark Bicubic16 against canonical SPEC5
+        shell: pwsh
+        run: .\lab\bicubic16\run_bicubic16_perf.ps1
       - uses: actions/upload-artifact@v4
         with:
           name: PTAR-D3D9-BICUBIC16-NEWREFS
