@@ -1,0 +1,29 @@
+name: LAB D3D9 PTAR FULLQUALITY1 DISASM 20261012
+
+on:
+  push:
+    branches: [lab/d3d9-ptar-fullquality1-20261012]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qstage4-disasm:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+      - name: Disassemble exact validated QSTAGE4DIAG2 DXBC
+        shell: pwsh
+        run: .\lab\fullquality1\disassemble_qstage4.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-QSTAGE4DIAG2-EXACT-DISASM
+          path: artifact/
+          if-no-files-found: error
