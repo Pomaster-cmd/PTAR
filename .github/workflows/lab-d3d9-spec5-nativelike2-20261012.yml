@@ -1,0 +1,29 @@
+name: LAB D3D9 SPEC5 NATIVELIKE2 20261012
+
+on:
+  push:
+    branches: [lab/d3d9-spec5-nativelike2-20261012]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+      - name: Compile and audit candidate
+        shell: pwsh
+        run: .\lab\nativelike2\compile_nativelike2.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-D3D9-SPEC5-NATIVELIKE2-COMPILE
+          path: artifact/
+          if-no-files-found: error
