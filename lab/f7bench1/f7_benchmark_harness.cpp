@@ -2,7 +2,8 @@
 #define NOMINMAX
 #include <windows.h>
 #include <cstdio>
-#include "../../compat/x86_d3d9/ptar_diag.h"
+
+static void PtDiagLogA(const char*,...){ }
 #include "../../compat/x86_d3d9/ptar_f7_benchmark.h"
 
 static int g_failures=0;
