@@ -17,7 +17,7 @@ $sha=(Get-FileHash artifact\PTAR_BICUBIC16.cso -Algorithm SHA256).Hash.ToLowerIn
  ('SLOTS='+$slots),
  ('CSO_SHA256='+$sha),
  'KERNEL=CATMULL_ROM_KEYS_A_MINUS_0P5',
- 'DETAIL_RESIDUAL_GAIN=0.60',
+ 'DETAIL_RESIDUAL_GAIN=0.25',
  'EXTRA_FULLSCREEN_PASS=0') | Set-Content artifact\PTAR_BICUBIC16_COMPILE.txt -Encoding ascii
 Copy-Item $src artifact\ptar_bicubic16_ps.hlsl -Force
 Write-Host "BICUBIC16_TEXLD=$texld"
