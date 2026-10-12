@@ -1,0 +1,29 @@
+name: LAB D3D9 FULLQUALITY1 SPEC5-B12 20261012
+
+on:
+  push:
+    branches: [lab/d3d9-fullquality1-spec5b12-20261012]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  spec5-b12:
+    runs-on: windows-2022
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+      - name: Reconstruct FULLQUALITY1 and qualify only SPEC5-B12 delta
+        shell: pwsh
+        run: .\lab\spec5b12\run_spec5b12_full_ci.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-D3D9-FULLQUALITY1-SPEC5-B12-VALIDATED
+          path: artifact/
+          if-no-files-found: error
