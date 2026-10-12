@@ -29,7 +29,18 @@ Pop-Location
 if($perfRc){throw "perf harness failed rc=$perfRc"}
 if((Get-Content artifact\AALAB_PERF_LOG.txt -Raw) -notmatch 'AALAB_PERF_GATE=PASS'){throw 'perf gate marker missing'}
 
-# Combine quality, performance and compiler budgets into a conservative ranking.
+# Subpixel-motion temporal stability: the modification must reduce or preserve
+# shimmer relative to native motion, not merely look better on a still frame.
+& cl.exe /nologo /O2 /MT /W4 /WX /wd4244 /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 lab\aalab1\aalab_temporal_gpu.cpp /link d3d9.lib user32.lib /OUT:artifact\aalab_temporal_gpu.exe /SUBSYSTEM:CONSOLE,6.03
+if($LASTEXITCODE){throw 'temporal harness compile failed'}
+Push-Location artifact
+& .\aalab_temporal_gpu.exe 2>&1 | Tee-Object AALAB_TEMPORAL_LOG.txt
+$tempRc=$LASTEXITCODE
+Pop-Location
+if($tempRc){throw "temporal harness failed rc=$tempRc"}
+if((Get-Content artifact\AALAB_TEMPORAL_LOG.txt -Raw) -notmatch 'AALAB_TEMPORAL_GATE=PASS'){throw 'temporal gate marker missing'}
+
+# Combine static quality, temporal stability, performance and compiler budgets.
 python .\lab\aalab1\analyze_aalab1.py 2>&1 | Tee-Object artifact\AALAB_DECISION_LOG.txt
 if($LASTEXITCODE){throw 'decision analysis failed'}
 if((Get-Content artifact\AALAB_DECISION_LOG.txt -Raw) -notmatch 'AALAB_DECISION_GATE=PASS'){throw 'decision gate marker missing'}
@@ -41,6 +52,9 @@ if((Get-Content artifact\AALAB_DECISION_LOG.txt -Raw) -notmatch 'AALAB_DECISION_
  'TEMPORALPAIR60_CHANGED=NO',
  'F7_CHANGED=NO',
  'FULLQUALITY1_CHANGED=NO',
+ 'STATIC_NATIVE_REFERENCE=PASS',
+ 'SUBPIXEL_TEMPORAL_STABILITY=PASS',
+ 'SYNCHRONIZED_COST_PROXY=PASS',
  'VARIANTS=BASE_B08_B12_BADAPT20_AA0_15_AA2_15_AA2B_AA4B_AA2B_STRONG') | Set-Content artifact\AALAB1_STATUS.txt -Encoding ascii
 
 Write-Host 'AALAB1_FULL_MATRIX=PASS'
