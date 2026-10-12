@@ -15,8 +15,11 @@ def transform(src_path:Path,dst_path:Path,temporal:bool):
     s=src_path.read_text(encoding='utf-8')
     s,ninc=re.subn(r'(?:#include "\.\./\.\./build_x86/ptar_spec5_aalab_v\d+\.h"\n)+',includes,s)
     assert ninc==1,ninc
-    pattern=r'int main\(\)\{const char\*names\[9\]=\{.*?\};const DWORD\*codes?\[9\]=\{.*?\};wchar_t p'
-    repl=f'int main(){{const char*names[{N}]={{{name_array}}};const DWORD*codes[{N}]={{{code_array}}};wchar_t p'
+    pattern=r'int main\(\)\{const char\*names\[9\]=\{.*?\};const DWORD\*(codes?)\[9\]=\{.*?\};wchar_t p'
+    m=re.search(pattern,s,flags=re.S)
+    assert m is not None
+    original_code_name=m.group(1)
+    repl=f'int main(){{const char*names[{N}]={{{name_array}}};const DWORD*{original_code_name}[{N}]={{{code_array}}};wchar_t p'
     s,nmain=re.subn(pattern,repl,s,count=1,flags=re.S)
     assert nmain==1,nmain
     s=s.replace('IDirect3DPixelShader9*ps[9]={};',f'IDirect3DPixelShader9*ps[{N}]={{}};')
@@ -28,13 +31,10 @@ def transform(src_path:Path,dst_path:Path,temporal:bool):
         s=s.replace('std::vector<DWORD>got[9];',f'std::vector<DWORD>got[{N}];')
     else:
         s=s.replace('double agg[9][7]={};',f'double agg[{N}][7]={{}};')
-        # Fix the generator-only pavement expression exactly as AALAB1 did.
         old='float mortar=(std::fmod(px*16.0f+(int)(py*12)&1?0.5f:0.0f,1.0f)<.08f||std::fmod(py*12.0f,1.0f)<.08f)?1.0f:0.0f;'
         new='float rowOffset=(((int)(py*12.0f))&1)?0.5f:0.0f;float mortar=(std::fmod(px*16.0f+rowOffset,1.0f)<.08f||std::fmod(py*12.0f,1.0f)<.08f)?1.0f:0.0f;'
         assert old in s
         s=s.replace(old,new,1)
-    # Verify only the legacy *variant-sized* arrays/loops were removed. A local
-    # float[9] slope table in the temporal pattern generator is intentionally valid.
     for legacy in (
         'names[9]','codes[9]','ps[9]','agg[9][7]','acc[9][4]',
         'prevGot[9]','got[9]','v<9','i<9'):
