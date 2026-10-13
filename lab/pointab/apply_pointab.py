@@ -42,7 +42,8 @@ insert='''    // POINT A/B reference: raw source pixels are enlarged to the same
 assert p.count(anchor)==1, p.count(anchor)
 p=p.replace(anchor,insert,1)
 assert p.count('D3DTEXF_POINT')==1
-assert p.count('POINT_RAW720_REF')>=2
+assert p.count('POINT_RAW720_REF')>=1
+assert p.count('POINT_RAW720_STRETCHRECT_FAIL')==1
 assert p.index('POINT_RAW720_REF') < p.index('static HRESULT RenderFGMotionAndIntermediate')
 proxy.write_text(p,encoding='utf-8')
 
