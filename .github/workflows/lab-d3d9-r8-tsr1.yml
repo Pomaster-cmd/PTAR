@@ -19,6 +19,7 @@ jobs:
         run: |
           .\lab\tsr1\run_r8_tsr_ci_compat.ps1
           .\lab\tsr1\run_tsr1_gpu_smoke.ps1
+          .\lab\tsr1\run_tsr1_perf.ps1
       - uses: actions/upload-artifact@v4
         with:
           name: R8-TSR1
