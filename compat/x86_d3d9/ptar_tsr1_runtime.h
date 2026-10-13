@@ -35,6 +35,7 @@ struct PTARTSR1State
 static PTARTSR1State g_ptarTsr1={};
 
 static void PtTsr1Release();
+static void PtTsr1InvalidateHistory();
 static HRESULT PtTsr1Initialize(
     IDirect3DDevice9* dev,
     UINT sourceW,UINT sourceH,
