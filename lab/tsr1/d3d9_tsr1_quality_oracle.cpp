@@ -58,14 +58,14 @@ static HRESULT CreateMotion(IDirect3DDevice9*d,UINT w,UINT h,float mx,float my,I
     for(UINT y=0;y<h;++y){DWORD*row=(DWORD*)((BYTE*)lr.pBits+y*lr.Pitch);for(UINT x=0;x<w;++x)row[x]=p;}(*t)->UnlockRect(0);return S_OK;
 }
 
-static HRESULT Draw(IDirect3DDevice9*d,IDirect3DSurface9*rt,UINT w,UINT h,IDirect3DPixelShader9*ps,IDirect3DTexture9*t0,IDirect3DTexture9*t1,IDirect3DTexture9*t2,const float*c0)
+static HRESULT Draw(IDirect3DDevice9*d,IDirect3DSurface9*rt,UINT w,UINT h,IDirect3DPixelShader9*ps,IDirect3DTexture9*t0,IDirect3DTexture9*t1,IDirect3DTexture9*t2,IDirect3DTexture9*t3,const float*c0)
 {
-    d->SetTexture(0,0);d->SetTexture(1,0);d->SetTexture(2,0);d->SetDepthStencilSurface(0);HRESULT hr=d->SetRenderTarget(0,rt);if(FAILED(hr))return hr;
+    for(DWORD s=0;s<4;++s)d->SetTexture(s,0);d->SetDepthStencilSurface(0);HRESULT hr=d->SetRenderTarget(0,rt);if(FAILED(hr))return hr;
     D3DVIEWPORT9 vp={0,0,w,h,0,1};d->SetViewport(&vp);d->SetRenderState(D3DRS_ZENABLE,FALSE);d->SetRenderState(D3DRS_ZWRITEENABLE,FALSE);d->SetRenderState(D3DRS_ALPHABLENDENABLE,FALSE);d->SetRenderState(D3DRS_CULLMODE,D3DCULL_NONE);d->SetRenderState(D3DRS_SRGBWRITEENABLE,FALSE);
-    for(DWORD s=0;s<3;++s){d->SetSamplerState(s,D3DSAMP_MINFILTER,D3DTEXF_LINEAR);d->SetSamplerState(s,D3DSAMP_MAGFILTER,D3DTEXF_LINEAR);d->SetSamplerState(s,D3DSAMP_MIPFILTER,D3DTEXF_NONE);d->SetSamplerState(s,D3DSAMP_ADDRESSU,D3DTADDRESS_CLAMP);d->SetSamplerState(s,D3DSAMP_ADDRESSV,D3DTADDRESS_CLAMP);d->SetSamplerState(s,D3DSAMP_SRGBTEXTURE,FALSE);}
-    if(c0)d->SetPixelShaderConstantF(0,c0,1);d->SetPixelShader(ps);d->SetVertexShader(0);d->SetFVF(D3DFVF_XYZRHW|D3DFVF_TEX1);d->SetTexture(0,t0);d->SetTexture(1,t1);d->SetTexture(2,t2);
+    for(DWORD s=0;s<4;++s){d->SetSamplerState(s,D3DSAMP_MINFILTER,D3DTEXF_LINEAR);d->SetSamplerState(s,D3DSAMP_MAGFILTER,D3DTEXF_LINEAR);d->SetSamplerState(s,D3DSAMP_MIPFILTER,D3DTEXF_NONE);d->SetSamplerState(s,D3DSAMP_ADDRESSU,D3DTADDRESS_CLAMP);d->SetSamplerState(s,D3DSAMP_ADDRESSV,D3DTADDRESS_CLAMP);d->SetSamplerState(s,D3DSAMP_SRGBTEXTURE,FALSE);}d->SetSamplerState(3,D3DSAMP_MINFILTER,D3DTEXF_POINT);d->SetSamplerState(3,D3DSAMP_MAGFILTER,D3DTEXF_POINT);
+    if(c0)d->SetPixelShaderConstantF(0,c0,1);d->SetPixelShader(ps);d->SetVertexShader(0);d->SetFVF(D3DFVF_XYZRHW|D3DFVF_TEX1);d->SetTexture(0,t0);d->SetTexture(1,t1);d->SetTexture(2,t2);d->SetTexture(3,t3);
     Vtx q[4]={{-.5f,-.5f,0,1,0,0},{(float)w-.5f,-.5f,0,1,1,0},{-.5f,(float)h-.5f,0,1,0,1},{(float)w-.5f,(float)h-.5f,0,1,1,1}};
-    hr=d->BeginScene();if(SUCCEEDED(hr)){hr=d->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP,2,q,sizeof(Vtx));HRESULT e=d->EndScene();if(SUCCEEDED(hr))hr=e;}d->SetTexture(0,0);d->SetTexture(1,0);d->SetTexture(2,0);return hr;
+    hr=d->BeginScene();if(SUCCEEDED(hr)){hr=d->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP,2,q,sizeof(Vtx));HRESULT e=d->EndScene();if(SUCCEEDED(hr))hr=e;}for(DWORD s=0;s<4;++s)d->SetTexture(s,0);return hr;
 }
 
 static HRESULT Read(IDirect3DDevice9*d,IDirect3DSurface9*s,UINT w,UINT h,std::vector<DWORD>&out)
@@ -88,7 +88,7 @@ int main()
     IDirect3DTexture9 *curr=0,*r7Out=0,*tsrOut=0;IDirect3DSurface9 *r7S=0,*tsrS=0;
     if(FAILED(CreatePattern(d,sw,sh,0,0,&curr)))return 10;if(FAILED(CreateRT(d,dw,dh,&r7Out,&r7S)))return 11;if(FAILED(CreateRT(d,dw,dh,&tsrOut,&tsrS)))return 12;
     IDirect3DPixelShader9 *r7=0,*resolve=0;if(FAILED(d->CreatePixelShader((const DWORD*)g_ptarSpec5Ps,&r7))||!r7)return 13;if(FAILED(d->CreatePixelShader((const DWORD*)g_ptarTsr1ResolvePs,&resolve))||!resolve)return 14;
-    float sizes[4]={(float)sw,(float)sh,(float)dw,(float)dh};if(FAILED(Draw(d,r7S,dw,dh,r7,curr,0,0,sizes)))return 15;
+    float sizes[4]={(float)sw,(float)sh,(float)dw,(float)dh};if(FAILED(Draw(d,r7S,dw,dh,r7,curr,0,0,0,sizes)))return 15;
     std::vector<DWORD>r7Pixels;if(FAILED(Read(d,r7S,dw,dh,r7Pixels)))return 16;
 
     uint64_t r7Error=0;uint64_t referenceSamples=0;
@@ -101,7 +101,7 @@ int main()
     for(unsigned ci=0;ci<sizeof(cases)/sizeof(cases[0]);++ci)
     {
         IDirect3DTexture9 *history=0,*motion=0;if(FAILED(CreatePattern(d,sw,sh,cases[ci].sx,cases[ci].sy,&history)))return 20+(int)ci;if(FAILED(CreateMotion(d,mw,mh,cases[ci].sx,cases[ci].sy,&motion)))return 24+(int)ci;
-        if(FAILED(Draw(d,tsrS,dw,dh,resolve,curr,history,motion,sizes)))return 28+(int)ci;
+        if(FAILED(Draw(d,tsrS,dw,dh,resolve,curr,history,motion,r7Out,sizes)))return 28+(int)ci;
         std::vector<DWORD>tsrPixels;if(FAILED(Read(d,tsrS,dw,dh,tsrPixels)))return 32+(int)ci;
         uint64_t tsrError=0;for(UINT y=6;y+6<dh;++y)for(UINT x=6;x+6<dw;++x){const float px=((float)x+0.5f)*(float)sw/(float)dw-0.5f;const float py=((float)y+0.5f)*(float)sh/(float)dh-0.5f;tsrError+=AbsRgb(tsrPixels[(size_t)y*dw+x],Pattern(px,py));}
         const double tsrMae=(double)tsrError/(double)referenceSamples;const double improvement=(1.0-tsrMae/r7Mae)*100.0;worstImprovement=std::min(worstImprovement,improvement);
@@ -111,6 +111,7 @@ int main()
         std::printf("TSR1_NATIVE_%s=PASS\n",cases[ci].name);
     }
     std::printf("TSR1_NATIVE_REFERENCE_WORST_IMPROVEMENT_PCT=%.3f\n",worstImprovement);
+    std::printf("TSR1_NATIVE_R7_REUSE=PASS\n");
     std::printf("TSR1_NATIVE_REFERENCE_QUALITY=PASS\n");
 
     resolve->Release();r7->Release();tsrS->Release();tsrOut->Release();r7S->Release();r7Out->Release();curr->Release();d->Release();DestroyWindow(wnd);d3d->Release();FreeLibrary(m);return 0;
