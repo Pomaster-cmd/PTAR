@@ -22,7 +22,7 @@ assert h.count(old)==1, h.count(old)
 h=h.replace(old,new,1)
 
 old='''static bool PtHudUseMoe(){return g_ptarHudUseMoe;}\nstatic bool PtHudFgEnabled(){return g_ptarHudFgEnabled;}'''
-new='''static bool PtHudUseMoe(){return g_ptarHudFilterMode==2;}\nstatic bool PtHudPointRef(){return g_ptarHudFilterMode==0;}\nstatic int PtHudFilterMode(){return g_ptarHudFilterMode;}\nstatic bool PtHudFgEnabled(){return g_ptarHudFgEnabled;}'''
+new='''static bool PtHudUseMoe(){return g_ptarHudFilterMode==2;}\nstatic bool PtHudPointRef(){return g_ptarHudFilterMode==0;}\nstatic bool PtHudFgEnabled(){return g_ptarHudFgEnabled;}'''
 assert h.count(old)==1, h.count(old)
 h=h.replace(old,new,1)
 
