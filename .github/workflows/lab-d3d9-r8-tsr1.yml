@@ -1,0 +1,24 @@
+name: LAB D3D9 R8 TSR1
+on:
+  push:
+    branches:
+      - lab/r8-tsr1
+  workflow_dispatch:
+jobs:
+  r8:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+      - name: Qualify R8 temporal super-resolution over exact R7
+        shell: pwsh
+        run: .\lab\tsr1\run_r8_tsr_ci.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: R8-TSR1
+          path: artifact/
+          if-no-files-found: error
