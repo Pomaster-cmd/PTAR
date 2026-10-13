@@ -20,6 +20,9 @@ static F4 Add(F4 a,F4 b){return {a.r+b.r,a.g+b.g,a.b+b.b,a.a+b.a};}
 static F4 Sub(F4 a,F4 b){return {a.r-b.r,a.g-b.g,a.b-b.b,a.a-b.a};}
 static F4 Mul(F4 a,float s){return {a.r*s,a.g*s,a.b*s,a.a*s};}
 static F4 Lerp4(F4 a,F4 b,float t){return Add(Mul(a,1.0f-t),Mul(b,t));}
+static F4 Min4(F4 a,F4 b){return {std::min(a.r,b.r),std::min(a.g,b.g),std::min(a.b,b.b),std::min(a.a,b.a)};}
+static F4 Max4(F4 a,F4 b){return {std::max(a.r,b.r),std::max(a.g,b.g),std::max(a.b,b.b),std::max(a.a,b.a)};}
+static F4 Clamp4(F4 v,F4 lo,F4 hi){return {std::max(lo.r,std::min(v.r,hi.r)),std::max(lo.g,std::min(v.g,hi.g)),std::max(lo.b,std::min(v.b,hi.b)),std::max(lo.a,std::min(v.a,hi.a))};}
 static int ClampI(int v,int n){return v<0?0:(v>=n?n-1:v);}
 static F4 FromARGB(DWORD p){return {(float)((p>>16)&255)/255.0f,(float)((p>>8)&255)/255.0f,(float)(p&255)/255.0f,(float)((p>>24)&255)/255.0f};}
 static BYTE Quant(float v){int x=(int)std::floor(Sat(v)*255.0f+0.5f);return (BYTE)ClampI(x,256);}
@@ -55,7 +58,14 @@ static F4 RefBicubic16(const std::vector<DWORD>&s,int sw,int sh,int dw,int dh,in
     const F4 s12=Load(s,sw,sh,qx,qy+1);
     const F4 s22=Load(s,sw,sh,qx+1,qy+1);
     const F4 bilinear=Lerp4(Lerp4(s11,s21,fx),Lerp4(s12,s22,fx),fy);
-    F4 out=Add(cubic,Mul(Sub(cubic,bilinear),0.25f));
+
+    const F4 raw=Add(cubic,Mul(Sub(cubic,bilinear),1.10f));
+    const F4 localMin=Min4(Min4(s11,s21),Min4(s12,s22));
+    const F4 localMax=Max4(Max4(s11,s21),Max4(s12,s22));
+    const F4 localRange=Sub(localMax,localMin);
+    const F4 lo=Sub(localMin,Mul(localRange,0.10f));
+    const F4 hi=Add(localMax,Mul(localRange,0.10f));
+    F4 out=Clamp4(raw,lo,hi);
     out.r=Sat(out.r);out.g=Sat(out.g);out.b=Sat(out.b);out.a=Sat(out.a);
     return out;
 }
