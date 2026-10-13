@@ -12,15 +12,6 @@ function Insert-Before-One([string]$anchor,[string]$insert,[string]$label)
     $script:text=$script:text.Substring(0,$first)+$insert+$script:text.Substring($first)
 }
 
-function Replace-One([string]$old,[string]$new,[string]$label)
-{
-    $first=$script:text.IndexOf($old,[StringComparison]::Ordinal)
-    if($first -lt 0){throw "R8 core anchor missing: $label"}
-    $second=$script:text.IndexOf($old,$first+$old.Length,[StringComparison]::Ordinal)
-    if($second -ge 0){throw "R8 core anchor not unique: $label"}
-    $script:text=$script:text.Substring(0,$first)+$new+$script:text.Substring($first+$old.Length)
-}
-
 if($text.IndexOf('ptar_tsr1_runtime.h',[StringComparison]::Ordinal) -ge 0)
 {
     throw 'R8 core appears to be already applied'
@@ -44,8 +35,10 @@ Insert-Before-One @'
     PtTsr1Release();
 '@ 'TSR release'
 
-Replace-One @'
-    PtDiagStage("Initialize_CreateStateBlock");
+# The diagnostic marker around CreateStateBlock is not stable across all lineage
+# overlays, but the actual state-block creation call is. Insert TSR setup directly
+# before that unique semantic operation and leave surrounding instrumentation intact.
+Insert-Before-One @'
     hr=dev->CreateStateBlock(D3DSBT_ALL,&g_ptar.stateBlock);
 '@ @'
     if(spatialActive)
@@ -59,8 +52,6 @@ Replace-One @'
                 (unsigned long)tsrHr);
     }
 
-    PtDiagStage("Initialize_CreateStateBlock");
-    hr=dev->CreateStateBlock(D3DSBT_ALL,&g_ptar.stateBlock);
 '@ 'TSR initialization'
 
 Insert-Before-One @'
@@ -73,3 +64,4 @@ static HRESULT RenderSpatialToCurrent(IDirect3DDevice9* dev)
 $utf8=New-Object System.Text.UTF8Encoding($false)
 [IO.File]::WriteAllText((Resolve-Path $path),$text,$utf8)
 Write-Host 'R8_PROXY_CORE_PATCH=PASS'
+Write-Host 'R8_PROXY_CORE_INIT_ANCHOR=CREATE_STATE_BLOCK'
