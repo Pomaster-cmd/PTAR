@@ -3,28 +3,35 @@ $ErrorActionPreference='Stop'
 $path='compat/x86_d3d9/ptar_d3d9_proxy.cpp'
 $text=[IO.File]::ReadAllText((Resolve-Path $path)) -replace "`r`n","`n"
 
-function Replace-One([string]$old,[string]$new,[string]$label)
+# Patch only inside HookPresent.  The qualified lineage is rebuilt dynamically
+# by R3->R7 and several lab overlays legitimately add comments/instrumentation,
+# so integration must anchor on semantic ownership tokens rather than an exact
+# historical formatting snapshot.
+$hookStart=$text.IndexOf('static HRESULT STDMETHODCALLTYPE HookPresent(',[StringComparison]::Ordinal)
+if($hookStart -lt 0){throw 'R8 HookPresent function missing'}
+$hookEnd=$text.IndexOf('restore_game_state:',$hookStart,[StringComparison]::Ordinal)
+if($hookEnd -lt 0){throw 'R8 HookPresent restore label missing'}
+$hook=$text.Substring($hookStart,$hookEnd-$hookStart)
+
+foreach($required in @(
+    'PtTemporalPublishPair(self,hwnd)',
+    'TEMPORAL_PUBLISH_FAIL',
+    'PtFgPacerPrepareReal(false)'))
 {
-    $first=$script:text.IndexOf($old,[StringComparison]::Ordinal)
-    if($first -lt 0){throw "R8 HookPresent anchor missing: $label"}
-    $second=$script:text.IndexOf($old,$first+$old.Length,[StringComparison]::Ordinal)
-    if($second -ge 0){throw "R8 HookPresent anchor not unique: $label"}
-    $script:text=$script:text.Substring(0,$first)+$new+$script:text.Substring($first+$old.Length)
+    if($hook.IndexOf($required,[StringComparison]::Ordinal) -lt 0)
+    {
+        throw "R8 requires qualified TEMPORALPAIR60 HookPresent token: $required"
+    }
 }
 
-# R8 is deliberately layered on TEMPORALPAIR60 rather than replacing its
-# presenter block.  FG keeps the qualified async G/R mailbox path verbatim;
-# TSR1 is evaluated only when FG is OFF.
-$oldSession=@'
-        bool fgProducing=false;
-        bool fgPipelineReady=false;
-        const bool fgSession=
-            PtHudFgEnabled() && g_ptar.previousRealValid;
-'@
-$newSession=@'
-        bool fgProducing=false;
-        bool fgPipelineReady=false;
-        bool tsrResolved=false;
+# 1) Replace only the FG-session declaration.  Whitespace is deliberately
+# flexible; this token is unique inside HookPresent after TEMPORALPAIR60.
+$sessionPattern='const\s+bool\s+fgSession\s*=\s*PtHudFgEnabled\(\)\s*&&\s*g_ptar\.previousRealValid\s*;'
+$sessionMatches=[regex]::Matches($hook,$sessionPattern,[Text.RegularExpressions.RegexOptions]::Singleline)
+if($sessionMatches.Count -ne 1){throw "R8 HookPresent fgSession semantic anchor count=$($sessionMatches.Count)"}
+
+$sessionReplacement=@'
+bool tsrResolved=false;
         const bool fgEnabled=PtHudFgEnabled();
 
         // Do not reuse source history across an FG interval. This keeps the
@@ -57,30 +64,38 @@ $newSession=@'
         const bool fgSession=
             fgEnabled && g_ptar.previousRealValid;
 '@
-Replace-One $oldSession $newSession 'FG session gate'
+$hook=[regex]::Replace(
+    $hook,$sessionPattern,
+    [Text.RegularExpressions.MatchEvaluator]{param($m) $sessionReplacement},
+    [Text.RegularExpressions.RegexOptions]::Singleline)
 
-$oldReal=@'
-            if(!PtHudFgEnabled())
-                PtTemporalShutdown();
+# 2) Replace only the synchronous REAL fail-open tail inside the temporal
+# fallback branch.  Locate it structurally from the unique fallback condition
+# and RotateRealHistory call instead of depending on comments or line wrapping.
+$fallbackToken='if(!(fgSession && fgPipelineReady && fgProducing))'
+$fallback=$hook.IndexOf($fallbackToken,[StringComparison]::Ordinal)
+if($fallback -lt 0){throw 'R8 HookPresent temporal fallback branch missing'}
+$shutdown=$hook.IndexOf('if(!PtHudFgEnabled())',$fallback,[StringComparison]::Ordinal)
+if($shutdown -lt 0){throw 'R8 HookPresent FG-off temporal shutdown anchor missing'}
+$rotate=$hook.IndexOf('RotateRealHistory();',$shutdown,[StringComparison]::Ordinal)
+if($rotate -lt 0){throw 'R8 HookPresent REAL RotateRealHistory anchor missing'}
+$tailEnd=$rotate+'RotateRealHistory();'.Length
 
-            // Exact proven FASTBLIT2 fail-open path. No temporal worker and no
-            // FG-core change is allowed to make the game unpresentable.
-            PtFgPacerPrepareReal(false);
-            PtDiagStage("PRESENT_REAL");
-            result=PresentPTARTexture(
-                self,g_ptar.currentRealTexture,g_ptar.currentRealSurface,
-                hwnd,dirty,false,false);
-            if(SUCCEEDED(result))
-                RotateRealHistory();
-'@
+# Refuse to span into any later block. This protects the qualified presenter if
+# its topology changes again.
+$publish=$hook.IndexOf('PtTemporalPublishPair(self,hwnd)',$fallback,[StringComparison]::Ordinal)
+if($publish -ge $shutdown){throw 'R8 HookPresent unexpected temporal publisher ordering'}
+$present=$hook.IndexOf('PtDiagStage("PRESENT_REAL")',$shutdown,[StringComparison]::Ordinal)
+if($present -lt 0 -or $present -gt $rotate){throw 'R8 HookPresent REAL present marker missing in fallback tail'}
+
 $newReal=@'
-            if(!fgEnabled)
+if(!fgEnabled)
                 PtTemporalShutdown();
 
-            // Exact proven FASTBLIT2 fail-open remains the fallback. TSR1 uses
-            // the existing generated texture only as an FG-OFF display scratch;
-            // currentReal remains exact R7 so FG output history is never fed a
-            // TSR frame when the user enables FG on the next frame.
+            // Exact proven FASTBLIT2 remains the fail-open path. TSR1 uses the
+            // existing generated texture only as an FG-OFF display scratch;
+            // currentReal stays exact R7, so enabling FG on the next frame
+            // cannot feed a TSR result into its qualified previous/current pair.
             PtFgPacerPrepareReal(false);
             PtDiagStage(tsrResolved?"PRESENT_REAL_TSR1":"PRESENT_REAL");
             IDirect3DTexture9* presentTexture=
@@ -92,9 +107,8 @@ $newReal=@'
                 hwnd,dirty,false,false);
             if(SUCCEEDED(result))
             {
-                // Keep output history on the exact R7 spatial current. TSR1
-                // owns a separate 720p source history and therefore does not
-                // need to contaminate the proven FG previous/current pair.
+                // Keep output history on exact R7. TSR1 owns a separate source
+                // history and therefore never contaminates the proven FG pair.
                 RotateRealHistory();
 
                 if(!fgEnabled)
@@ -111,11 +125,10 @@ $newReal=@'
                 }
             }
 '@
-Replace-One $oldReal $newReal 'REAL fail-open presentation'
+$hook=$hook.Substring(0,$shutdown)+$newReal+$hook.Substring($tailEnd)
 
-# Scope and lineage gates. These are intentionally about semantic ownership,
-# not merely compilation: the asynchronous FG publisher must still exist and
-# TSR1 must not replace it.
+# Reassemble and then enforce semantic scope gates on the actual final source.
+$text=$text.Substring(0,$hookStart)+$hook+$text.Substring($hookEnd)
 foreach($token in @(
     'PtTemporalPublishPair(self,hwnd)',
     '(void)PtFgPacerPrepareGenerated();',
