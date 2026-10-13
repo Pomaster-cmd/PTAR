@@ -178,13 +178,13 @@ float4 main(float2 uv : TEXCOORD0) : COLOR0
     float tsrBlend=saturate(phaseDiversity)*trust;
     float4 resolved=lerp(r7,unionSample,tsrBlend);
 
-    // Fail-soft temporal envelope. The union estimate is a convex combination
-    // of real source samples; this final combined envelope only rejects motion
-    // mismatches/disocclusion excursions while still permitting history detail.
+    // Fail-soft temporal envelope. Include R7 itself in the admissible range so
+    // tsrBlend==0 is bit-stable after quantization and cannot be narrowed by a
+    // later temporal clamp.
     float4 histMin=min(min(h11,h21),min(h12,h22));
     float4 histMax=max(max(h11,h21),max(h12,h22));
-    float4 combinedMin=min(currentMin,histMin);
-    float4 combinedMax=max(currentMax,histMax);
+    float4 combinedMin=min(min(currentMin,histMin),r7);
+    float4 combinedMax=max(max(currentMax,histMax),r7);
     float4 combinedRange=combinedMax-combinedMin;
     resolved=clamp(resolved,combinedMin-0.03f*combinedRange,combinedMax+0.03f*combinedRange);
     resolved.a=r7.a;
