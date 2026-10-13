@@ -1,0 +1,24 @@
+name: LAB D3D9 BIC16 R6 PHASEDETAIL1
+on:
+  push:
+    branches:
+      - lab/bic16-r6-phasedetail1
+  workflow_dispatch:
+jobs:
+  r6:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+      - name: Qualify R6 phase-detail over exact R5
+        shell: pwsh
+        run: .\lab\bicubic16\run_r6_full_ci.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BIC16-R6-PHASEDETAIL1
+          path: artifact/
+          if-no-files-found: error
