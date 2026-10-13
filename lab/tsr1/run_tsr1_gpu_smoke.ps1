@@ -1,5 +1,7 @@
 $ErrorActionPreference='Stop'
 
+# Functional GPU smoke: exact R7 fallback, fractional resolve activation and
+# subpixel motion production.
 & cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I build_x86 lab\tsr1\d3d9_tsr1_gpu_smoke.cpp /link d3d9.lib user32.lib /OUT:artifact\d3d9_tsr1_gpu_smoke.exe /SUBSYSTEM:CONSOLE,6.03
 if($LASTEXITCODE){throw 'TSR1 GPU smoke compile failed'}
 
@@ -14,4 +16,25 @@ foreach($marker in @(
 {
     if($smoke -notmatch [regex]::Escape($marker)){throw "TSR1 GPU smoke marker missing: $marker"}
 }
+
+# Quality oracle: compare exact R7 and TSR1 against a continuous synthetic
+# native-resolution scene.  Known half-pixel X/Y/XY source phases must provide
+# genuinely new sample positions and improve RGB MAE by at least 10% in every
+# direction, not merely produce a different image.
+& cl.exe /nologo /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I build_x86 lab\tsr1\d3d9_tsr1_quality_oracle.cpp /link d3d9.lib user32.lib /OUT:artifact\d3d9_tsr1_quality_oracle.exe /SUBSYSTEM:CONSOLE,6.03
+if($LASTEXITCODE){throw 'TSR1 native-reference oracle compile failed'}
+
+& artifact\d3d9_tsr1_quality_oracle.exe 2>&1 | Tee-Object artifact\R8_TSR1_QUALITY_ORACLE.txt
+if($LASTEXITCODE){throw 'TSR1 native-reference oracle execution failed'}
+$quality=Get-Content artifact\R8_TSR1_QUALITY_ORACLE.txt -Raw
+foreach($marker in @(
+ 'TSR1_NATIVE_X_HALF=PASS',
+ 'TSR1_NATIVE_Y_HALF=PASS',
+ 'TSR1_NATIVE_XY_HALF=PASS',
+ 'TSR1_NATIVE_REFERENCE_QUALITY=PASS'))
+{
+    if($quality -notmatch [regex]::Escape($marker)){throw "TSR1 quality oracle marker missing: $marker"}
+}
+
 Write-Host 'R8_TSR1_GPU_SMOKE=PASS'
+Write-Host 'R8_TSR1_NATIVE_REFERENCE_QUALITY=PASS'
