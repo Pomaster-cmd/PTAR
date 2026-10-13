@@ -48,7 +48,8 @@ bool tsrResolved=false;
             PtTsr1CanResolve())
         {
             HRESULT tsrHr=PtTsr1Resolve(
-                self,g_ptar.sourceTexture,g_ptar.generatedSurface);
+                self,g_ptar.sourceTexture,
+                g_ptar.currentRealTexture,g_ptar.generatedSurface);
             if(tsrHr==S_OK)
             {
                 tsrResolved=true;
@@ -137,6 +138,7 @@ foreach($token in @(
     'PRESENT_REAL_TSR1',
     'g_ptar.sourceW==1280u',
     'g_ptar.outputW==1920u',
+    'g_ptar.currentRealTexture,g_ptar.generatedSurface',
     'PtTsr1StoreSource('))
 {
     if($text.IndexOf($token,[StringComparison]::Ordinal) -lt 0)
@@ -155,3 +157,4 @@ $utf8=New-Object System.Text.UTF8Encoding($false)
 Write-Host 'R8_HOOKPRESENT_TEMPORALPAIR60=PASS'
 Write-Host 'R8_TSR_SCOPE=FG_OFF_Q720_1280X720_TO_1920X1080'
 Write-Host 'R8_FG_OUTPUT_HISTORY=R7_SPATIAL_ONLY'
+Write-Host 'R8_TSR_RESOLVE_BASE=EXISTING_R7_CURRENT'
