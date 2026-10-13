@@ -1,7 +1,9 @@
-// PTAR D3D9 Q720 BICUBIC16 NEWREFS2
-// Objective: make real 1280x720 game output visually closer to native 1920x1080.
+// PTAR D3D9 Q720 BICUBIC16 R3
+// Objective: recover microdetail toward native 1080p without reintroducing
+// the coarse/oversharpened look of SPEC5/NativeVisual2.
 // 16-tap separable Catmull-Rom reconstruction (Keys a=-0.5).
-// Mild detail recovery uses the already available cubic-vs-bilinear residual.
+// Detail recovery uses the already available cubic-vs-bilinear residual.
+// A local 2x2 contrast limiter prevents ringing/halo growth.
 // No extra texture fetches, no additional pass, no explicit post-AA.
 
 sampler2D gSource : register(s0);
@@ -60,15 +62,17 @@ float4 main(float2 uv : TEXCOORD0) : COLOR0
     float4 r3=s03*wx.x+s13*wx.y+s23*wx.z+s33*wx.w;
     float4 cubic=r0*wy.x+r1*wy.y+r2*wy.z+r3*wy.w;
 
-    // Exact bilinear reconstruction from the four central samples. This costs
-    // no additional source reads and provides a stable low-frequency anchor.
+    // Exact bilinear reconstruction from the four central samples. No extra reads.
     float4 bx=lerp(s11,s21,f.x);
     float4 by=lerp(s12,s22,f.x);
     float4 bilinear=lerp(bx,by,f.y);
 
-    // Real-game calibration from the new aligned PTAR 720p / native 1080p pair.
-    // 0.25 minimizes RGB and edge error better than the 0.60 prototype while
-    // retaining a small amount of cubic detail recovery.
-    float4 outv=cubic+0.25f*(cubic-bilinear);
+    // Stronger detail recovery than NEWREFS2, but contrast-limited to prevent
+    // the residual from creating thick edges, ringing, or large overshoots.
+    float4 raw=cubic+1.10f*(cubic-bilinear);
+    float4 localMin=min(min(s11,s21),min(s12,s22));
+    float4 localMax=max(max(s11,s21),max(s12,s22));
+    float4 localRange=localMax-localMin;
+    float4 outv=clamp(raw,localMin-0.10f*localRange,localMax+0.10f*localRange);
     return saturate(outv);
 }
