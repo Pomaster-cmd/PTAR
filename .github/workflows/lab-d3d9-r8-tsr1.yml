@@ -16,7 +16,9 @@ jobs:
           arch: x86
       - name: Qualify R8 temporal super-resolution over exact R7
         shell: pwsh
-        run: .\lab\tsr1\run_r8_tsr_ci.ps1
+        run: |
+          .\lab\tsr1\run_r8_tsr_ci.ps1
+          .\lab\tsr1\run_tsr1_gpu_smoke.ps1
       - uses: actions/upload-artifact@v4
         with:
           name: R8-TSR1
