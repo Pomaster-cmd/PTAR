@@ -9,6 +9,7 @@ sampler2D gBase : register(s2);
 
 // c0 = sourceWidth, sourceHeight, invSourceWidth, invSourceHeight
 float4 gSource : register(c0);
+static const float PTAR_TSR_MOTION_ZERO=0.5019607843137255f; // 128/255
 
 float Luma(float3 c)
 {
@@ -19,6 +20,13 @@ float4 main(float2 uv : TEXCOORD0) : COLOR0
 {
     float4 baseSample=tex2D(gBase,uv);
     float2 base=(baseSample.rg-0.5f)*64.0f;
+
+    // The legacy RGBA8 motion encoding cannot represent exact zero because
+    // 0.5 lies between byte codes 127 and 128. The old estimator only emits
+    // multiples of four pixels, so snap its decoded result back to that lattice
+    // before deriving a fractional correction. TSR1 then uses a byte-exact
+    // 128/255 zero point for its own motion output.
+    base=floor(base/4.0f+0.5f)*4.0f;
     float baseConfidence=saturate(baseSample.b);
 
     float current=Luma(tex2D(gCurr,uv).rgb);
@@ -48,6 +56,6 @@ float4 main(float2 uv : TEXCOORD0) : COLOR0
     float textureTrust=saturate((sqrt(gradient2)-0.003f)*28.0f);
     float confidence=baseConfidence*photoTrust*lerp(0.20f,1.0f,textureTrust);
 
-    float2 encoded=saturate(refined/64.0f+0.5f);
+    float2 encoded=saturate(refined/64.0f+PTAR_TSR_MOTION_ZERO);
     return float4(encoded,confidence,1.0f);
 }
