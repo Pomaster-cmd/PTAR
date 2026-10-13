@@ -19,16 +19,25 @@ $extraMatch=[regex]::Match($perf,'TSR1_PERF_TSR_EXTRA_TO_R7_RATIO=([0-9.]+)')
 if(-not $totalMatch.Success -or -not $extraMatch.Success){throw 'TSR1 perf ratios missing'}
 $total=[double]::Parse($totalMatch.Groups[1].Value,[Globalization.CultureInfo]::InvariantCulture)
 $extra=[double]::Parse($extraMatch.Groups[1].Value,[Globalization.CultureInfo]::InvariantCulture)
-if($total -lt 1.0 -or $total -gt 3.0){throw "TSR1 initial total performance envelope failed ratio=$total"}
-if($extra -le 0.0 -or $extra -ge $total){throw "TSR1 incremental performance accounting failed extra=$extra total=$total"}
+
+# Hosted HAL absolute milliseconds are not portable performance claims. The
+# within-run ratios are stable enough to protect the optimized topology while
+# leaving margin for runner noise. Current qualified reference is ~2.16 total
+# and ~1.16 incremental relative to R7.
+if($total -lt 1.0 -or $total -gt 2.35){throw "TSR1 total GPU regression ratio=$total (>2.35)"}
+if($extra -le 0.0 -or $extra -gt 1.35){throw "TSR1 incremental GPU regression ratio=$extra (>1.35)"}
+if($extra -ge $total){throw "TSR1 incremental performance accounting failed extra=$extra total=$total"}
 
 if(Test-Path artifact\PTAR_R8_VALIDATION.txt)
 {
     'TSR1_GPU_TIMESTAMP_PERF=PASS' | Add-Content artifact\PTAR_R8_VALIDATION.txt -Encoding ascii
+    'TSR1_GPU_RATIO_GATE_TOTAL_MAX=2.35' | Add-Content artifact\PTAR_R8_VALIDATION.txt -Encoding ascii
+    'TSR1_GPU_RATIO_GATE_EXTRA_MAX=1.35' | Add-Content artifact\PTAR_R8_VALIDATION.txt -Encoding ascii
     ('TSR1_R8_TOTAL_TO_R7_GPU_RATIO='+$total.ToString('F4',[Globalization.CultureInfo]::InvariantCulture)) | Add-Content artifact\PTAR_R8_VALIDATION.txt -Encoding ascii
     ('TSR1_EXTRA_TO_R7_GPU_RATIO='+$extra.ToString('F4',[Globalization.CultureInfo]::InvariantCulture)) | Add-Content artifact\PTAR_R8_VALIDATION.txt -Encoding ascii
 }
 
 Write-Host "R8_TSR1_GPU_TOTAL_RATIO=$($total.ToString('F4',[Globalization.CultureInfo]::InvariantCulture))"
 Write-Host "R8_TSR1_GPU_EXTRA_RATIO=$($extra.ToString('F4',[Globalization.CultureInfo]::InvariantCulture))"
+Write-Host 'R8_TSR1_GPU_RATIO_GATES=PASS'
 Write-Host 'R8_TSR1_GPU_PERF=PASS'
