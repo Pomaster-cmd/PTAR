@@ -115,9 +115,10 @@ static bool PtTsr1CanResolve()
 static HRESULT PtTsr1Resolve(
     IDirect3DDevice9* dev,
     IDirect3DTexture9* currentSource,
+    IDirect3DTexture9* currentR7,
     IDirect3DSurface9* resolvedTarget)
 {
-    if(!dev || !currentSource || !resolvedTarget || !PtTsr1CanResolve())
+    if(!dev || !currentSource || !currentR7 || !resolvedTarget || !PtTsr1CanResolve())
         return S_FALSE;
 
     float source[4]={
@@ -161,7 +162,19 @@ static HRESULT PtTsr1Resolve(
         (float)g_ptarTsr1.outputW,
         (float)g_ptarTsr1.outputH};
 
+    // R7 has already been rendered to currentRealTexture. Bind it on s3 with
+    // POINT sampling so the resolve can reuse the exact byte-stable fallback
+    // instead of re-running the 16-tap R7 shader at 1080p.
     PtDiagStage("TSR1_RESOLVE");
+    dev->SetSamplerState(3,D3DSAMP_MINFILTER,D3DTEXF_POINT);
+    dev->SetSamplerState(3,D3DSAMP_MAGFILTER,D3DTEXF_POINT);
+    dev->SetSamplerState(3,D3DSAMP_MIPFILTER,D3DTEXF_NONE);
+    dev->SetSamplerState(3,D3DSAMP_ADDRESSU,D3DTADDRESS_CLAMP);
+    dev->SetSamplerState(3,D3DSAMP_ADDRESSV,D3DTADDRESS_CLAMP);
+    dev->SetSamplerState(3,D3DSAMP_SRGBTEXTURE,FALSE);
+    hr=dev->SetTexture(3,currentR7);
+    if(FAILED(hr)) goto fail;
+
     hr=DrawFullscreenPass(
         dev,
         resolvedTarget,
@@ -169,11 +182,13 @@ static HRESULT PtTsr1Resolve(
         g_ptarTsr1.resolveShader,
         currentSource,g_ptarTsr1.sourceHistoryTexture,
         g_ptarTsr1.subpixelTexture,sizes);
+    dev->SetTexture(3,0);
     if(FAILED(hr)) goto fail;
 
     return S_OK;
 
 fail:
+    dev->SetTexture(3,0);
     PtDiagLogA("TSR1_RESOLVE_FAIL hr=0x%08lX fallback=R7",(unsigned long)hr);
     return hr;
 }
