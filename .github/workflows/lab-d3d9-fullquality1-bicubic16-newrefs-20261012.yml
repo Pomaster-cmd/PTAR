@@ -1,11 +1,11 @@
-name: LAB D3D9 FULLQUALITY1 BICUBIC16 NEWREFS 20261012
+name: LAB D3D9 BIC16 R3 FULL
 on:
   push:
     branches:
-      - lab/d3d9-spec5-bicubic16-newrefs-20261012
+      - lab/bic16-r3
   workflow_dispatch:
 jobs:
-  bicubic16:
+  r3:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
@@ -14,11 +14,11 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x86
-      - name: Reconstruct FULLQUALITY1 and qualify only Bicubic16 delta
+      - name: Qualify Bic16 R3 delta over FULLQUALITY1
         shell: pwsh
-        run: .\lab\bicubic16\run_bicubic16_full_ci.ps1
+        run: .\lab\bicubic16\run_r3_full_ci.ps1
       - uses: actions/upload-artifact@v4
         with:
-          name: PTAR-D3D9-FULLQUALITY1-BICUBIC16-VALIDATED
+          name: BIC16-R3-FULL
           path: artifact/
           if-no-files-found: error
