@@ -12,11 +12,12 @@ function Replace-One([string]$old,[string]$new,[string]$label)
     $script:text=$script:text.Substring(0,$first)+$new+$script:text.Substring($first+$old.Length)
 }
 
+# Earlier qualification stages may insert additional bytecode headers between
+# the FG headers and ptar_diag.h. Anchor only on ptar_diag.h, which is unique
+# and stable across the qualified R3->R7 lineage.
 Replace-One @'
-#include "ptar_fg_interpolate_ps_bytecode.h"
 #include "ptar_diag.h"
 '@ @'
-#include "ptar_fg_interpolate_ps_bytecode.h"
 #include "ptar_tsr1_motion_subpixel_ps_bytecode.h"
 #include "ptar_tsr1_resolve_ps_bytecode.h"
 #include "ptar_tsr1_runtime.h"
