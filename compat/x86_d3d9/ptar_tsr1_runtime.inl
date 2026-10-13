@@ -27,6 +27,14 @@ static void PtTsr1Release()
     g_ptarTsr1.format=D3DFMT_UNKNOWN;
 }
 
+static void PtTsr1InvalidateHistory()
+{
+    // Do not carry a source frame across an interval where the qualified FG
+    // presenter owns temporal output.  The first frame after FG is disabled
+    // therefore re-seeds TSR1 with a fresh source and falls back to exact R7.
+    g_ptarTsr1.historyValid=false;
+}
+
 static HRESULT PtTsr1Initialize(
     IDirect3DDevice9* dev,
     UINT sourceW,UINT sourceH,
