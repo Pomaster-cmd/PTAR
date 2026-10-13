@@ -1,0 +1,24 @@
+name: LAB D3D9 BIC16 R5 NATIVEFIT1
+on:
+  push:
+    branches:
+      - lab/bic16-r5-nativefit1
+  workflow_dispatch:
+jobs:
+  r5:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+      - name: Qualify R5 native-fit over exact R4
+        shell: pwsh
+        run: .\lab\bicubic16\run_r5_full_ci.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BIC16-R5-NATIVEFIT1
+          path: artifact/
+          if-no-files-found: error
