@@ -1,8 +1,8 @@
-name: LAB D3D9 BICUBIC16 NEWREFS 20261012
+name: LAB D3D9 BIC16 R3
 on:
   push:
     branches:
-      - lab/d3d9-spec5-bicubic16-newrefs-20261012
+      - lab/bic16-r3
   workflow_dispatch:
 jobs:
   compile:
@@ -14,17 +14,14 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x86
-      - name: Compile Bicubic16 SM3
+      - name: Compile Bic16 R3 SM3
         shell: pwsh
         run: .\lab\bicubic16\compile_bicubic16.ps1
-      - name: Run Bicubic16 GPU pixel oracle
-        shell: pwsh
-        run: .\lab\bicubic16\run_bicubic16_oracle.ps1
-      - name: Benchmark Bicubic16 against canonical SPEC5
+      - name: Benchmark Bic16 R3 against canonical SPEC5
         shell: pwsh
         run: .\lab\bicubic16\run_bicubic16_perf.ps1
       - uses: actions/upload-artifact@v4
         with:
-          name: PTAR-D3D9-BICUBIC16-NEWREFS
+          name: BIC16-R3-LAB
           path: artifact/
           if-no-files-found: error
