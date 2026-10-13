@@ -41,11 +41,14 @@ float Luma(float4 c)
     return dot(c.rgb,float3(0.2126f,0.7152f,0.0722f));
 }
 
-float GaussianWeight(float2 d)
+float SharpWeight(float2 d)
 {
-    // sigma=0.25 source pixel. This deliberately behaves much closer to an
-    // irregular-sample reconstruction than to another smoothing filter.
-    return exp2(-11.5415603f*dot(d,d));
+    // Fourth-order compact approximation of the previous sigma~0.25 Gaussian.
+    // It preserves a dominant nearest phase sample while removing eight EXP2
+    // transcendental operations from every 1080p resolve pixel.
+    float t=saturate(1.0f-1.35f*dot(d,d));
+    float t2=t*t;
+    return t2*t2;
 }
 
 float4 main(float2 uv : TEXCOORD0) : COLOR0
@@ -103,15 +106,15 @@ float4 main(float2 uv : TEXCOORD0) : COLOR0
         step(0.5f,hp.y)*step(hp.y,gSizes.y-1.5f);
     float trust=confidence*photoTrust*inside;
 
-    float wc00=GaussianWeight(float2(-f.x,-f.y));
-    float wc10=GaussianWeight(float2(1.0f-f.x,-f.y));
-    float wc01=GaussianWeight(float2(-f.x,1.0f-f.y));
-    float wc11=GaussianWeight(float2(1.0f-f.x,1.0f-f.y));
+    float wc00=SharpWeight(float2(-f.x,-f.y));
+    float wc10=SharpWeight(float2(1.0f-f.x,-f.y));
+    float wc01=SharpWeight(float2(-f.x,1.0f-f.y));
+    float wc11=SharpWeight(float2(1.0f-f.x,1.0f-f.y));
 
-    float wh00=GaussianWeight(float2(-hf.x,-hf.y));
-    float wh10=GaussianWeight(float2(1.0f-hf.x,-hf.y));
-    float wh01=GaussianWeight(float2(-hf.x,1.0f-hf.y));
-    float wh11=GaussianWeight(float2(1.0f-hf.x,1.0f-hf.y));
+    float wh00=SharpWeight(float2(-hf.x,-hf.y));
+    float wh10=SharpWeight(float2(1.0f-hf.x,-hf.y));
+    float wh01=SharpWeight(float2(-hf.x,1.0f-hf.y));
+    float wh11=SharpWeight(float2(1.0f-hf.x,1.0f-hf.y));
 
     float currentWeight=wc00+wc10+wc01+wc11;
     float historyWeight=wh00+wh10+wh01+wh11;
