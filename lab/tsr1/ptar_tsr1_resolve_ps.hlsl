@@ -5,10 +5,10 @@
 // of small text, chair weave, ground texture and other already-good R7 microdetail.
 //
 // R9 therefore keeps the same 10-fetch topology and motion/history machinery, but makes
-// temporal strength content-adaptive. Flat/low-detail areas may still receive most of the
-// temporal reconstruction benefit; textured/high-contrast areas and pixels where R7 is
-// already materially different from simple bilinear are protected so temporal fusion adds
-// information without washing out the R7 reconstruction.
+// temporal strength content-adaptive. Flat/low-detail areas may still receive nearly the
+// full temporal reconstruction benefit; textured/high-contrast areas and pixels where R7
+// is already materially different from simple bilinear are protected so temporal fusion
+// adds information without washing out the R7 reconstruction.
 //
 // s0 = current 720p source
 // s1 = previous 720p source
@@ -48,7 +48,6 @@ float Luma(float4 c)
 
 float SharpWeight(float2 d)
 {
-    // Fourth-order compact approximation of the previous sigma~0.25 Gaussian.
     float t=saturate(1.0f-1.35f*dot(d,d));
     float t2=t*t;
     return t2*t2;
@@ -80,7 +79,7 @@ float4 main(float2 uv : TEXCOORD0) : COLOR0
     float4 currentMin=min(min(s11,s21),min(s12,s22));
     float4 currentMax=max(max(s11,s21),max(s12,s22));
 
-    // Simple current-only bilinear is not displayed. It is only a cheap local
+    // Simple current-only bilinear is never displayed. It is only a cheap local
     // low-frequency reference that tells us when R7 already contains useful
     // reconstruction detail that should not be averaged away.
     float4 currentBilinear=lerp(
@@ -143,13 +142,13 @@ float4 main(float2 uv : TEXCOORD0) : COLOR0
     //  - localRangeGuard rises on small text, weave, foliage and textured ground;
     //  - r7DetailGuard rises where the qualified R7 reconstruction already adds
     //    meaningful information over bilinear.
-    // Keep temporal strength high in genuinely smooth regions but cap it hard in
-    // detail-bearing regions. This is deliberately a blend-policy change only:
-    // no new texture read and no extra pass.
+    // Smooth areas retain up to 95% of R8's temporal fusion; detail-bearing areas
+    // fall to 40%, making R7 dominant rather than averaging its microstructure away.
+    // This is only a blend-policy change: no new texture read and no extra pass.
     float localRangeGuard=saturate((lrange-0.03f)*10.0f);
     float r7DetailGuard=saturate((r7Detail-0.003f)*40.0f);
     float detailProtect=max(localRangeGuard,r7DetailGuard);
-    float temporalStrength=lerp(0.82f,0.40f,detailProtect);
+    float temporalStrength=lerp(0.95f,0.40f,detailProtect);
 
     float tsrBlend=saturate(phaseDiversity)*trust*temporalStrength;
     float4 resolved=lerp(r7,unionSample,tsrBlend);
