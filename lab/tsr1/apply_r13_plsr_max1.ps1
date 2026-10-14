@@ -92,11 +92,10 @@ $max=@'
     float microDelta=clamp(targetMicroLuma-Luma(resolved),-microLimit,microLimit);
     resolved.rgb+=microDelta*microGain;
 
-    // Hard output contract. Merely multiplying the new deltas by zero is not
-    // sufficient to guarantee byte identity after ps_3_0 compiler reordering.
-    // Explicitly select the qualified R7 output whenever the motion field has
-    // no usable fractional phase or confidence. Half-pixel PLSR paths select 1.
-    float temporalOutputGate=step(0.0001f,phaseDiversity)*step(0.001f,confidence);
+    // Hard output contract. One combined phase*confidence predicate guarantees
+    // byte-stable R7 output at zero motion/failure while costing less than two
+    // independent predicates. Half-pixel PLSR paths resolve to gate=1.
+    float temporalOutputGate=step(0.0001f,phaseDiversity*confidence);
     resolved=lerp(r7,resolved,temporalOutputGate);
 '@
 
@@ -109,7 +108,7 @@ foreach($token in @(
     'directionalSpatialLuma',
     'coherentStair',
     'float maxPhase=historyAA',
-    'float temporalOutputGate=step(0.0001f,phaseDiversity)*step(0.001f,confidence)',
+    'float temporalOutputGate=step(0.0001f,phaseDiversity*confidence)',
     'detailProtect',
     'targetMicroLuma'))
 {
