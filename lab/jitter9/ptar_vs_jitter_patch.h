@@ -29,7 +29,9 @@ static DWORD PtShaderRegBits(UINT type,UINT number)
 
 static DWORD PtShaderReplaceRegister(DWORD token,UINT type,UINT number)
 {
-    const DWORD clearMask=~(D3DSP_REGNUM_MASK|D3DSP_REGTYPE_MASK|D3DSP_REGTYPE_MASK2);
+    const DWORD registerMask=(DWORD)D3DSP_REGNUM_MASK |
+        (DWORD)D3DSP_REGTYPE_MASK | (DWORD)D3DSP_REGTYPE_MASK2;
+    const DWORD clearMask=~registerMask;
     return (token&clearMask)|PtShaderRegBits(type,number);
 }
 
