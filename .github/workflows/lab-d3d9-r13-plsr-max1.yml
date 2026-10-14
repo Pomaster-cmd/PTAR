@@ -82,7 +82,7 @@ jobs:
           if($tex -gt 18){throw "R13 resolve texture-read budget exceeded: $tex"}
           if($slots -gt 330){throw "R13 resolve slot budget exceeded: $slots"}
 
-          $perf=Get-Content .\artifact\R8_TSR1_PERF.txt -Raw
+          $perf=Get-Content .\artifact\R8_TSR1_GPU_PERF.txt -Raw
           $ratioMatch=[regex]::Match($perf,'TSR1_PERF_R8_TOTAL_TO_R7_RATIO=([0-9.]+)')
           if(-not $ratioMatch.Success){throw 'R13 total GPU ratio missing'}
           $ratio=[double]::Parse($ratioMatch.Groups[1].Value,$ci)
@@ -97,6 +97,7 @@ jobs:
             'R13_WIDE_CURRENT_SUPPORT=4_TAP_DIRECTIONAL_CATMULL',
             'R13_COHERENT_EDGE_CLASSIFICATION=YES',
             'R13_FINE_DETAIL_R7_SUPPORT_GATE=YES',
+            'R13_ZERO_MOTION_FALLBACK=EXACT_R7',
             'R13_EXTRA_HISTORY_SURFACES=0',
             'R13_EXTRA_PASSES=0',
             ('R13_RESOLVE_TEXLD='+$tex),
