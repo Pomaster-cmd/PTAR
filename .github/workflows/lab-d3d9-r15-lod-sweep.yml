@@ -1,0 +1,79 @@
+name: LAB D3D9 R15 LOD SWEEP
+on:
+  push:
+    branches:
+      - lab/r15-jitter9-true720
+  workflow_dispatch:
+
+jobs:
+  lod-sweep:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+      - name: Build shader headers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force artifact,build_x86 | Out-Null
+          $fxc=Get-Command fxc.exe -ErrorAction Stop
+          $fxcPath=if($fxc.Path){$fxc.Path}else{$fxc.FullName}
+          & $fxcPath /nologo /T vs_3_0 /E main /O3 /Fh build_x86\r15_scene_vs_bytecode.h /Vn g_r15SceneVs lab\r15_jitter9\r15_scene_vs.hlsl
+          if($LASTEXITCODE){throw 'scene VS compile failed'}
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 /Fh build_x86\r15_scene_ps_bytecode.h /Vn g_r15ScenePs lab\r15_jitter9\r15_scene_ps.hlsl
+          if($LASTEXITCODE){throw 'scene PS compile failed'}
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 /Fh build_x86\r15_exact_reservoir_ps_bytecode.h /Vn g_r15ExactReservoirPs lab\r15_jitter9\r15_exact_reservoir_ps.hlsl
+          if($LASTEXITCODE){throw 'reservoir PS compile failed'}
+
+      - name: Sweep bias and select minimum native error
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $src=Get-Content lab\r15_jitter9\r15_lod_bias_oracle.cpp -Raw
+          $needle='-0.5849625007211562f'
+          if($src.IndexOf($needle,[StringComparison]::Ordinal) -lt 0){throw 'LOD bias source anchor missing'}
+          $biases=@(-0.40,-0.48,-0.54,-0.585,-0.62,-0.66,-0.72,-0.80)
+          $rows=@()
+          foreach($bias in $biases)
+          {
+            $literal=('{0:0.000000000}f' -f $bias)
+            $candidate=$src.Replace($needle,$literal)
+            $cpp="artifact\r15_lod_$($bias.ToString('0.000').Replace('-','m').Replace('.','p')).cpp"
+            Set-Content $cpp $candidate -Encoding utf8
+            $exe=[IO.Path]::ChangeExtension($cpp,'.exe')
+            & cl.exe /nologo /O2 /W4 /WX /EHsc /I lab\r15_jitter9 /I build_x86 $cpp /link d3d9.lib user32.lib "/OUT:$exe" | Out-Null
+            if($LASTEXITCODE){throw "compile failed bias=$bias"}
+            $out=& $exe 2>&1
+            $exit=$LASTEXITCODE
+            $text=($out -join "`n")
+            $m=[regex]::Match($text,'R15_LOD_BIASED_MAE=([0-9.]+) LUMA=([0-9.]+) CHANGED=([0-9]+) MAX=([0-9]+)')
+            if(!$m.Success){throw "metrics missing bias=$bias exit=$exit`n$text"}
+            $row=[pscustomobject]@{
+              Bias=[double]$bias
+              Mae=[double]$m.Groups[1].Value
+              Luma=[double]$m.Groups[2].Value
+              Changed=[int]$m.Groups[3].Value
+              Max=[int]$m.Groups[4].Value
+            }
+            $rows+=$row
+            Write-Host ("R15_LOD_SWEEP bias={0:F3} mae={1:F9} luma={2:F9} changed={3} max={4}" -f $row.Bias,$row.Mae,$row.Luma,$row.Changed,$row.Max)
+          }
+          $best=$rows | Sort-Object Mae | Select-Object -First 1
+          Write-Host ("R15_LOD_SWEEP_BEST_BIAS={0:F3}" -f $best.Bias)
+          Write-Host ("R15_LOD_SWEEP_BEST_MAE={0:F9}" -f $best.Mae)
+          Write-Host ("R15_LOD_SWEEP_BEST_LUMA={0:F9}" -f $best.Luma)
+          $rows | ConvertTo-Csv -NoTypeInformation | Set-Content artifact\R15_LOD_SWEEP.csv -Encoding ascii
+          @(
+            ('R15_LOD_SWEEP_BEST_BIAS={0:F3}' -f $best.Bias),
+            ('R15_LOD_SWEEP_BEST_MAE={0:F9}' -f $best.Mae),
+            ('R15_LOD_SWEEP_BEST_LUMA={0:F9}' -f $best.Luma)) | Set-Content artifact\R15_LOD_SWEEP_BEST.txt -Encoding ascii
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: R15-LOD-SWEEP-LAB
+          path: |
+            artifact/R15_LOD_SWEEP.csv
+            artifact/R15_LOD_SWEEP_BEST.txt
+          if-no-files-found: error
