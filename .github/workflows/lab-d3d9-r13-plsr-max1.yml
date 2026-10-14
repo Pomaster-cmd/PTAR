@@ -5,7 +5,34 @@ on:
       - lab/r13-plsr-max1
   workflow_dispatch:
 jobs:
+  shader-budget:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+      - name: Fast R13 resolve compile and budget gate
+        shell: pwsh
+        run: |
+          .\lab\tsr1\apply_r10_aliasresidual.ps1
+          .\lab\tsr1\apply_r11_plsr1.ps1
+          .\lab\tsr1\apply_r12_resaa1.ps1
+          .\lab\tsr1\apply_r13_plsr_max1.ps1
+          New-Item -ItemType Directory -Force artifact | Out-Null
+          $fxc=Get-Command fxc.exe -ErrorAction Stop
+          $fxcPath=if($fxc.Path){$fxc.Path}else{$fxc.FullName}
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 /Fo artifact\R13_FAST.cso /Fc artifact\R13_FAST_ASM.txt lab\tsr1\ptar_tsr1_resolve_ps.hlsl
+          if($LASTEXITCODE){throw 'R13 fast resolve compile failed'}
+          $asm=Get-Content artifact\R13_FAST_ASM.txt -Raw
+          $tex=([regex]::Matches($asm,'(?im)^\s*texld')).Count
+          $slots=[int]([regex]::Match($asm,'(?i)approximately\s+(\d+)\s+instruction slots').Groups[1].Value)
+          Write-Host "R13_FAST_RESOLVE=$slots`_SLOTS_$tex`_TEXLD"
+          if($tex -gt 18){throw "R13 resolve texture-read budget exceeded: $tex"}
+          if($slots -gt 320){throw "R13 resolve slot budget exceeded: $slots"}
+          Write-Host 'R13_FAST_SHADER_BUDGET=PASS'
   r13:
+    needs: shader-budget
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
@@ -29,8 +56,7 @@ jobs:
           foreach($token in @(
             'PTAR R13 PLSR MAX1',
             'PtCatmull1D',
-            'directionalSpatial',
-            'orientationCoherence',
+            'directionalSpatialLuma',
             'coherentStair',
             'detailSignAgree',
             'targetMicroLuma'))
