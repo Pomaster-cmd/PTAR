@@ -17,10 +17,11 @@ $mainPos=$text.IndexOf($main,[StringComparison]::Ordinal)
 if($mainPos -lt 0){throw 'R13 main anchor missing'}
 
 $helper=@'
-float PtCatmull1D(float p0,float p1,float p2,float p3,float t)
+float4 PtCatmull1D(float4 p0,float4 p1,float4 p2,float4 p3,float t)
 {
     float t2=t*t;
-    return 0.5f*((2.0f*p1)+(-p0+p2)*t+(2.0f*p0-5.0f*p1+4.0f*p2-p3)*t2+(-p0+3.0f*p1-3.0f*p2+p3)*(t2*t));
+    float t3=t2*t;
+    return 0.5f*((2.0f*p1)+(-p0+p2)*t+(2.0f*p0-5.0f*p1+4.0f*p2-p3)*t2+(-p0+3.0f*p1-3.0f*p2+p3)*t3);
 }
 
 '@
@@ -34,69 +35,81 @@ $insertPos=$pos+$anchor.Length
 $max=@'
 
     // PTAR R13 PLSR MAX1:
-    // Maximum practical single-pass quality for GTX 960M. Four shared outer
-    // corner samples enlarge the current-source support to a sparse 4x4 cell.
-    // Each corner serves BOTH X and Y reconstruction, keeping memory traffic at
-    // only four extra reads while preserving phase-aware wide luma information.
-    float4 cmm=LoadCurrent(q+float2(-1,-1));
-    float4 cpm=LoadCurrent(q+float2( 2,-1));
-    float4 cmp=LoadCurrent(q+float2(-1, 2));
-    float4 cpp=LoadCurrent(q+float2( 2, 2));
-    float lmm=Luma(cmm);
-    float lpm=Luma(cpm);
-    float lmp=Luma(cmp);
-    float lpp=Luma(cpp);
+    // Deliberately spend the remaining GTX 960M budget in ONE resolve pass.
+    // Eight extra current-source reads build a wider 4-tap support around the
+    // exact 3:2 phase.  They serve two purposes at once:
+    //   1) reconstruct source microdetail with a directional Catmull lattice;
+    //   2) distinguish coherent geometric edges from 1-3px texture so RESAA
+    //      can regularise real staircases without blurring text/weave/foliage.
+    // No second 1080p pass, no extra history surface and no neural inference.
+    float4 sxm10=LoadCurrent(q+float2(-1,0));
+    float4 sxm11=LoadCurrent(q+float2(-1,1));
+    float4 sxp20=LoadCurrent(q+float2( 2,0));
+    float4 sxp21=LoadCurrent(q+float2( 2,1));
+    float4 sym10=LoadCurrent(q+float2(0,-1));
+    float4 sym11=LoadCurrent(q+float2(1,-1));
+    float4 syp20=LoadCurrent(q+float2(0, 2));
+    float4 syp21=LoadCurrent(q+float2(1, 2));
 
-    // Outer corners are three source pixels apart. Map the current subpixel
-    // phase into that span so the same four reads provide X and Y outer pairs.
-    float outerTy=(f.y+1.0f)*(1.0f/3.0f);
-    float outerTx=(f.x+1.0f)*(1.0f/3.0f);
-    float xOuter0L=lerp(lmm,lmp,outerTy);
-    float xOuter3L=lerp(lpm,lpp,outerTy);
-    float yOuter0L=lerp(lmm,lpm,outerTx);
-    float yOuter3L=lerp(lmp,lpp,outerTx);
+    float4 xOuter0=lerp(sxm10,sxm11,f.y);
+    float4 xOuter3=lerp(sxp20,sxp21,f.y);
+    float4 yOuter0=lerp(sym10,sym11,f.x);
+    float4 yOuter3=lerp(syp20,syp21,f.x);
 
-    float currentX0L=lerp(l11,l12,f.y);
-    float currentX1L=lerp(l21,l22,f.y);
-    float currentY0L=lerp(l11,l21,f.x);
-    float currentY1L=lerp(l12,l22,f.x);
-    float spatialXL=PtCatmull1D(xOuter0L,currentX0L,currentX1L,xOuter3L,f.x);
-    float spatialYL=PtCatmull1D(yOuter0L,currentY0L,currentY1L,yOuter3L,f.y);
+    float4 spatialX=PtCatmull1D(xOuter0,currentX0,currentX1,xOuter3,f.x);
+    float4 spatialY=PtCatmull1D(yOuter0,currentY0,currentY1,yOuter3,f.y);
 
-    // Follow the edge tangent, using the central RESAA gradient already paid.
-    float tangentX=cay/(cax+cay+0.0005f);
-    float directionalSpatialLuma=lerp(spatialYL,spatialXL,tangentX);
+    // A gradient is normal to an edge, therefore the reconstruction tangent is
+    // weighted by the opposite gradient component. Diagonals blend X/Y instead
+    // of selecting a brittle single axis.
+    float wideGX=Luma(xOuter3)-Luma(xOuter0);
+    float wideGY=Luma(yOuter3)-Luma(yOuter0);
+    float wideAX=abs(wideGX);
+    float wideAY=abs(wideGY);
+    float wideSum=wideAX+wideAY+0.0005f;
+    float tangentX=wideAY/wideSum;
+    float4 directionalSpatial=lerp(spatialY,spatialX,tangentX);
 
-    // Wide geometry classification strengthens AA on persistent staircase
-    // silhouettes while detailProtect suppresses it on text/weave/foliage.
-    // MAX1 itself is enabled only with complementary temporal phase.
-    float wideEdge=saturate((max(abs(xOuter3L-xOuter0L),abs(yOuter3L-yOuter0L))-0.018f)*11.0f);
-    float coherentStair=wideEdge*stairOrientation*lerp(1.00f,0.22f,detailProtect);
-    float maxPhase=historyAA;
-    float maxAaDelta=clamp(aaReferenceLuma-Luma(resolved),-aaLimit,aaLimit);
-    resolved.rgb+=maxAaDelta*(0.24f*coherentStair*maxPhase);
+    // Coherence is intentionally cheap and branch-free.  Long geometric edges
+    // keep the same gradient orientation from the central 2x2 support to the
+    // wider support; tiny texture oscillations generally do not.
+    float centralSum=cax+cay+0.0005f;
+    float orientationDot=abs(cgx*wideGX+cgy*wideGY)/(centralSum*wideSum);
+    float orientationCoherence=saturate(orientationDot*1.35f);
+    float wideEdge=saturate((max(wideAX,wideAY)-0.018f)*11.0f);
+    float coherentStair=wideEdge*orientationCoherence*stairOrientation;
 
-    // Recover source microstructure in luma. R11 already computed detailProtect
-    // from local range plus independent R7 high-frequency magnitude, so reuse
-    // that evidence instead of paying a second residual/sign analysis.
-    float directionalDetail=directionalSpatialLuma-Luma(currentBilinear);
+    // R12 deliberately stayed conservative. MAX1 spends extra AA only where a
+    // wide coherent slanted edge confirms that the pattern is geometry rather
+    // than fine texture.  Fine-detail protection remains dominant.
+    float maxAaDelta=aaReferenceLuma-Luma(resolved);
+    maxAaDelta=clamp(maxAaDelta,-aaLimit,aaLimit);
+    float maxAaGate=coherentStair*lerp(1.00f,0.18f,detailProtect);
+    resolved.rgb+=maxAaDelta*(0.24f*maxAaGate);
+
+    // Fine-detail recovery.  Use the wide directional cubic only as a residual
+    // estimator; R7 remains the spatial anchor.  Require sign agreement with
+    // R7's own high-pass before allowing the strongest correction, which makes
+    // false high-frequency invention much less likely than blind sharpening.
+    float directionalDetail=Luma(directionalSpatial)-Luma(currentBilinear);
+    float r7Residual=Luma(r7)-Luma(currentBilinear);
+    float detailSignAgree=step(0.0f,directionalDetail*r7Residual);
     float detailLimit=0.012f+0.16f*lrange;
     directionalDetail=clamp(directionalDetail,-detailLimit,detailLimit);
     float detailActivity=saturate((abs(directionalDetail)-0.0015f)*34.0f);
-    float microGain=maxPhase*detailActivity*lerp(0.34f,0.62f,detailProtect)*lerp(1.00f,0.50f,coherentStair);
+    float edgeRingGuard=lerp(1.00f,0.48f,coherentStair);
+    float microGain=detailActivity*edgeRingGuard*lerp(0.28f,0.62f,detailSignAgree);
 
-    // PLSR remains the source of complementary temporal samples. MAX1 only
-    // pulls luminance toward a sharper R7+wide-source target where supported.
+    // Preserve the temporal lattice when it has genuinely complementary phase,
+    // but pull the final luminance toward a sharper R7+source-detail target in
+    // regions that carry native-resolution cues (text, weave, foliage, ground).
     float targetMicroLuma=Luma(r7)+0.52f*directionalDetail;
+    float microDelta=targetMicroLuma-Luma(resolved);
     float microLimit=0.010f+0.14f*lrange;
-    float microDelta=clamp(targetMicroLuma-Luma(resolved),-microLimit,microLimit);
-    resolved.rgb+=microDelta*microGain;
-
-    // Hard output contract. One combined phase*confidence predicate guarantees
-    // byte-stable R7 output at zero motion/failure while costing less than two
-    // independent predicates. Half-pixel PLSR paths resolve to gate=1.
-    float temporalOutputGate=step(0.0001f,phaseDiversity*confidence);
-    resolved=lerp(r7,resolved,temporalOutputGate);
+    microDelta=clamp(microDelta,-microLimit,microLimit);
+    float phaseKeep=lerp(1.00f,0.72f,saturate(dominantSupport*trust));
+    float texturePriority=lerp(0.55f,1.00f,detailProtect);
+    resolved.rgb+=microDelta*(microGain*phaseKeep*texturePriority);
 '@
 
 $text=$text.Insert($insertPos,$max)
@@ -105,12 +118,12 @@ $text=$text.Replace('// PTAR R12 RESAA1 over R11 PLSR1 - phase-lattice SR plus s
 foreach($token in @(
     'PTAR R13 PLSR MAX1',
     'PtCatmull1D',
-    'directionalSpatialLuma',
+    'directionalSpatial',
+    'orientationCoherence',
     'coherentStair',
-    'float maxPhase=historyAA',
-    'float temporalOutputGate=step(0.0001f,phaseDiversity*confidence)',
-    'detailProtect',
-    'targetMicroLuma'))
+    'detailSignAgree',
+    'targetMicroLuma',
+    'microGain*phaseKeep*texturePriority'))
 {
     if($text.IndexOf($token,[StringComparison]::Ordinal) -lt 0)
     {
@@ -122,11 +135,7 @@ $utf8=New-Object System.Text.UTF8Encoding($false)
 [IO.File]::WriteAllText((Resolve-Path $path),$text,$utf8)
 Write-Host 'R13_PLSR_MAX1_PATCH=PASS'
 Write-Host 'R13_OBJECTIVE=MAX_PERCEIVED_1080P_FINE_DETAIL_SHARPNESS_REGULARITY'
-Write-Host 'R13_WIDE_RECONSTRUCTION=SHARED_4_CORNER_LUMA_DIRECTIONAL_CATMULL'
-Write-Host 'R13_COHERENCE_GATE=COMPACT_WIDE_EDGE_X_STAIR_X_DETAILPROTECT'
-Write-Host 'R13_FINE_DETAIL_GATE=REUSE_R11_R7_DETAIL_SUPPORT_PLUS_TEMPORAL_PHASE'
-Write-Host 'R13_ZERO_MOTION_CONTRACT=HARD_SELECT_EXACT_R7_FALLBACK'
-Write-Host 'R13_EXTRA_CURRENT_SOURCE_READS_OVER_R12=4'
+Write-Host 'R13_EXTRA_CURRENT_SOURCE_READS_OVER_R12=8'
 Write-Host 'R13_EXTRA_PASSES_OVER_R12=0'
 Write-Host 'R13_HISTORY_SURFACES_OVER_R12=0'
 Write-Host 'R13_FG_SCOPE=UNCHANGED_R12_FG_OFF_ONLY'
