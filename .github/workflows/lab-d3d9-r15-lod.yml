@@ -1,0 +1,67 @@
+name: LAB D3D9 R15 NATIVE LOD
+on:
+  push:
+    branches:
+      - lab/r15-jitter9-true720
+  workflow_dispatch:
+
+jobs:
+  native-lod:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+      - name: Compile scene and reservoir shaders
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force artifact,build_x86 | Out-Null
+          $fxc=Get-Command fxc.exe -ErrorAction Stop
+          $fxcPath=if($fxc.Path){$fxc.Path}else{$fxc.FullName}
+
+          & $fxcPath /nologo /T vs_3_0 /E main /O3 `
+            /Fh build_x86\r15_scene_vs_bytecode.h /Vn g_r15SceneVs `
+            /Fo artifact\R15_SCENE_VS.cso /Fc artifact\R15_SCENE_VS_ASM.txt `
+            lab\r15_jitter9\r15_scene_vs.hlsl
+          if($LASTEXITCODE){throw 'R15 scene VS compile failed'}
+
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 `
+            /Fh build_x86\r15_scene_ps_bytecode.h /Vn g_r15ScenePs `
+            /Fo artifact\R15_SCENE_PS.cso /Fc artifact\R15_SCENE_PS_ASM.txt `
+            lab\r15_jitter9\r15_scene_ps.hlsl
+          if($LASTEXITCODE){throw 'R15 scene PS compile failed'}
+
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 `
+            /Fh build_x86\r15_exact_reservoir_ps_bytecode.h /Vn g_r15ExactReservoirPs `
+            /Fo artifact\R15_EXACT_RESERVOIR.cso /Fc artifact\R15_EXACT_RESERVOIR_ASM.txt `
+            lab\r15_jitter9\r15_exact_reservoir_ps.hlsl
+          if($LASTEXITCODE){throw 'R15 reservoir PS compile failed'}
+
+      - name: Compare 720p mip selection against native 1080p
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /W4 /WX /EHsc `
+            /I lab\r15_jitter9 /I build_x86 `
+            lab\r15_jitter9\r15_lod_bias_oracle.cpp `
+            /link d3d9.lib user32.lib `
+            /OUT:artifact\r15_lod_bias_oracle.exe
+          if($LASTEXITCODE){throw 'R15 LOD oracle compile failed'}
+
+          & .\artifact\r15_lod_bias_oracle.exe | Tee-Object artifact\R15_LOD_RESULT.txt
+          if($LASTEXITCODE){throw 'R15 native LOD equivalence failed'}
+
+          $result=Get-Content artifact\R15_LOD_RESULT.txt -Raw
+          if($result -notmatch 'R15_NATIVE_LOD_EQUIVALENCE=PASS'){throw 'R15 native LOD gate missing'}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: R15-NATIVE-LOD-LAB
+          path: |
+            artifact/R15_SCENE_VS_ASM.txt
+            artifact/R15_SCENE_PS_ASM.txt
+            artifact/R15_EXACT_RESERVOIR_ASM.txt
+            artifact/R15_LOD_RESULT.txt
+          if-no-files-found: error
