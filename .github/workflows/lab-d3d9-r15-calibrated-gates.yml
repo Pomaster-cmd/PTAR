@@ -71,6 +71,7 @@ jobs:
 
           $out=& .\artifact\r15_raster_jitter_oracle.exe 2>&1
           $oracleExit=$LASTEXITCODE
+          $global:LASTEXITCODE=0
           $text=($out -join "`n")
           $text | Set-Content artifact\R15_CALIBRATED_RASTER_RESULT.txt -Encoding ascii
           Write-Host $text
@@ -104,6 +105,7 @@ jobs:
 
           $out=& .\artifact\r15_geometry_jitter_oracle.exe 2>&1
           $oracleExit=$LASTEXITCODE
+          $global:LASTEXITCODE=0
           $text=($out -join "`n")
           $text | Set-Content artifact\R15_CALIBRATED_GEOMETRY_RESULT.txt -Encoding ascii
           Write-Host $text
