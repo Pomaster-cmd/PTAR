@@ -1,0 +1,70 @@
+name: LAB D3D9 R10 TSR3 ALIASRESIDUAL1
+on:
+  push:
+    branches:
+      - lab/r10-tsr3-aliasresidual1
+  workflow_dispatch:
+jobs:
+  r10:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+      - name: Qualify R10 alias-residual TSR over R9 detail preserve
+        shell: pwsh
+        run: |
+          .\lab\tsr1\apply_r10_aliasresidual.ps1
+          .\lab\tsr1\run_r8_tsr_ci_compat.ps1
+          .\lab\tsr1\run_tsr1_gpu_smoke.ps1
+          .\lab\tsr1\run_tsr1_perf.ps1
+
+          $src=Get-Content .\lab\tsr1\ptar_tsr1_resolve_ps.hlsl -Raw
+          foreach($token in @(
+            'PTAR R10 TSR3 ALIASRESIDUAL1',
+            'localRangeGuard',
+            'r7DetailGuard',
+            'phaseAnisotropy',
+            'aliasCorrectionGain=lerp(0.15f,0.50f,phaseAnisotropy)',
+            'aliasResidual=historyBilinear-currentBilinear'))
+          {
+            if($src -notmatch [regex]::Escape($token)){throw "R10 reconstruction token missing: $token"}
+          }
+
+          $quality=Get-Content .\artifact\R8_TSR1_QUALITY_ORACLE.txt -Raw
+          $x=[regex]::Match($quality,'TSR1_NATIVE_X_HALF_R7_MAE=([0-9.]+) TSR_MAE=([0-9.]+) IMPROVEMENT_PCT=([0-9.]+)')
+          $y=[regex]::Match($quality,'TSR1_NATIVE_Y_HALF_R7_MAE=([0-9.]+) TSR_MAE=([0-9.]+) IMPROVEMENT_PCT=([0-9.]+)')
+          $xy=[regex]::Match($quality,'TSR1_NATIVE_XY_HALF_R7_MAE=([0-9.]+) TSR_MAE=([0-9.]+) IMPROVEMENT_PCT=([0-9.]+)')
+          if(-not ($x.Success -and $y.Success -and $xy.Success)){throw 'R10 quality oracle parse failed'}
+          $ci=[Globalization.CultureInfo]::InvariantCulture
+          $xp=[double]::Parse($x.Groups[3].Value,$ci)
+          $yp=[double]::Parse($y.Groups[3].Value,$ci)
+          $xyp=[double]::Parse($xy.Groups[3].Value,$ci)
+          $worst=[Math]::Min($xp,[Math]::Min($yp,$xyp))
+          if($worst -lt 46.0){throw "R10 native-reference worst improvement regression: $worst%"}
+
+          Copy-Item .\artifact\PTAR_R8_VALIDATION.txt .\artifact\PTAR_R10_VALIDATION.txt -Force
+          @(
+            'PTAR_D3D9_BRANCH=R10_TSR3_ALIASRESIDUAL1_OVER_R9_DETAILPRESERVE1',
+            ('SOURCE_COMMIT='+$env:GITHUB_SHA),
+            'R10_ALIAS_CORRECTION_DIAGONAL=0.15',
+            'R10_ALIAS_CORRECTION_AXIS_DOMINANT=0.50',
+            'R10_EXTRA_TEXTURE_READS_OVER_R9=0',
+            'R10_EXTRA_PASSES_OVER_R9=0',
+            'R10_FG_SCOPE=UNCHANGED_R9_FG_OFF_ONLY',
+            ('R10_NATIVE_X_IMPROVEMENT_PCT='+$xp.ToString('F3',$ci)),
+            ('R10_NATIVE_Y_IMPROVEMENT_PCT='+$yp.ToString('F3',$ci)),
+            ('R10_NATIVE_XY_IMPROVEMENT_PCT='+$xyp.ToString('F3',$ci)),
+            ('R10_NATIVE_WORST_IMPROVEMENT_PCT='+$worst.ToString('F3',$ci)),
+            'R10_FIELD_BASIS=REAL_POINT720_R9_NATIVE1080_TRIO_20261014',
+            'R10_FIELD_OBJECTIVE=RECOVER_MICRODETAIL_WITHOUT_GENERIC_SHARPEN') | Add-Content .\artifact\PTAR_R10_VALIDATION.txt -Encoding ascii
+          Write-Host "R10_NATIVE_WORST_IMPROVEMENT_PCT=$($worst.ToString('F3',$ci))"
+          Write-Host 'R10_TSR3_ALIASRESIDUAL1=PASS'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: R10-TSR3-ALIASRESIDUAL1
+          path: artifact/
+          if-no-files-found: error
