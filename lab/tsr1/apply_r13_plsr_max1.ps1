@@ -69,20 +69,24 @@ $max=@'
 
     // Wide geometry classification strengthens AA on persistent staircase
     // silhouettes while detailProtect suppresses it on text/weave/foliage.
+    // Crucially, MAX1 itself is enabled only when current/history carry a real
+    // complementary phase. Zero-motion/failure therefore preserves the exact
+    // R7 fallback contract rather than inventing a new purely spatial path.
     float wideEdge=saturate((max(abs(xOuter3L-xOuter0L),abs(yOuter3L-yOuter0L))-0.018f)*11.0f);
     float coherentStair=wideEdge*stairOrientation*lerp(1.00f,0.22f,detailProtect);
+    float maxPhase=historyAA;
     float maxAaDelta=clamp(aaReferenceLuma-Luma(resolved),-aaLimit,aaLimit);
-    resolved.rgb+=maxAaDelta*(0.24f*coherentStair);
+    resolved.rgb+=maxAaDelta*(0.24f*coherentStair*maxPhase);
 
     // Recover source microstructure in luma. R11 already computed detailProtect
     // from local range plus the independent R7 high-frequency magnitude, so
     // reuse that evidence instead of recomputing an expensive second luma
-    // residual/sign test. This keeps MAX1 inside the GTX 960M ps_3_0 budget.
+    // residual/sign test. Temporal phase gating also prevents static false detail.
     float directionalDetail=directionalSpatialLuma-Luma(currentBilinear);
     float detailLimit=0.012f+0.16f*lrange;
     directionalDetail=clamp(directionalDetail,-detailLimit,detailLimit);
     float detailActivity=saturate((abs(directionalDetail)-0.0015f)*34.0f);
-    float microGain=detailActivity*lerp(0.34f,0.62f,detailProtect)*lerp(1.00f,0.50f,coherentStair);
+    float microGain=maxPhase*detailActivity*lerp(0.34f,0.62f,detailProtect)*lerp(1.00f,0.50f,coherentStair);
 
     // PLSR remains the source of complementary temporal samples. MAX1 only
     // pulls luminance toward a sharper R7+wide-source target where detail is
@@ -101,6 +105,7 @@ foreach($token in @(
     'PtCatmull1D',
     'directionalSpatialLuma',
     'coherentStair',
+    'float maxPhase=historyAA',
     'detailProtect',
     'targetMicroLuma'))
 {
@@ -116,7 +121,8 @@ Write-Host 'R13_PLSR_MAX1_PATCH=PASS'
 Write-Host 'R13_OBJECTIVE=MAX_PERCEIVED_1080P_FINE_DETAIL_SHARPNESS_REGULARITY'
 Write-Host 'R13_WIDE_RECONSTRUCTION=SHARED_4_CORNER_LUMA_DIRECTIONAL_CATMULL'
 Write-Host 'R13_COHERENCE_GATE=COMPACT_WIDE_EDGE_X_STAIR_X_DETAILPROTECT'
-Write-Host 'R13_FINE_DETAIL_GATE=REUSE_R11_R7_DETAIL_SUPPORT'
+Write-Host 'R13_FINE_DETAIL_GATE=REUSE_R11_R7_DETAIL_SUPPORT_PLUS_TEMPORAL_PHASE'
+Write-Host 'R13_ZERO_MOTION_CONTRACT=EXACT_R7_FALLBACK'
 Write-Host 'R13_EXTRA_CURRENT_SOURCE_READS_OVER_R12=4'
 Write-Host 'R13_EXTRA_PASSES_OVER_R12=0'
 Write-Host 'R13_HISTORY_SURFACES_OVER_R12=0'
