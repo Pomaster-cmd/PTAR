@@ -29,10 +29,10 @@ jobs:
             'PTAR R11 PLSR1 PHASELATTICE1',
             'PTAR R12 RESAA1',
             'stairOrientation',
-            'edgeAgreement',
             'aaReferenceLuma',
+            'aaStable=lerp(0.78f,1.00f,historyAA)',
             'aaDetailGate=lerp(1.00f,0.30f,detailProtect)',
-            'aaStrength=0.32f*aaEdge*aaStable*aaDetailGate'))
+            'aaStrength=0.36f*aaEdge*aaStable*aaDetailGate'))
           {
             if($src -notmatch [regex]::Escape($token)){throw "R12 RESAA token missing: $token"}
           }
