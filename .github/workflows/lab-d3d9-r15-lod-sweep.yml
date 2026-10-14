@@ -47,6 +47,7 @@ jobs:
             if($LASTEXITCODE){throw "compile failed bias=$bias"}
             $out=& $exe 2>&1
             $exit=$LASTEXITCODE
+            $global:LASTEXITCODE=0
             $text=($out -join "`n")
             $m=[regex]::Match($text,'R15_LOD_BIASED_MAE=([0-9.]+) LUMA=([0-9.]+) CHANGED=([0-9]+) MAX=([0-9]+)')
             if(!$m.Success){throw "metrics missing bias=$bias exit=$exit`n$text"}
@@ -69,6 +70,7 @@ jobs:
             ('R15_LOD_SWEEP_BEST_BIAS={0:F3}' -f $best.Bias),
             ('R15_LOD_SWEEP_BEST_MAE={0:F9}' -f $best.Mae),
             ('R15_LOD_SWEEP_BEST_LUMA={0:F9}' -f $best.Luma)) | Set-Content artifact\R15_LOD_SWEEP_BEST.txt -Encoding ascii
+          $global:LASTEXITCODE=0
 
       - uses: actions/upload-artifact@v4
         with:
