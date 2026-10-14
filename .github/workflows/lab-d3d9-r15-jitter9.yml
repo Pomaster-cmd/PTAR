@@ -1,0 +1,39 @@
+name: LAB D3D9 R15 JITTER9
+on:
+  push:
+    branches:
+      - lab/r15-jitter9-superresolve
+  workflow_dispatch:
+
+jobs:
+  jitter9-core-proof:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+      - name: Build and run JITTER9 phase and VS injection proofs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force artifact | Out-Null
+          $fxc=Get-Command fxc.exe -ErrorAction Stop
+          $fxcPath=if($fxc.Path){$fxc.Path}else{$fxc.FullName}
+
+          & $fxcPath /nologo /T vs_3_0 /E main /O3 /Fo artifact\jitter_vs_test.cso /Fc artifact\jitter_vs_test.asm lab\jitter9\jitter_vs_test.hlsl
+          if($LASTEXITCODE){throw 'JITTER9 test VS compile failed'}
+          & $fxcPath /nologo /T ps_2_0 /E main /O3 /Fo artifact\jitter_ps_test.cso lab\jitter9\jitter_ps_test.hlsl
+          if($LASTEXITCODE){throw 'JITTER9 test PS compile failed'}
+
+          & cl.exe /nologo /O2 /W4 /WX /EHsc /I lab\jitter9 lab\jitter9\jitter_vs_patch_gpu.cpp /link d3d9.lib user32.lib /OUT:artifact\jitter_vs_patch_gpu.exe
+          if($LASTEXITCODE){throw 'JITTER9 VS patch harness compile failed'}
+          & artifact\jitter_vs_patch_gpu.exe artifact\jitter_vs_test.cso artifact\jitter_ps_test.cso
+          if($LASTEXITCODE){throw 'JITTER9 VS GPU shift proof failed'}
+
+          & cl.exe /nologo /O2 /W4 /WX /EHsc lab\jitter9\jitter9_phase_oracle.cpp /link /OUT:artifact\jitter9_phase_oracle.exe
+          if($LASTEXITCODE){throw 'JITTER9 phase oracle compile failed'}
+          & artifact\jitter9_phase_oracle.exe
+          if($LASTEXITCODE){throw 'JITTER9 exact phase lattice proof failed'}
+
+          Write-Host 'R15_JITTER9_CORE_PROOF=PASS'
