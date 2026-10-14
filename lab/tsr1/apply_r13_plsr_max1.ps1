@@ -69,9 +69,7 @@ $max=@'
 
     // Wide geometry classification strengthens AA on persistent staircase
     // silhouettes while detailProtect suppresses it on text/weave/foliage.
-    // Crucially, MAX1 itself is enabled only when current/history carry a real
-    // complementary phase. Zero-motion/failure therefore preserves the exact
-    // R7 fallback contract rather than inventing a new purely spatial path.
+    // MAX1 itself is enabled only with complementary temporal phase.
     float wideEdge=saturate((max(abs(xOuter3L-xOuter0L),abs(yOuter3L-yOuter0L))-0.018f)*11.0f);
     float coherentStair=wideEdge*stairOrientation*lerp(1.00f,0.22f,detailProtect);
     float maxPhase=historyAA;
@@ -79,9 +77,8 @@ $max=@'
     resolved.rgb+=maxAaDelta*(0.24f*coherentStair*maxPhase);
 
     // Recover source microstructure in luma. R11 already computed detailProtect
-    // from local range plus the independent R7 high-frequency magnitude, so
-    // reuse that evidence instead of recomputing an expensive second luma
-    // residual/sign test. Temporal phase gating also prevents static false detail.
+    // from local range plus independent R7 high-frequency magnitude, so reuse
+    // that evidence instead of paying a second residual/sign analysis.
     float directionalDetail=directionalSpatialLuma-Luma(currentBilinear);
     float detailLimit=0.012f+0.16f*lrange;
     directionalDetail=clamp(directionalDetail,-detailLimit,detailLimit);
@@ -89,12 +86,18 @@ $max=@'
     float microGain=maxPhase*detailActivity*lerp(0.34f,0.62f,detailProtect)*lerp(1.00f,0.50f,coherentStair);
 
     // PLSR remains the source of complementary temporal samples. MAX1 only
-    // pulls luminance toward a sharper R7+wide-source target where detail is
-    // supported, with no extra history surface or full-resolution pass.
+    // pulls luminance toward a sharper R7+wide-source target where supported.
     float targetMicroLuma=Luma(r7)+0.52f*directionalDetail;
     float microLimit=0.010f+0.14f*lrange;
     float microDelta=clamp(targetMicroLuma-Luma(resolved),-microLimit,microLimit);
     resolved.rgb+=microDelta*microGain;
+
+    // Hard output contract. Merely multiplying the new deltas by zero is not
+    // sufficient to guarantee byte identity after ps_3_0 compiler reordering.
+    // Explicitly select the qualified R7 output whenever the motion field has
+    // no usable fractional phase or confidence. Half-pixel PLSR paths select 1.
+    float temporalOutputGate=step(0.0001f,phaseDiversity)*step(0.001f,confidence);
+    resolved=lerp(r7,resolved,temporalOutputGate);
 '@
 
 $text=$text.Insert($insertPos,$max)
@@ -106,6 +109,7 @@ foreach($token in @(
     'directionalSpatialLuma',
     'coherentStair',
     'float maxPhase=historyAA',
+    'float temporalOutputGate=step(0.0001f,phaseDiversity)*step(0.001f,confidence)',
     'detailProtect',
     'targetMicroLuma'))
 {
@@ -122,7 +126,7 @@ Write-Host 'R13_OBJECTIVE=MAX_PERCEIVED_1080P_FINE_DETAIL_SHARPNESS_REGULARITY'
 Write-Host 'R13_WIDE_RECONSTRUCTION=SHARED_4_CORNER_LUMA_DIRECTIONAL_CATMULL'
 Write-Host 'R13_COHERENCE_GATE=COMPACT_WIDE_EDGE_X_STAIR_X_DETAILPROTECT'
 Write-Host 'R13_FINE_DETAIL_GATE=REUSE_R11_R7_DETAIL_SUPPORT_PLUS_TEMPORAL_PHASE'
-Write-Host 'R13_ZERO_MOTION_CONTRACT=EXACT_R7_FALLBACK'
+Write-Host 'R13_ZERO_MOTION_CONTRACT=HARD_SELECT_EXACT_R7_FALLBACK'
 Write-Host 'R13_EXTRA_CURRENT_SOURCE_READS_OVER_R12=4'
 Write-Host 'R13_EXTRA_PASSES_OVER_R12=0'
 Write-Host 'R13_HISTORY_SURFACES_OVER_R12=0'
