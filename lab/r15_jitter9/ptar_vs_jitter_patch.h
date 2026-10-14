@@ -6,10 +6,10 @@
 
 // PTAR R15 TRUE720 JITTER9
 //
-// The 720p -> 1080p ratio is exactly 2:3.  Three deliberate raster phases on
+// The 720p -> 1080p ratio is exactly 2:3. Three deliberate raster phases on
 // each axis can therefore expose the complete 1080p sample lattice over nine
-// real frames.  The runtime needs a game-independent way to move the raster
-// lattice by a fractional source pixel.  D3D9 viewport coordinates are integer,
+// real frames. The runtime needs a game-independent way to move the raster
+// lattice by a fractional source pixel. D3D9 viewport coordinates are integer,
 // so R15 patches programmable vertex shaders instead.
 //
 // The patch is deliberately conservative:
@@ -22,11 +22,14 @@
 //       xy = temp.xy + temp.w * c255.xy
 //       zw = temp.zw
 //
-// c255.xy therefore contains the clip-space shift.  For a source-space jitter
-// (jx,jy) measured in source pixels:
-//   c255.x =  2*jx/sourceWidth
-//   c255.y = -2*jy/sourceHeight
-// The minus sign on Y follows the D3D viewport transform.
+// The D3D9 HAL raster calibration oracle selected source sample phases
+// {-1/3,0,+1/3} pixels. To move the *sampling position* by (jx,jy), geometry
+// is shifted in the opposite screen direction, giving the calibrated clip
+// constant convention used by the runtime:
+//   c255.x = -2*jx/sourceWidth
+//   c255.y = +2*jy/sourceHeight
+// This convention was selected by the actual D3D9 raster oracle rather than
+// assumed from the D3D10+/image-center mapping.
 
 struct PtVsJitterPatchInfo
 {
