@@ -36,4 +36,15 @@ jobs:
           & artifact\jitter9_phase_oracle.exe
           if($LASTEXITCODE){throw 'JITTER9 exact phase lattice proof failed'}
 
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 /Fo artifact\R15_JITTER9_ACCUM.cso /Fc artifact\R15_JITTER9_ACCUM_ASM.txt lab\jitter9\ptar_r15_jitter9_accum_ps.hlsl
+          if($LASTEXITCODE){throw 'JITTER9 accumulator compile failed'}
+          $asm=Get-Content artifact\R15_JITTER9_ACCUM_ASM.txt -Raw
+          $tex=([regex]::Matches($asm,'(?im)^\s*texld')).Count
+          $slotMatch=[regex]::Match($asm,'(?i)approximately\s+(\d+)\s+instruction slots')
+          if(!$slotMatch.Success){throw 'JITTER9 accumulator slot parse failed'}
+          $slots=[int]$slotMatch.Groups[1].Value
+          Write-Host "R15_JITTER9_ACCUM=$slots`_SLOTS_$tex`_TEXLD"
+          if($slots -gt 220){throw "JITTER9 accumulator unexpectedly large: $slots slots"}
+          if($tex -gt 8){throw "JITTER9 accumulator unexpectedly texture-heavy: $tex texld"}
+
           Write-Host 'R15_JITTER9_CORE_PROOF=PASS'
