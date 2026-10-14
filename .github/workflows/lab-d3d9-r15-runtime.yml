@@ -56,6 +56,12 @@ jobs:
           .\lab\tsr1\apply_r14_runtime_accum1080.ps1
 
           Copy-Item lab\r15_jitter9\ptar_vs_jitter_patch.h build_x86\ptar_r15_vs_jitter_patch.h -Force
+          # The patch script normalizes the target C++ file to LF. On Windows,
+          # checkout may make its own here-string anchors CRLF, which would make
+          # exact multi-line matches fail. Normalize the script before parsing it.
+          $r15Patch='lab\r15_jitter9\apply_r15_game_sampling_runtime.ps1'
+          $r15PatchText=[IO.File]::ReadAllText((Resolve-Path $r15Patch)) -replace "`r`n","`n"
+          [IO.File]::WriteAllText((Resolve-Path $r15Patch),$r15PatchText,(New-Object System.Text.UTF8Encoding($false)))
           .\lab\r15_jitter9\apply_r15_game_sampling_runtime.ps1
 
           & cl.exe /nologo /LD /O2 /MT /W4 /WX /EHsc `
