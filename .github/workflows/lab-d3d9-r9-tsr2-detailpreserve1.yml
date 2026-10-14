@@ -1,0 +1,48 @@
+name: LAB D3D9 R9 TSR2 DETAILPRESERVE1
+on:
+  push:
+    branches:
+      - lab/r9-tsr2-detailpreserve1
+  workflow_dispatch:
+jobs:
+  r9:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+      - name: Qualify R9 detail-preserving TSR over exact R7
+        shell: pwsh
+        run: |
+          .\lab\tsr1\run_r8_tsr_ci_compat.ps1
+          .\lab\tsr1\run_tsr1_gpu_smoke.ps1
+          .\lab\tsr1\run_tsr1_perf.ps1
+          $src=Get-Content .\lab\tsr1\ptar_tsr1_resolve_ps.hlsl -Raw
+          foreach($token in @(
+            'PTAR R9 TSR2 DETAILPRESERVE1',
+            'localRangeGuard',
+            'r7DetailGuard',
+            'lerp(0.95f,0.40f,detailProtect)'))
+          {
+            if($src -notmatch [regex]::Escape($token)){throw "R9 detail-preserve token missing: $token"}
+          }
+          Copy-Item .\artifact\PTAR_R8_VALIDATION.txt .\artifact\PTAR_R9_VALIDATION.txt -Force
+          @(
+            'PTAR_D3D9_BRANCH=R9_TSR2_DETAILPRESERVE1_OVER_R8_TSR1',
+            ('SOURCE_COMMIT='+$env:GITHUB_SHA),
+            'R9_TEMPORAL_STRENGTH_SMOOTH=0.95',
+            'R9_TEMPORAL_STRENGTH_PROTECTED_DETAIL=0.40',
+            'R9_EXTRA_TEXTURE_READS_OVER_R8=0',
+            'R9_EXTRA_PASSES_OVER_R8=0',
+            'R9_DETAIL_GUARD=LOCAL_RANGE_PLUS_R7_VS_BILINEAR',
+            'R9_FG_SCOPE=UNCHANGED_R8_FG_OFF_ONLY',
+            'R9_QUALITY_GATE=R8_NATIVE_REFERENCE_PLUS_FIELD_CAPTURE_DRIVEN_DETAIL_POLICY') | Add-Content .\artifact\PTAR_R9_VALIDATION.txt -Encoding ascii
+          Write-Host 'R9_TSR2_DETAILPRESERVE1=PASS'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: R9-TSR2-DETAILPRESERVE1
+          path: artifact/
+          if-no-files-found: error
