@@ -1,0 +1,173 @@
+name: LAB D3D9 R15 PHASE SUPERRESOLVE
+on:
+  push:
+    branches:
+      - lab/r15-jitter9-true720
+  workflow_dispatch:
+
+jobs:
+  phase-superresolve:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      - name: Prove calibrated D3D9 3x3 ownership lattice
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python .\lab\r15_jitter9\r15_lattice_oracle.py
+
+      - name: Rebuild qualified lineage and R15 phase reservoir
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force artifact,build_x86 | Out-Null
+
+          $fgFiles=@(
+            'compat/x86_d3d9/ptar_fg_pacer.h',
+            'compat/x86_d3d9/ptar_fg_me_coarse_ps.hlsl',
+            'compat/x86_d3d9/ptar_fg_me_refine_ps.hlsl',
+            'compat/x86_d3d9/ptar_fg_interpolate_ps.hlsl',
+            'compat/x86_d3d9/ptar_f7_benchmark.h')
+
+          .\lab\tsr1\apply_r10_aliasresidual.ps1
+          .\lab\tsr1\apply_r11_plsr1.ps1
+          .\lab\tsr1\apply_r12_resaa1.ps1
+          .\lab\tsr1\apply_r13_plsr_max1.ps1
+          .\lab\tsr1\run_r13_tsr_ci_compat.ps1
+
+          $fgBefore=@{}
+          foreach($f in $fgFiles){$fgBefore[$f]=(Get-FileHash $f -Algorithm SHA256).Hash}
+
+          .\lab\tsr1\apply_r14_mfsr1_accum1080.ps1
+          $fxc=Get-Command fxc.exe -ErrorAction Stop
+          $fxcPath=if($fxc.Path){$fxc.Path}else{$fxc.FullName}
+
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 `
+            /Fh build_x86\ptar_tsr1_resolve_ps_bytecode.h /Vn g_ptarTsr1ResolvePs `
+            /Fo artifact\R14_TSR_RESOLVE.cso /Fc artifact\R14_TSR_RESOLVE_ASM.txt `
+            lab\tsr1\ptar_tsr1_resolve_ps.hlsl
+          if($LASTEXITCODE){throw 'R14 resolve compile failed'}
+
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 `
+            /Fh build_x86\ptar_r14_restore_ps_bytecode.h /Vn g_ptarR14RestorePs `
+            /Fo artifact\R14_RESTORE.cso /Fc artifact\R14_RESTORE_ASM.txt `
+            lab\tsr1\ptar_r14_restore_ps.hlsl
+          if($LASTEXITCODE){throw 'R14 restore compile failed'}
+
+          .\lab\tsr1\apply_r14_runtime_accum1080.ps1
+
+          # Apply the already-proven calibrated game-render sampling layer.
+          Copy-Item lab\r15_jitter9\ptar_vs_jitter_patch.h build_x86\ptar_r15_vs_jitter_patch.h -Force
+          $samplingPatch='lab\r15_jitter9\apply_r15_game_sampling_runtime.ps1'
+          $samplingText=[IO.File]::ReadAllText((Resolve-Path $samplingPatch)) -replace "`r`n","`n"
+          [IO.File]::WriteAllText((Resolve-Path $samplingPatch),$samplingText,(New-Object System.Text.UTF8Encoding($false)))
+          .\lab\r15_jitter9\apply_r15_game_sampling_runtime.ps1
+
+          # Compile the calibrated deterministic phase accumulator. It replaces
+          # the R14 generic temporal resolve but reuses R14's two 1080p surfaces.
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 `
+            /Fh build_x86\ptar_r15_phase_accum_ps_bytecode.h /Vn g_ptarR15PhaseAccumPs `
+            /Fo artifact\R15_PHASE_ACCUM.cso /Fc artifact\R15_PHASE_ACCUM_ASM.txt `
+            lab\r15_jitter9\ptar_r15_phase_accum_ps.hlsl
+          if($LASTEXITCODE){throw 'R15 phase accumulator compile failed'}
+
+          $asm=Get-Content artifact\R15_PHASE_ACCUM_ASM.txt -Raw
+          $tex=([regex]::Matches($asm,'(?im)^\s*texld')).Count
+          $slotMatch=[regex]::Match($asm,'(?i)approximately\s+(\d+)\s+instruction slots')
+          if(!$slotMatch.Success){throw 'R15 phase accumulator slot parse failed'}
+          $slots=[int]$slotMatch.Groups[1].Value
+          Write-Host "R15_PHASE_ACCUM=$slots`_SLOTS_$tex`_TEXLD"
+          if($slots -gt 220){throw "R15 phase accumulator unexpectedly large: $slots slots"}
+          if($tex -gt 8){throw "R15 phase accumulator unexpectedly texture-heavy: $tex texld"}
+
+          .\lab\r15_jitter9\apply_r15_phase_superresolve_runtime.ps1
+
+          & cl.exe /nologo /LD /O2 /MT /W4 /WX /EHsc `
+            /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 `
+            /I build_x86 `
+            compat\x86_d3d9\ptar_d3d9_proxy.cpp `
+            /link user32.lib `
+            /DEF:compat\x86_d3d9\d3d9_proxy.def `
+            /OUT:artifact\d3d9_r15_phase.dll `
+            /SUBSYSTEM:WINDOWS,6.03
+          if($LASTEXITCODE){throw 'R15 phase runtime compile failed'}
+
+          dumpbin /headers artifact\d3d9_r15_phase.dll | Out-File artifact\R15_PHASE_HEADERS.txt -Encoding ascii
+          dumpbin /exports artifact\d3d9_r15_phase.dll | Out-File artifact\R15_PHASE_EXPORTS.txt -Encoding ascii
+          dumpbin /dependents artifact\d3d9_r15_phase.dll | Out-File artifact\R15_PHASE_DEPENDENTS.txt -Encoding ascii
+          $hd=Get-Content artifact\R15_PHASE_HEADERS.txt -Raw
+          $ex=Get-Content artifact\R15_PHASE_EXPORTS.txt -Raw
+          $dp=Get-Content artifact\R15_PHASE_DEPENDENTS.txt -Raw
+          if($hd -notmatch '14C machine \(x86\)' -or $hd -notmatch '6\.03 subsystem version'){throw 'R15 phase Win8.1 x86 PE contract failed'}
+          foreach($n in @('Direct3DCreate9','Direct3DCreate9Ex','PTAR_D3D9_DIAG_STATE')){if($ex -notmatch [regex]::Escape($n)){throw "R15 phase missing export $n"}}
+          foreach($bad in @('VCRUNTIME','MSVCP','UCRTBASE','API-MS-WIN-CRT')){if($dp -match $bad){throw "R15 phase forbidden dependency $bad"}}
+
+          foreach($f in $fgFiles)
+          {
+            $after=(Get-FileHash $f -Algorithm SHA256).Hash
+            if($after -ne $fgBefore[$f]){throw "R15 phase modified frozen FG file: $f"}
+          }
+
+          $proxy=Get-Content compat\x86_d3d9\ptar_d3d9_proxy.cpp -Raw
+          $hdr=Get-Content compat\x86_d3d9\ptar_tsr1_runtime.h -Raw
+          $inl=Get-Content compat\x86_d3d9\ptar_tsr1_runtime.inl -Raw
+          $all=$proxy+$hdr+$inl
+          foreach($token in @(
+            'PTAR R15 TRUE720 JITTER9 RUNTIME',
+            'PtR15AxisResidue',
+            'R15 TRUE720 PHASE RESERVOIR STATE',
+            'R15_TRUE720_PHASE_RESERVOIR_RUNTIME',
+            'R15_PHASE_EXACT_ACCUM',
+            'PtTsr1SetJitter9Phase(',
+            'g_ptarR15PhaseAccumPs'))
+          {
+            if($all -notmatch [regex]::Escape($token)){throw "R15 phase integration token missing: $token"}
+          }
+          if($hdr -match 'jitterAccumTexture'){throw 'R15 phase allocated redundant 1080p history'}
+          if($proxy -match [regex]::Escape('g_ptar.currentRealTexture=g_ptar.generatedTexture')){throw 'R15 phase contaminates FG history'}
+
+          $runtimeSha=(Get-FileHash artifact\d3d9_r15_phase.dll -Algorithm SHA256).Hash.ToLowerInvariant()
+          $shaderSha=(Get-FileHash artifact\R15_PHASE_ACCUM.cso -Algorithm SHA256).Hash.ToLowerInvariant()
+          @(
+            ('SOURCE_COMMIT='+$env:GITHUB_SHA),
+            'R15_CLASS=LAB_PHASE_SUPERRESOLVE_NO_FIELD_PACKAGE',
+            'R15_INPUT=1280X720',
+            'R15_OUTPUT=1920X1080',
+            'R15_RASTER_CONVENTION=D3D9_INTEGER_CENTER_CALIBRATED',
+            'R15_PHASE_JITTER=-1/3,0,+1/3_SOURCE_PIXEL',
+            'R15_PHASE_CLASS_TO_RESIDUE=0_TO_1__1_TO_0__2_TO_2',
+            'R15_TEXTURE_LOD_BIAS=-0.5849625007211562',
+            'R15_HISTORY_SURFACES=REUSE_R14_2X_A8R8G8B8',
+            'R15_HISTORY_INPUT=REAL_FRAMES_ONLY',
+            'R15_POST_SHARPEN_ON_OWNED_SAMPLE=NONE',
+            'R15_FG_SCOPE=OFF_ONLY',
+            'R15_FG_FILES_IDENTICAL_TO_R13=PASS',
+            ('R15_PHASE_SHADER_SLOTS='+$slots),
+            ('R15_PHASE_SHADER_TEXLD='+$tex),
+            ('R15_RUNTIME_SHA256='+$runtimeSha),
+            ('R15_PHASE_CSO_SHA256='+$shaderSha),
+            'WIN81_X86=PASS') | Set-Content artifact\R15_PHASE_VALIDATION.txt -Encoding ascii
+
+          Write-Host "R15_PHASE_RUNTIME_SHA256=$runtimeSha"
+          Write-Host "R15_PHASE_CSO_SHA256=$shaderSha"
+          Write-Host 'R15_PHASE_FG_FILES_IDENTICAL_TO_QUALIFIED_R13=PASS'
+          Write-Host 'R15_PHASE_SUPERRESOLVE_BUILD=PASS'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: R15-PHASE-SUPERRESOLVE-LAB
+          path: |
+            artifact/d3d9_r15_phase.dll
+            artifact/R15_PHASE_ACCUM.cso
+            artifact/R15_PHASE_ACCUM_ASM.txt
+            artifact/R15_PHASE_VALIDATION.txt
+            artifact/R15_PHASE_HEADERS.txt
+            artifact/R15_PHASE_EXPORTS.txt
+            artifact/R15_PHASE_DEPENDENTS.txt
+          if-no-files-found: error
