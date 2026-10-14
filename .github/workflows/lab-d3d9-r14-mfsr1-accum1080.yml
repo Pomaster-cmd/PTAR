@@ -61,8 +61,6 @@ jobs:
             'compat/x86_d3d9/ptar_fg_me_refine_ps.hlsl',
             'compat/x86_d3d9/ptar_fg_interpolate_ps.hlsl',
             'compat/x86_d3d9/ptar_f7_benchmark.h')
-          $fgBefore=@{}
-          foreach($f in $fgFiles){$fgBefore[$f]=(Get-FileHash $f -Algorithm SHA256).Hash}
 
           # Rebuild the already-qualified R13 lineage first. This generates all
           # x86 bytecode headers and applies the canonical FG-OFF TSR integration.
@@ -71,6 +69,12 @@ jobs:
           .\lab\tsr1\apply_r12_resaa1.ps1
           .\lab\tsr1\apply_r13_plsr_max1.ps1
           .\lab\tsr1\run_r13_tsr_ci_compat.ps1
+
+          # Freeze the actual qualified R13 FG state. The qualification pipeline
+          # itself applies the canonical pacer/presenter lineage, so hashing the
+          # checkout before it would falsely attribute baseline changes to R14.
+          $fgBefore=@{}
+          foreach($f in $fgFiles){$fgBefore[$f]=(Get-FileHash $f -Algorithm SHA256).Hash}
 
           # Replace only the R13 resolve bytecode with R14 and add the bounded
           # full-resolution restore bytecode.
@@ -102,6 +106,7 @@ jobs:
             $after=(Get-FileHash $f -Algorithm SHA256).Hash
             if($after -ne $fgBefore[$f]){throw "R14 modified frozen FG file: $f"}
           }
+          Write-Host 'R14_FG_FILES_IDENTICAL_TO_QUALIFIED_R13=PASS'
           $proxy=Get-Content compat\x86_d3d9\ptar_d3d9_proxy.cpp -Raw
           if($proxy -match [regex]::Escape('g_ptar.currentRealTexture=g_ptar.generatedTexture')){throw 'R14 contaminates qualified FG history'}
           foreach($tok in @('PtTemporalPublishPair(self,hwnd)','PRESENT_REAL_TSR1','R14_MFSR1_ACCUM_RESOLVE','R14_MFSR1_RESTORE1080'))
@@ -137,9 +142,10 @@ jobs:
             'R14_DISOCCLUSION=PHOTO_TRUST_PLUS_CURRENT_NEIGHBORHOOD_CLIP',
             'R14_CONFIDENCE=FULL_RES_ALPHA',
             'R14_RESTORE=BOUNDED_5_TAP_1080P_MICROCONTRAST',
+            'R14_INSERTION=AFTER_R13_FAILSOFT_ENVELOPE',
             'R14_ZERO_MOTION=RETAINS_PREVIOUSLY_RECOVERED_VALID_DETAIL',
             'R14_FG_OFF_ONLY=YES',
-            'FG_PATH=UNCHANGED',
+            'FG_PATH=UNCHANGED_FROM_QUALIFIED_R13',
             ('R14_RESOLVE_SLOTS='+$resolveSlots),
             ('R14_RESOLVE_TEXLD='+$resolveTex),
             ('R14_RESTORE_SLOTS='+$restoreSlots),
