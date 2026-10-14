@@ -1,0 +1,77 @@
+name: LAB D3D9 R15 TRUE720 JITTER9
+on:
+  push:
+    branches:
+      - lab/r15-jitter9-true720
+  workflow_dispatch:
+
+jobs:
+  exact-lattice:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove exact 720p to 1080p 3x3 phase lattice
+        shell: pwsh
+        run: |
+          python .\lab\r15_jitter9\r15_lattice_oracle.py
+
+  vertex-jitter-patch:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+      - name: Compile representative VS2 and VS3 bytecode
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force artifact,build_x86 | Out-Null
+          $fxc=Get-Command fxc.exe -ErrorAction Stop
+          $fxcPath=if($fxc.Path){$fxc.Path}else{$fxc.FullName}
+
+          & $fxcPath /nologo /T vs_2_0 /E main /O3 `
+            /Fh build_x86\r15_test_vs2_bytecode.h /Vn g_r15TestVs2 `
+            /Fo artifact\R15_TEST_VS2.cso /Fc artifact\R15_TEST_VS2_ASM.txt `
+            lab\r15_jitter9\r15_test_vs.hlsl
+          if($LASTEXITCODE){throw 'R15 VS2 compile failed'}
+
+          & $fxcPath /nologo /T vs_3_0 /E main /O3 `
+            /Fh build_x86\r15_test_vs3_bytecode.h /Vn g_r15TestVs3 `
+            /Fo artifact\R15_TEST_VS3.cso /Fc artifact\R15_TEST_VS3_ASM.txt `
+            lab\r15_jitter9\r15_test_vs.hlsl
+          if($LASTEXITCODE){throw 'R15 VS3 compile failed'}
+
+          Write-Host 'R15_TEST_VERTEX_SHADERS=PASS'
+
+      - name: Patch, validate and create patched shaders on D3D9
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /W4 /WX /EHsc `
+            /I lab\r15_jitter9 /I build_x86 `
+            lab\r15_jitter9\r15_vs_patch_harness.cpp `
+            /link d3d9.lib d3dcompiler.lib user32.lib `
+            /OUT:artifact\r15_vs_patch_harness.exe
+          if($LASTEXITCODE){throw 'R15 jitter patch harness compile failed'}
+
+          & .\artifact\r15_vs_patch_harness.exe | Tee-Object artifact\R15_VS_PATCH_RESULT.txt
+          if($LASTEXITCODE){throw 'R15 jitter patch harness failed'}
+
+          $result=Get-Content artifact\R15_VS_PATCH_RESULT.txt -Raw
+          foreach($token in @(
+            'R15_VS2_PATCH=PASS',
+            'R15_VS3_PATCH=PASS',
+            'R15_VERTEX_JITTER_PATCH_ALL=PASS'))
+          {
+            if($result -notmatch [regex]::Escape($token)){throw "R15 missing harness token $token"}
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: R15-JITTER9-VS-PATCH-LAB
+          path: |
+            artifact/R15_TEST_VS2_ASM.txt
+            artifact/R15_TEST_VS3_ASM.txt
+            artifact/R15_VS_PATCH_RESULT.txt
+          if-no-files-found: error
