@@ -1,0 +1,170 @@
+name: LAB D3D9 R14 MFSR1 ACCUM1080
+on:
+  push:
+    branches:
+      - lab/r14-mfsr1-accum1080
+  workflow_dispatch:
+
+jobs:
+  shader-compile:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+      - name: Compile R14 accumulated resolve and restore shaders
+        shell: pwsh
+        run: |
+          .\lab\tsr1\apply_r10_aliasresidual.ps1
+          .\lab\tsr1\apply_r11_plsr1.ps1
+          .\lab\tsr1\apply_r12_resaa1.ps1
+          .\lab\tsr1\apply_r13_plsr_max1.ps1
+          .\lab\tsr1\apply_r14_mfsr1_accum1080.ps1
+
+          New-Item -ItemType Directory -Force artifact,build_x86 | Out-Null
+          $fxc=Get-Command fxc.exe -ErrorAction Stop
+          $fxcPath=if($fxc.Path){$fxc.Path}else{$fxc.FullName}
+
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 /Fo artifact\R14_RESOLVE_FAST.cso /Fc artifact\R14_RESOLVE_FAST_ASM.txt lab\tsr1\ptar_tsr1_resolve_ps.hlsl
+          if($LASTEXITCODE){throw 'R14 resolve shader compile failed'}
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 /Fo artifact\R14_RESTORE_FAST.cso /Fc artifact\R14_RESTORE_FAST_ASM.txt lab\tsr1\ptar_r14_restore_ps.hlsl
+          if($LASTEXITCODE){throw 'R14 restore shader compile failed'}
+
+          foreach($name in @('R14_RESOLVE_FAST','R14_RESTORE_FAST'))
+          {
+            $asm=Get-Content ("artifact\\$name`_ASM.txt") -Raw
+            $tex=([regex]::Matches($asm,'(?im)^\s*texld')).Count
+            $slots=[int]([regex]::Match($asm,'(?i)approximately\s+(\d+)\s+instruction slots').Groups[1].Value)
+            Write-Host "$name=$slots`_SLOTS_$tex`_TEXLD"
+            if($slots -le 0){throw "$name slot parse failed"}
+          }
+          Write-Host 'R14_SHADER_COMPILE=PASS'
+
+  build-fieldtest:
+    needs: shader-compile
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+      - name: Build R14 MFSR1 field-test runtime over qualified R13
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $fgFiles=@(
+            'compat/x86_d3d9/ptar_fg_pacer.h',
+            'compat/x86_d3d9/ptar_fg_me_coarse_ps.hlsl',
+            'compat/x86_d3d9/ptar_fg_me_refine_ps.hlsl',
+            'compat/x86_d3d9/ptar_fg_interpolate_ps.hlsl',
+            'compat/x86_d3d9/ptar_f7_benchmark.h')
+          $fgBefore=@{}
+          foreach($f in $fgFiles){$fgBefore[$f]=(Get-FileHash $f -Algorithm SHA256).Hash}
+
+          # Rebuild the already-qualified R13 lineage first. This generates all
+          # x86 bytecode headers and applies the canonical FG-OFF TSR integration.
+          .\lab\tsr1\apply_r10_aliasresidual.ps1
+          .\lab\tsr1\apply_r11_plsr1.ps1
+          .\lab\tsr1\apply_r12_resaa1.ps1
+          .\lab\tsr1\apply_r13_plsr_max1.ps1
+          .\lab\tsr1\run_r13_tsr_ci_compat.ps1
+
+          # Replace only the R13 resolve bytecode with R14 and add the bounded
+          # full-resolution restore bytecode.
+          .\lab\tsr1\apply_r14_mfsr1_accum1080.ps1
+          $fxc=Get-Command fxc.exe -ErrorAction Stop
+          $fxcPath=if($fxc.Path){$fxc.Path}else{$fxc.FullName}
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 /Fh build_x86\ptar_tsr1_resolve_ps_bytecode.h /Vn g_ptarTsr1ResolvePs /Fo artifact\R14_TSR_RESOLVE.cso /Fc artifact\R14_TSR_RESOLVE_ASM.txt lab\tsr1\ptar_tsr1_resolve_ps.hlsl
+          if($LASTEXITCODE){throw 'R14 final resolve compile failed'}
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 /Fh build_x86\ptar_r14_restore_ps_bytecode.h /Vn g_ptarR14RestorePs /Fo artifact\R14_RESTORE.cso /Fc artifact\R14_RESTORE_ASM.txt lab\tsr1\ptar_r14_restore_ps.hlsl
+          if($LASTEXITCODE){throw 'R14 final restore compile failed'}
+
+          .\lab\tsr1\apply_r14_runtime_accum1080.ps1
+
+          & cl.exe /nologo /LD /O2 /MT /W4 /WX /EHsc /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 /I build_x86 compat\x86_d3d9\ptar_d3d9_proxy.cpp /link user32.lib /DEF:compat\x86_d3d9\d3d9_proxy.def /OUT:artifact\d3d9_r14.dll /SUBSYSTEM:WINDOWS,6.03
+          if($LASTEXITCODE){throw 'R14 runtime compile failed'}
+
+          dumpbin /headers artifact\d3d9_r14.dll | Out-File artifact\R14_HEADERS.txt -Encoding ascii
+          dumpbin /exports artifact\d3d9_r14.dll | Out-File artifact\R14_EXPORTS.txt -Encoding ascii
+          dumpbin /dependents artifact\d3d9_r14.dll | Out-File artifact\R14_DEPENDENTS.txt -Encoding ascii
+          $hd=Get-Content artifact\R14_HEADERS.txt -Raw
+          $ex=Get-Content artifact\R14_EXPORTS.txt -Raw
+          $dp=Get-Content artifact\R14_DEPENDENTS.txt -Raw
+          if($hd -notmatch '14C machine \(x86\)' -or $hd -notmatch '6\.03 subsystem version'){throw 'R14 Win8.1 x86 PE contract failed'}
+          foreach($n in @('Direct3DCreate9','Direct3DCreate9Ex','PTAR_D3D9_DIAG_STATE')){if($ex -notmatch [regex]::Escape($n)){throw "R14 missing export $n"}}
+          foreach($bad in @('VCRUNTIME','MSVCP','UCRTBASE','API-MS-WIN-CRT')){if($dp -match $bad){throw "R14 forbidden dependency $bad"}}
+
+          foreach($f in $fgFiles)
+          {
+            $after=(Get-FileHash $f -Algorithm SHA256).Hash
+            if($after -ne $fgBefore[$f]){throw "R14 modified frozen FG file: $f"}
+          }
+          $proxy=Get-Content compat\x86_d3d9\ptar_d3d9_proxy.cpp -Raw
+          if($proxy -match [regex]::Escape('g_ptar.currentRealTexture=g_ptar.generatedTexture')){throw 'R14 contaminates qualified FG history'}
+          foreach($tok in @('PtTemporalPublishPair(self,hwnd)','PRESENT_REAL_TSR1','R14_MFSR1_ACCUM_RESOLVE','R14_MFSR1_RESTORE1080'))
+          {
+            if(($proxy+(Get-Content compat\x86_d3d9\ptar_tsr1_runtime.inl -Raw)) -notmatch [regex]::Escape($tok)){throw "R14 integration token missing: $tok"}
+          }
+
+          $resolveAsm=Get-Content artifact\R14_TSR_RESOLVE_ASM.txt -Raw
+          $restoreAsm=Get-Content artifact\R14_RESTORE_ASM.txt -Raw
+          $resolveTex=([regex]::Matches($resolveAsm,'(?im)^\s*texld')).Count
+          $restoreTex=([regex]::Matches($restoreAsm,'(?im)^\s*texld')).Count
+          $resolveSlots=[int]([regex]::Match($resolveAsm,'(?i)approximately\s+(\d+)\s+instruction slots').Groups[1].Value)
+          $restoreSlots=[int]([regex]::Match($restoreAsm,'(?i)approximately\s+(\d+)\s+instruction slots').Groups[1].Value)
+          $runtimeSha=(Get-FileHash artifact\d3d9_r14.dll -Algorithm SHA256).Hash.ToLowerInvariant()
+          $resolveSha=(Get-FileHash artifact\R14_TSR_RESOLVE.cso -Algorithm SHA256).Hash.ToLowerInvariant()
+          $restoreSha=(Get-FileHash artifact\R14_RESTORE.cso -Algorithm SHA256).Hash.ToLowerInvariant()
+
+          Copy-Item artifact\d3d9_r14.dll artifact\d3d9.dll -Force
+          Copy-Item lab\tsr1\ptar_tsr1_resolve_ps.hlsl artifact\R14_TSR_RESOLVE.hlsl -Force
+          Copy-Item lab\tsr1\ptar_r14_restore_ps.hlsl artifact\R14_RESTORE.hlsl -Force
+          Copy-Item compat\x86_d3d9\ptar_tsr1_runtime.h artifact\R14_TSR_RUNTIME.h -Force
+          Copy-Item compat\x86_d3d9\ptar_tsr1_runtime.inl artifact\R14_TSR_RUNTIME.inl -Force
+
+          @(
+            'PTAR_D3D9_BRANCH=R14_MFSR1_ACCUM1080_OVER_R13',
+            ('SOURCE_COMMIT='+$env:GITHUB_SHA),
+            'R14_CLASS=FIELDTEST_ARCHITECTURE_BREAK',
+            'R14_INPUT=1280X720',
+            'R14_OUTPUT=1920X1080',
+            'R14_FULL_RES_HISTORY=PING_PONG_2X_A8R8G8B8',
+            'R14_HISTORY_REPROJECTION=CURRENT_TO_PREVIOUS_SOURCE_MOTION',
+            'R14_HISTORY_TRANSPORT=HIGH_FREQUENCY_RESIDUAL_NOT_LOW_FREQUENCY_AVERAGE',
+            'R14_DISOCCLUSION=PHOTO_TRUST_PLUS_CURRENT_NEIGHBORHOOD_CLIP',
+            'R14_CONFIDENCE=FULL_RES_ALPHA',
+            'R14_RESTORE=BOUNDED_5_TAP_1080P_MICROCONTRAST',
+            'R14_ZERO_MOTION=RETAINS_PREVIOUSLY_RECOVERED_VALID_DETAIL',
+            'R14_FG_OFF_ONLY=YES',
+            'FG_PATH=UNCHANGED',
+            ('R14_RESOLVE_SLOTS='+$resolveSlots),
+            ('R14_RESOLVE_TEXLD='+$resolveTex),
+            ('R14_RESTORE_SLOTS='+$restoreSlots),
+            ('R14_RESTORE_TEXLD='+$restoreTex),
+            ('R14_RUNTIME_SHA256='+$runtimeSha),
+            ('R14_RESOLVE_CSO_SHA256='+$resolveSha),
+            ('R14_RESTORE_CSO_SHA256='+$restoreSha),
+            'WIN81_X86=PASS') | Set-Content artifact\PTAR_R14_VALIDATION.txt -Encoding ascii
+
+          New-Item -ItemType Directory -Force fieldtest | Out-Null
+          Copy-Item artifact\d3d9.dll fieldtest\d3d9.dll -Force
+          Copy-Item artifact\PTAR_R14_VALIDATION.txt fieldtest\PTAR_R14_VALIDATION.txt -Force
+          Copy-Item artifact\R14_TSR_RESOLVE.cso fieldtest\R14_TSR_RESOLVE.cso -Force
+          Copy-Item artifact\R14_RESTORE.cso fieldtest\R14_RESTORE.cso -Force
+          Copy-Item artifact\R14_TSR_RESOLVE_ASM.txt fieldtest\R14_TSR_RESOLVE_ASM.txt -Force
+          Copy-Item artifact\R14_RESTORE_ASM.txt fieldtest\R14_RESTORE_ASM.txt -Force
+          Copy-Item artifact\R14_TSR_RESOLVE.hlsl fieldtest\R14_TSR_RESOLVE.hlsl -Force
+          Copy-Item artifact\R14_RESTORE.hlsl fieldtest\R14_RESTORE.hlsl -Force
+
+          Write-Host "R14_RESOLVE=$resolveSlots`_SLOTS_$resolveTex`_TEXLD"
+          Write-Host "R14_RESTORE=$restoreSlots`_SLOTS_$restoreTex`_TEXLD"
+          Write-Host "R14_RUNTIME_SHA256=$runtimeSha"
+          Write-Host 'R14_MFSR1_FIELDTEST_BUILD=PASS'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-R14-MFSR1-ACCUM1080-FIELDTEST
+          path: fieldtest/
+          if-no-files-found: error
