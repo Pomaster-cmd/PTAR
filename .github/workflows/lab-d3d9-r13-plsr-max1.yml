@@ -58,7 +58,7 @@ jobs:
             'PtCatmull1D',
             'directionalSpatialLuma',
             'coherentStair',
-            'detailSignAgree',
+            'detailProtect',
             'targetMicroLuma'))
           {
             if($src -notmatch [regex]::Escape($token)){throw "R13 MAX1 token missing: $token"}
@@ -96,7 +96,7 @@ jobs:
             'R13_PRIMARY_OBJECTIVE=PERCEIVED_1080P_FINE_DETAIL_SHARPNESS_EDGE_REGULARITY',
             'R13_WIDE_CURRENT_SUPPORT=4_TAP_DIRECTIONAL_CATMULL',
             'R13_COHERENT_EDGE_CLASSIFICATION=YES',
-            'R13_FINE_DETAIL_SIGN_AGREEMENT_WITH_R7=YES',
+            'R13_FINE_DETAIL_R7_SUPPORT_GATE=YES',
             'R13_EXTRA_HISTORY_SURFACES=0',
             'R13_EXTRA_PASSES=0',
             ('R13_RESOLVE_TEXLD='+$tex),
