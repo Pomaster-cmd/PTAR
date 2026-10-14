@@ -192,7 +192,8 @@ $i=$i.Substring(0,$resolveStart)+$newResolve+$i.Substring($storeStart)
 # Proxy include for restoration bytecode. FG code is not patched.
 $p=[IO.File]::ReadAllText((Resolve-Path $proxyPath)) -replace "`r`n","`n"
 if($p.IndexOf('ptar_r14_restore_ps_bytecode.h',[StringComparison]::Ordinal) -ge 0){throw 'R14 restore include already present'}
-$p=Replace-One $p '#include "ptar_tsr1_resolve_ps_bytecode.h"' "#include \"ptar_tsr1_resolve_ps_bytecode.h\"`n#include \"ptar_r14_restore_ps_bytecode.h\"" 'proxy restore include'
+$proxyInclude='#include "ptar_tsr1_resolve_ps_bytecode.h"'+"`n"+'#include "ptar_r14_restore_ps_bytecode.h"'
+$p=Replace-One $p '#include "ptar_tsr1_resolve_ps_bytecode.h"' $proxyInclude 'proxy restore include'
 
 foreach($token in @('R14 MFSR1 ACCUM1080 STATE','accumTexture[2]','accumValid')){if($h.IndexOf($token,[StringComparison]::Ordinal) -lt 0){throw "R14 header token missing: $token"}}
 foreach($token in @('g_ptarR14RestorePs','R14_MFSR1_RUNTIME','R14_MFSR1_ACCUM_RESOLVE','R14_MFSR1_RESTORE1080','accumReadIndex=writeIndex')){if($i.IndexOf($token,[StringComparison]::Ordinal) -lt 0){throw "R14 implementation token missing: $token"}}
