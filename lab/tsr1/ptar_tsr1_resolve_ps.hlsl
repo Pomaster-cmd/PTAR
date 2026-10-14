@@ -1,9 +1,14 @@
-// PTAR R8 TSR1 - temporal super-resolution resolve for exact 720p -> 1080p.
+// PTAR R9 TSR2 DETAILPRESERVE1 - temporal super-resolution resolve for exact 720p -> 1080p.
 //
-// R7 remains the exact single-frame fallback. The already-qualified R7 output
-// is supplied on s3 so TSR1 does not recompute the 16-tap spatial reconstruction
-// a second time at 1080p. Current source texels are still sampled directly for
-// the irregular current/history union and temporal safety envelope.
+// R7 remains the exact single-frame fallback. R8 proved that irregular current/history
+// fusion can recover subpixel information, but real captures showed excessive smoothing
+// of small text, chair weave, ground texture and other already-good R7 microdetail.
+//
+// R9 therefore keeps the same 10-fetch topology and motion/history machinery, but makes
+// temporal strength content-adaptive. Flat/low-detail areas may still receive most of the
+// temporal reconstruction benefit; textured/high-contrast areas and pixels where R7 is
+// already materially different from simple bilinear are protected so temporal fusion adds
+// information without washing out the R7 reconstruction.
 //
 // s0 = current 720p source
 // s1 = previous 720p source
@@ -44,8 +49,6 @@ float Luma(float4 c)
 float SharpWeight(float2 d)
 {
     // Fourth-order compact approximation of the previous sigma~0.25 Gaussian.
-    // It preserves a dominant nearest phase sample while removing eight EXP2
-    // transcendental operations from every 1080p resolve pixel.
     float t=saturate(1.0f-1.35f*dot(d,d));
     float t2=t*t;
     return t2*t2;
@@ -57,11 +60,11 @@ float4 main(float2 uv : TEXCOORD0) : COLOR0
     float2 q=floor(p);
     float2 f=p-q;
 
-    // The exact R7 result has already been produced by RenderSpatialToCurrent.
-    // POINT sampling at the same 1080p pixel grid is a byte-stable reuse path.
+    // Exact qualified R7 baseline, already rendered this frame.
     float4 r7=tex2Dlod(gR7,float4(uv,0.0f,0.0f));
 
-    // Only the central 2x2 current source samples are needed by TSR1 itself.
+    // Central 2x2 current samples are enough for the temporal union and for the
+    // local structure/detail guards used by R9.
     float4 s11=LoadCurrent(q+float2(0,0));
     float4 s21=LoadCurrent(q+float2(1,0));
     float4 s12=LoadCurrent(q+float2(0,1));
@@ -77,12 +80,21 @@ float4 main(float2 uv : TEXCOORD0) : COLOR0
     float4 currentMin=min(min(s11,s21),min(s12,s22));
     float4 currentMax=max(max(s11,s21),max(s12,s22));
 
+    // Simple current-only bilinear is not displayed. It is only a cheap local
+    // low-frequency reference that tells us when R7 already contains useful
+    // reconstruction detail that should not be averaged away.
+    float4 currentBilinear=lerp(
+        lerp(s11,s21,f.x),
+        lerp(s12,s22,f.x),
+        f.y);
+    float r7Detail=abs(Luma(r7)-Luma(currentBilinear));
+
     float4 motionSample=tex2D(gMotion,uv);
     float2 motion=(motionSample.rg-PTAR_TSR_MOTION_ZERO)*64.0f;
     float confidence=saturate(motionSample.b);
 
-    // Integer-pixel history carries essentially the same sample phase as the
-    // current lattice. Only the fractional component can add spatial samples.
+    // Integer-pixel history carries essentially the same lattice phase. Only
+    // the fractional component can contribute extra spatial samples.
     float2 mf=frac(abs(motion));
     float2 phaseAxis=4.0f*mf*(1.0f-mf);
     float phaseDiversity=0.5f*(phaseAxis.x+phaseAxis.y);
@@ -96,7 +108,10 @@ float4 main(float2 uv : TEXCOORD0) : COLOR0
     float4 h12=LoadHistory(hq+float2(0,1));
     float4 h22=LoadHistory(hq+float2(1,1));
 
-    float4 historyBilinear=lerp(lerp(h11,h21,hf.x),lerp(h12,h22,hf.x),hf.y);
+    float4 historyBilinear=lerp(
+        lerp(h11,h21,hf.x),
+        lerp(h12,h22,hf.x),
+        hf.y);
     float photoError=abs(Luma(historyBilinear)-Luma(r7));
     float photoBudget=0.10f+0.75f*lrange;
     float photoTrust=saturate(1.0f-photoError/max(photoBudget,0.001f));
@@ -124,17 +139,32 @@ float4 main(float2 uv : TEXCOORD0) : COLOR0
         s11*wc00+s21*wc10+s12*wc01+s22*wc11+
         h11*wh00+h21*wh10+h12*wh01+h22*wh11)/totalWeight;
 
-    float tsrBlend=saturate(phaseDiversity)*trust;
+    // R9 DETAILPRESERVE1:
+    //  - localRangeGuard rises on small text, weave, foliage and textured ground;
+    //  - r7DetailGuard rises where the qualified R7 reconstruction already adds
+    //    meaningful information over bilinear.
+    // Keep temporal strength high in genuinely smooth regions but cap it hard in
+    // detail-bearing regions. This is deliberately a blend-policy change only:
+    // no new texture read and no extra pass.
+    float localRangeGuard=saturate((lrange-0.03f)*10.0f);
+    float r7DetailGuard=saturate((r7Detail-0.003f)*40.0f);
+    float detailProtect=max(localRangeGuard,r7DetailGuard);
+    float temporalStrength=lerp(0.82f,0.40f,detailProtect);
+
+    float tsrBlend=saturate(phaseDiversity)*trust*temporalStrength;
     float4 resolved=lerp(r7,unionSample,tsrBlend);
 
     // Fail-soft temporal envelope. Include R7 itself in the admissible range so
-    // tsrBlend==0 is bit-stable after quantization.
+    // tsrBlend==0 remains byte-stable after quantization.
     float4 histMin=min(min(h11,h21),min(h12,h22));
     float4 histMax=max(max(h11,h21),max(h12,h22));
     float4 combinedMin=min(min(currentMin,histMin),r7);
     float4 combinedMax=max(max(currentMax,histMax),r7);
     float4 combinedRange=combinedMax-combinedMin;
-    resolved=clamp(resolved,combinedMin-0.03f*combinedRange,combinedMax+0.03f*combinedRange);
+    resolved=clamp(
+        resolved,
+        combinedMin-0.03f*combinedRange,
+        combinedMax+0.03f*combinedRange);
     resolved.a=r7.a;
     return saturate(resolved);
 }
