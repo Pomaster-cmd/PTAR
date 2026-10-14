@@ -75,3 +75,62 @@ jobs:
             artifact/R15_TEST_VS3_ASM.txt
             artifact/R15_VS_PATCH_RESULT.txt
           if-no-files-found: error
+
+  exact-reservoir-gpu:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+      - name: Compile exact 1080p reservoir shader
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force artifact,build_x86 | Out-Null
+          $fxc=Get-Command fxc.exe -ErrorAction Stop
+          $fxcPath=if($fxc.Path){$fxc.Path}else{$fxc.FullName}
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 `
+            /Fh build_x86\r15_exact_reservoir_ps_bytecode.h /Vn g_r15ExactReservoirPs `
+            /Fo artifact\R15_EXACT_RESERVOIR.cso /Fc artifact\R15_EXACT_RESERVOIR_ASM.txt `
+            lab\r15_jitter9\r15_exact_reservoir_ps.hlsl
+          if($LASTEXITCODE){throw 'R15 reservoir shader compile failed'}
+
+          $asm=Get-Content artifact\R15_EXACT_RESERVOIR_ASM.txt -Raw
+          $tex=([regex]::Matches($asm,'(?im)^\s*texld')).Count
+          $slots=[int]([regex]::Match($asm,'(?i)approximately\s+(\d+)\s+instruction slots').Groups[1].Value)
+          Write-Host "R15_RESERVOIR_SHADER=$slots`_SLOTS_$tex`_TEXLD"
+          if($tex -ne 2){throw "R15 reservoir expected exactly 2 TEXLD, got $tex"}
+
+      - name: Run exact reservoir D3D9 GPU oracle
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /W4 /WX /EHsc `
+            /I build_x86 `
+            lab\r15_jitter9\r15_reservoir_gpu_oracle.cpp `
+            /link d3d9.lib user32.lib `
+            /OUT:artifact\r15_reservoir_gpu_oracle.exe
+          if($LASTEXITCODE){throw 'R15 reservoir oracle compile failed'}
+
+          & .\artifact\r15_reservoir_gpu_oracle.exe | Tee-Object artifact\R15_RESERVOIR_GPU_RESULT.txt
+          if($LASTEXITCODE){throw 'R15 exact reservoir GPU oracle failed'}
+
+          $result=Get-Content artifact\R15_RESERVOIR_GPU_RESULT.txt -Raw
+          foreach($token in @(
+            'R15_RESERVOIR_INVALID_PIXELS=0',
+            'R15_RESERVOIR_CHANGED_PIXELS=0',
+            'R15_RESERVOIR_MAX_ABS=0',
+            'R15_EXACT_RESERVOIR_GPU=PASS'))
+          {
+            if($result -notmatch [regex]::Escape($token)){throw "R15 reservoir token missing: $token"}
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: R15-JITTER9-EXACT-RESERVOIR-LAB
+          path: |
+            artifact/R15_EXACT_RESERVOIR.cso
+            artifact/R15_EXACT_RESERVOIR_ASM.txt
+            artifact/R15_RESERVOIR_GPU_RESULT.txt
+          if-no-files-found: error
