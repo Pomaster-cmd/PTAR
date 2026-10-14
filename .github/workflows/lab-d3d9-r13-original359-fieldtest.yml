@@ -1,0 +1,90 @@
+name: LAB D3D9 R13 ORIGINAL359 FIELDTEST
+on:
+  push:
+    branches:
+      - lab/r13-max1-original359-test
+  workflow_dispatch:
+
+jobs:
+  build-fieldtest:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      - name: Build original rejected 359-slot R13 MAX1
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          .\lab\tsr1\apply_r10_aliasresidual.ps1
+          .\lab\tsr1\apply_r11_plsr1.ps1
+          .\lab\tsr1\apply_r12_resaa1.ps1
+          .\lab\tsr1\apply_r13_plsr_max1.ps1
+          .\lab\tsr1\run_r13_tsr_ci_compat.ps1
+
+          $asm=Get-Content .\artifact\TSR1_RESOLVE_ASM.txt -Raw
+          $tex=([regex]::Matches($asm,'(?im)^\s*texld')).Count
+          $slotMatch=[regex]::Match($asm,'(?i)approximately\s+(\d+)\s+instruction slots')
+          if(-not $slotMatch.Success){throw 'ORIGINAL359 slot count missing'}
+          $slots=[int]$slotMatch.Groups[1].Value
+          if($slots -gt 380){throw "ORIGINAL359 unexpected slot count: $slots"}
+          if($tex -gt 20){throw "ORIGINAL359 unexpected texld count: $tex"}
+
+          $src=Get-Content .\lab\tsr1\ptar_tsr1_resolve_ps.hlsl -Raw
+          foreach($token in @('directionalSpatial','orientationCoherence','detailSignAgree','microGain*phaseKeep*texturePriority'))
+          {
+            if($src -notmatch [regex]::Escape($token)){throw "ORIGINAL359 token missing: $token"}
+          }
+
+          Copy-Item .\artifact\d3d9_r8.dll .\artifact\d3d9.dll -Force
+          $dllHash=(Get-FileHash .\artifact\d3d9.dll -Algorithm SHA256).Hash.ToLowerInvariant()
+          $csoHash=(Get-FileHash .\artifact\TSR1_RESOLVE.cso -Algorithm SHA256).Hash.ToLowerInvariant()
+          @(
+            'PTAR_R13_VARIANT=ORIGINAL_REJECTED_MAX1_359_FIELDTEST',
+            ('SOURCE_COMMIT='+$env:GITHUB_SHA),
+            ('RESOLVE_SLOTS='+$slots),
+            ('RESOLVE_TEXLD='+$tex),
+            'EXTRA_CURRENT_SOURCE_READS_OVER_R12=8',
+            'FG_SCOPE=OFF_FOR_THIS_TEMPORAL_TEST',
+            'ZERO_MOTION_EXACT_R7_FALLBACK=NOT_GUARANTEED_IN_THIS_HISTORICAL_VARIANT',
+            ('D3D9_SHA256='+$dllHash),
+            ('TSR1_RESOLVE_CSO_SHA256='+$csoHash)) | Set-Content .\artifact\R13_ORIGINAL359_FIELDTEST.txt -Encoding ascii
+
+          @'
+          PTAR R13 ORIGINAL359 FIELD TEST
+
+          Experimental historical R13 MAX1 variant rejected during development because
+          its resolve compiled above the chosen resource ceiling. This build deliberately
+          restores that exact high-detail algorithm for visual field comparison.
+
+          IMPORTANT:
+          - experimental only; not the canonical R13;
+          - FG must remain OFF for the comparison;
+          - designed for 1280x720 -> 1920x1080 temporal reconstruction;
+          - this historical variant predates the hard byte-stable zero-motion R7 fallback,
+            so zero-motion identity is NOT guaranteed;
+          - use the same camera and capture conditions as the compact R13 test.
+
+          The supplied d3d9.dll is the built field-test runtime.
+          '@ | Set-Content .\artifact\README_R13_ORIGINAL359_FIELDTEST.txt -Encoding ascii
+
+          Write-Host "ORIGINAL359_RESOLVE=$slots`_SLOTS_$tex`_TEXLD"
+          Write-Host "ORIGINAL359_D3D9_SHA256=$dllHash"
+          Write-Host 'R13_ORIGINAL359_FIELDTEST_BUILD=PASS'
+
+      - name: Upload original359 field-test package
+        uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-R13-ORIGINAL359-FIELDTEST
+          path: |
+            artifact/d3d9.dll
+            artifact/TSR1_RESOLVE.cso
+            artifact/TSR1_RESOLVE_ASM.txt
+            artifact/TSR1_MOTION_SUBPIXEL.cso
+            artifact/R13_ORIGINAL359_FIELDTEST.txt
+            artifact/README_R13_ORIGINAL359_FIELDTEST.txt
+          if-no-files-found: error
