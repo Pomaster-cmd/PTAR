@@ -29,7 +29,12 @@ static Bounds Scan(IDirect3DSurface9* s)
     D3DSURFACE_DESC d={};
     s->GetDesc(&d);
     D3DLOCKED_RECT lr={};
-    if(FAILED(s->LockRect(&lr,0,D3DLOCK_READONLY))) return b;
+    HRESULT hr=s->LockRect(&lr,0,D3DLOCK_READONLY);
+    if(FAILED(hr))
+    {
+        std::printf("JITTER9_LOCK_FAIL hr=0x%08lx\n",(unsigned long)hr);
+        return b;
+    }
     for(UINT y=0;y<d.Height;++y)
     {
         const DWORD* row=(const DWORD*)((const BYTE*)lr.pBits+(size_t)y*(size_t)lr.Pitch);
@@ -50,27 +55,36 @@ static Bounds Scan(IDirect3DSurface9* s)
     return b;
 }
 
+static bool HrOk(const char* stage,HRESULT hr)
+{
+    if(FAILED(hr))
+    {
+        std::printf("JITTER9_%s_FAIL hr=0x%08lx\n",stage,(unsigned long)hr);
+        return false;
+    }
+    return true;
+}
+
 static bool RenderProbe(
     IDirect3DDevice9* dev,IDirect3DSurface9* rt,IDirect3DSurface9* sys,
     IDirect3DVertexShader9* vs,IDirect3DPixelShader9* ps,
     IDirect3DVertexDeclaration9* decl,UINT jitterReg,float jx,float jy,Bounds& out)
 {
     const UINT W=64,H=64;
-    HRESULT hr=dev->SetRenderTarget(0,rt);
-    if(FAILED(hr)) return false;
-    dev->SetDepthStencilSurface(0);
+    if(!HrOk("SET_RT",dev->SetRenderTarget(0,rt))) return false;
+    if(!HrOk("SET_DS_NULL",dev->SetDepthStencilSurface(0))) return false;
     D3DVIEWPORT9 vp={0,0,W,H,0.0f,1.0f};
-    if(FAILED(dev->SetViewport(&vp))) return false;
+    if(!HrOk("SET_VIEWPORT",dev->SetViewport(&vp))) return false;
     dev->SetRenderState(D3DRS_ZENABLE,FALSE);
     dev->SetRenderState(D3DRS_ZWRITEENABLE,FALSE);
     dev->SetRenderState(D3DRS_CULLMODE,D3DCULL_NONE);
     dev->SetRenderState(D3DRS_ALPHABLENDENABLE,FALSE);
-    if(FAILED(dev->Clear(0,0,D3DCLEAR_TARGET,0xff000000u,1.0f,0))) return false;
-    if(FAILED(dev->SetVertexDeclaration(decl))) return false;
-    if(FAILED(dev->SetVertexShader(vs))) return false;
-    if(FAILED(dev->SetPixelShader(ps))) return false;
+    if(!HrOk("CLEAR",dev->Clear(0,0,D3DCLEAR_TARGET,0xff000000u,1.0f,0))) return false;
+    if(!HrOk("SET_DECL",dev->SetVertexDeclaration(decl))) return false;
+    if(!HrOk("SET_VS",dev->SetVertexShader(vs))) return false;
+    if(!HrOk("SET_PS",dev->SetPixelShader(ps))) return false;
     float c[4]={jx,jy,0.0f,0.0f};
-    if(FAILED(dev->SetVertexShaderConstantF(jitterReg,c,1))) return false;
+    if(!HrOk("SET_JITTER_CONST",dev->SetVertexShaderConstantF(jitterReg,c,1))) return false;
 
     const Vertex q[4]={
         {-0.25f,-0.25f,0.5f,1.0f},
@@ -78,13 +92,18 @@ static bool RenderProbe(
         {-0.25f, 0.25f,0.5f,1.0f},
         { 0.25f, 0.25f,0.5f,1.0f}
     };
-    if(FAILED(dev->BeginScene())) return false;
-    hr=dev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP,2,q,sizeof(Vertex));
-    const HRESULT endHr=dev->EndScene();
-    if(FAILED(hr) || FAILED(endHr)) return false;
-    if(FAILED(dev->GetRenderTargetData(rt,sys))) return false;
+    if(!HrOk("BEGIN_SCENE",dev->BeginScene())) return false;
+    HRESULT drawHr=dev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP,2,q,sizeof(Vertex));
+    HRESULT endHr=dev->EndScene();
+    if(!HrOk("DRAW",drawHr) || !HrOk("END_SCENE",endHr)) return false;
+    if(!HrOk("GET_RT_DATA",dev->GetRenderTargetData(rt,sys))) return false;
     out=Scan(sys);
-    return out.count>0;
+    if(out.count<=0)
+    {
+        std::printf("JITTER9_SCAN_EMPTY\n");
+        return false;
+    }
+    return true;
 }
 
 int main(int argc,char** argv)
@@ -110,6 +129,10 @@ int main(int argc,char** argv)
     }
     std::printf("JITTER9_BYTECODE_PATCH=PASS pos=o%u const=c%u dwords=%u\n",
         patched.positionOutputRegister,patched.constantRegister,(unsigned)patched.code.size());
+    {
+        std::ofstream dump("artifact\\jitter_vs_patched.cso",std::ios::binary);
+        dump.write((const char*)&patched.code[0],(std::streamsize)(patched.code.size()*sizeof(DWORD)));
+    }
 
     IDirect3D9* d3d=Direct3DCreate9(D3D_SDK_VERSION);
     if(!d3d) return 5;
@@ -131,6 +154,10 @@ int main(int argc,char** argv)
         return 6;
     }
 
+    D3DCAPS9 caps={};
+    dev->GetDeviceCaps(&caps);
+    std::printf("JITTER9_DEVICE_VS=0x%08lx MAXCONST=%lu\n",(unsigned long)caps.VertexShaderVersion,(unsigned long)caps.MaxVertexShaderConst);
+
     IDirect3DVertexShader9* vs=0;
     IDirect3DPixelShader9* ps=0;
     IDirect3DVertexDeclaration9* decl=0;
@@ -141,11 +168,33 @@ int main(int argc,char** argv)
         D3DDECL_END()
     };
     bool ok=true;
-    if(FAILED(dev->CreateVertexShader(&patched.code[0],&vs)) || !vs) ok=false;
-    if(ok && (FAILED(dev->CreatePixelShader(&psCode[0],&ps)) || !ps)) ok=false;
-    if(ok && (FAILED(dev->CreateVertexDeclaration(elements,&decl)) || !decl)) ok=false;
-    if(ok && FAILED(dev->CreateRenderTarget(64,64,D3DFMT_A8R8G8B8,D3DMULTISAMPLE_NONE,0,FALSE,&rt,0))) ok=false;
-    if(ok && FAILED(dev->CreateOffscreenPlainSurface(64,64,D3DFMT_A8R8G8B8,D3DPOOL_SYSTEMMEM,&sys,0))) ok=false;
+    hr=dev->CreateVertexShader(&patched.code[0],&vs);
+    std::printf("JITTER9_CREATE_PATCHED_VS hr=0x%08lx ptr=%p\n",(unsigned long)hr,vs);
+    if(FAILED(hr) || !vs) ok=false;
+    if(ok)
+    {
+        hr=dev->CreatePixelShader(&psCode[0],&ps);
+        std::printf("JITTER9_CREATE_PS hr=0x%08lx ptr=%p\n",(unsigned long)hr,ps);
+        if(FAILED(hr) || !ps) ok=false;
+    }
+    if(ok)
+    {
+        hr=dev->CreateVertexDeclaration(elements,&decl);
+        std::printf("JITTER9_CREATE_DECL hr=0x%08lx ptr=%p\n",(unsigned long)hr,decl);
+        if(FAILED(hr) || !decl) ok=false;
+    }
+    if(ok)
+    {
+        hr=dev->CreateRenderTarget(64,64,D3DFMT_A8R8G8B8,D3DMULTISAMPLE_NONE,0,FALSE,&rt,0);
+        std::printf("JITTER9_CREATE_RT hr=0x%08lx ptr=%p\n",(unsigned long)hr,rt);
+        if(FAILED(hr) || !rt) ok=false;
+    }
+    if(ok)
+    {
+        hr=dev->CreateOffscreenPlainSurface(64,64,D3DFMT_A8R8G8B8,D3DPOOL_SYSTEMMEM,&sys,0);
+        std::printf("JITTER9_CREATE_SYS hr=0x%08lx ptr=%p\n",(unsigned long)hr,sys);
+        if(FAILED(hr) || !sys) ok=false;
+    }
 
     Bounds zero={},shifted={};
     if(ok) ok=RenderProbe(dev,rt,sys,vs,ps,decl,patched.constantRegister,0.0f,0.0f,zero);
