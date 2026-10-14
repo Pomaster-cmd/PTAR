@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstring>
 #include <vector>
+#include <string>
 
 #include "ptar_vs_jitter_patch.h"
 #include "r15_test_vs2_bytecode.h"
@@ -170,8 +171,8 @@ int main()
         (unsigned long)caps.VertexShaderVersion,
         (unsigned long)caps.MaxVertexShaderConst);
 
-    const bool ok2=CheckOne(dev,g_r15TestVs2,"R15_VS2",2);
-    const bool ok3=CheckOne(dev,g_r15TestVs3,"R15_VS3",3);
+    const bool ok2=CheckOne(dev,(const DWORD*)g_r15TestVs2,"R15_VS2",2);
+    const bool ok3=CheckOne(dev,(const DWORD*)g_r15TestVs3,"R15_VS3",3);
 
     dev->Release();
     d3d->Release();
