@@ -91,6 +91,8 @@ jobs:
           }
 
           $proxy=Get-Content compat\x86_d3d9\ptar_d3d9_proxy.cpp -Raw
+          $runtimeInl=Get-Content compat\x86_d3d9\ptar_tsr1_runtime.inl -Raw
+          $runtimeText=$proxy+$runtimeInl
           foreach($token in @(
             'PTAR R15 TRUE720 JITTER9 RUNTIME',
             'gameBias-=0.5849625007211562f',
@@ -101,7 +103,7 @@ jobs:
             'PtR15AdvanceForNextGameFrame(self)',
             'R14_MFSR1_ACCUM_RESOLVE'))
           {
-            if($proxy -notmatch [regex]::Escape($token)){throw "R15 runtime token missing: $token"}
+            if($runtimeText -notmatch [regex]::Escape($token)){throw "R15 runtime token missing: $token"}
           }
           if($proxy -match [regex]::Escape('g_ptar.currentRealTexture=g_ptar.generatedTexture')){throw 'R15 contaminates FG history'}
 
