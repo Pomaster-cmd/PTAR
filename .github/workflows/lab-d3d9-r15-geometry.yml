@@ -1,0 +1,67 @@
+name: LAB D3D9 R15 GEOMETRY EXACT
+on:
+  push:
+    branches:
+      - lab/r15-jitter9-true720
+  workflow_dispatch:
+
+jobs:
+  geometry-exact:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+      - name: Compile geometry and reservoir shaders
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force artifact,build_x86 | Out-Null
+          $fxc=Get-Command fxc.exe -ErrorAction Stop
+          $fxcPath=if($fxc.Path){$fxc.Path}else{$fxc.FullName}
+
+          & $fxcPath /nologo /T vs_3_0 /E main /O3 `
+            /Fh build_x86\r15_geometry_vs_bytecode.h /Vn g_r15GeometryVs `
+            /Fo artifact\R15_GEOMETRY_VS.cso /Fc artifact\R15_GEOMETRY_VS_ASM.txt `
+            lab\r15_jitter9\r15_geometry_vs.hlsl
+          if($LASTEXITCODE){throw 'R15 geometry VS compile failed'}
+
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 `
+            /Fh build_x86\r15_geometry_ps_bytecode.h /Vn g_r15GeometryPs `
+            /Fo artifact\R15_GEOMETRY_PS.cso /Fc artifact\R15_GEOMETRY_PS_ASM.txt `
+            lab\r15_jitter9\r15_geometry_ps.hlsl
+          if($LASTEXITCODE){throw 'R15 geometry PS compile failed'}
+
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 `
+            /Fh build_x86\r15_exact_reservoir_ps_bytecode.h /Vn g_r15ExactReservoirPs `
+            /Fo artifact\R15_EXACT_RESERVOIR.cso /Fc artifact\R15_EXACT_RESERVOIR_ASM.txt `
+            lab\r15_jitter9\r15_exact_reservoir_ps.hlsl
+          if($LASTEXITCODE){throw 'R15 reservoir PS compile failed'}
+
+      - name: Run cereal-edge geometry oracle
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & cl.exe /nologo /O2 /W4 /WX /EHsc `
+            /I lab\r15_jitter9 /I build_x86 `
+            lab\r15_jitter9\r15_geometry_jitter_oracle.cpp `
+            /link d3d9.lib user32.lib `
+            /OUT:artifact\r15_geometry_jitter_oracle.exe
+          if($LASTEXITCODE){throw 'R15 geometry oracle compile failed'}
+
+          & .\artifact\r15_geometry_jitter_oracle.exe | Tee-Object artifact\R15_GEOMETRY_RESULT.txt
+          if($LASTEXITCODE){throw 'R15 geometry exact oracle failed'}
+
+          $result=Get-Content artifact\R15_GEOMETRY_RESULT.txt -Raw
+          if($result -notmatch 'R15_GEOMETRY_EXACT=PASS'){throw 'R15 geometry exact gate missing'}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: R15-GEOMETRY-EXACT-LAB
+          path: |
+            artifact/R15_GEOMETRY_VS_ASM.txt
+            artifact/R15_GEOMETRY_PS_ASM.txt
+            artifact/R15_EXACT_RESERVOIR_ASM.txt
+            artifact/R15_GEOMETRY_RESULT.txt
+          if-no-files-found: error
