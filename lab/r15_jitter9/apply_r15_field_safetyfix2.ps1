@@ -86,17 +86,16 @@ if($qualBody.IndexOf('g_ptarR15.currentVertexShaderPatched',[StringComparison]::
     $p=$p.Substring(0,$qualStart)+$qualBody+$p.Substring($qualEnd)
 }
 
-$member=@'
-static bool PtR15IsPatchedVertexShader(IDirect3DVertexShader9* shader)
+# Insert the stale-identity helper by function boundaries rather than by a
+# byte-exact copy of PtR15IsPatchedVertexShader. The helper implementation has
+# no semantic dependency on that function's whitespace or loop spelling.
+if($p.IndexOf('static void PtR15ForgetPatchedVertexShader(',[StringComparison]::Ordinal) -lt 0)
 {
-    if(!shader) return false;
-    for(size_t i=0;i<g_ptarR15PatchedShaders.size();++i)
-        if(g_ptarR15PatchedShaders[i]==shader) return true;
-    return false;
-}
-'@
-$p=R1 $p $member ($member+@'
-
+    $memberStart=$p.IndexOf('static bool PtR15IsPatchedVertexShader(',[StringComparison]::Ordinal)
+    $memberEnd=$p.IndexOf('static void PtR15BuildJitterConstant',$memberStart,[StringComparison]::Ordinal)
+    if($memberStart -lt 0 -or $memberEnd -lt 0 -or $memberEnd -le $memberStart)
+        {throw 'R15 SAFETYFIX2 shader identity helper boundaries missing'}
+    $forget=@'
 static void PtR15ForgetPatchedVertexShader(IDirect3DVertexShader9* shader)
 {
     if(!shader) return;
@@ -107,7 +106,10 @@ static void PtR15ForgetPatchedVertexShader(IDirect3DVertexShader9* shader)
         else ++i;
     }
 }
-'@) 'shader identity helper'
+
+'@
+    $p=$p.Substring(0,$memberEnd)+$forget+$p.Substring($memberEnd)
+}
 
 $p=R1 $p @'
                 (*out)->AddRef();
