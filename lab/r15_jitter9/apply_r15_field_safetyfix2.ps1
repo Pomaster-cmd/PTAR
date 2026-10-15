@@ -17,24 +17,31 @@ if($p.IndexOf('PTAR R15 TRUE720 JITTER9 RUNTIME',[StringComparison]::Ordinal) -l
 if($i.IndexOf('R15_TRUE720_PHASE_RESERVOIR_RUNTIME',[StringComparison]::Ordinal) -lt 0){throw 'phase runtime missing'}
 if($p.IndexOf('R15_FIELD_SAFETYFIX2',[StringComparison]::Ordinal) -ge 0){throw 'SAFETYFIX2 already applied'}
 
-$p=R1 $p @'
-typedef HRESULT (STDMETHODCALLTYPE *PFN_SetSamplerState)(
-    IDirect3DDevice9*,DWORD,D3DSAMPLERSTATETYPE,DWORD);
-'@ @'
+# The R14/R15 generator chain has legitimately changed whitespace around the
+# device typedef block several times. Match the SetSamplerState declaration
+# structurally, not byte-for-byte, and insert SetRenderState immediately before
+# it. This keeps the patch strict (exactly one structural match) without tying
+# field packaging to one formatting revision.
+if($p.IndexOf('typedef HRESULT (STDMETHODCALLTYPE *PFN_SetRenderState)',[StringComparison]::Ordinal) -lt 0)
+{
+    $typedefPattern='(?s)typedef\s+HRESULT\s*\(STDMETHODCALLTYPE\s+\*PFN_SetSamplerState\)\s*\(\s*IDirect3DDevice9\*,\s*DWORD,\s*D3DSAMPLERSTATETYPE,\s*DWORD\s*\);'
+    $typedefMatches=[regex]::Matches($p,$typedefPattern)
+    if($typedefMatches.Count -ne 1){throw "R15 SAFETYFIX2 render-state typedef match count=$($typedefMatches.Count)"}
+    $renderStateTypedef=@'
 typedef HRESULT (STDMETHODCALLTYPE *PFN_SetRenderState)(
     IDirect3DDevice9*,D3DRENDERSTATETYPE,DWORD);
-typedef HRESULT (STDMETHODCALLTYPE *PFN_SetSamplerState)(
-    IDirect3DDevice9*,DWORD,D3DSAMPLERSTATETYPE,DWORD);
-'@ 'render-state typedef'
+'@
+    $m=$typedefMatches[0]
+    $p=$p.Substring(0,$m.Index)+$renderStateTypedef+"`n"+$m.Value+$p.Substring($m.Index+$m.Length)
+}
 
-$p=R1 $p @'
-static PFN_SetRenderTarget g_realSetRenderTarget=0;
-static PFN_SetSamplerState g_realSetSamplerState=0;
-'@ @'
+if($p.IndexOf('static PFN_SetRenderState g_realSetRenderState=0;',[StringComparison]::Ordinal) -lt 0)
+{
+    $p=R1 $p 'static PFN_SetRenderTarget g_realSetRenderTarget=0;' @'
 static PFN_SetRenderTarget g_realSetRenderTarget=0;
 static PFN_SetRenderState g_realSetRenderState=0;
-static PFN_SetSamplerState g_realSetSamplerState=0;
 '@ 'render-state pointer'
+}
 
 $p=R1 $p @'
     bool mainTarget;
