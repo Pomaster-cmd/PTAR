@@ -228,14 +228,14 @@ $p=Replace-One $p '#include "ptar_r14_restore_ps_bytecode.h"' @'
 #include "ptar_r15_phase_accum_ps_bytecode.h"
 '@ 'R15 phase bytecode include'
 
-$axisFunction=@'
-static float PtR15AxisJitter(int phaseClass)
-{
-    if(phaseClass==0) return -1.0f/3.0f;
-    if(phaseClass==2) return  1.0f/3.0f;
-    return 0.0f;
-}
-'@
+# The sampling-runtime generator has changed whitespace/schedule formatting
+# during R15 calibration. Match the function structurally instead of requiring
+# byte-identical formatting; still require exactly one function before editing.
+$axisPattern='(?s)static float PtR15AxisJitter\(int phaseClass\)\s*\{.*?return\s+0\.0f;\s*\}'
+$axisMatches=[regex]::Matches($p,$axisPattern)
+if($axisMatches.Count -ne 1)
+{ throw "R15 phase runtime PtR15AxisJitter count=$($axisMatches.Count)" }
+$axisFunction=$axisMatches[0].Value
 $axisPlus=$axisFunction+@'
 
 static UINT PtR15AxisResidue(int phaseClass)
@@ -246,7 +246,7 @@ static UINT PtR15AxisResidue(int phaseClass)
     return 0u;
 }
 '@
-$p=Replace-One $p $axisFunction $axisPlus 'D3D9 phase-to-residue mapping'
+$p=$p.Substring(0,$axisMatches[0].Index)+$axisPlus+$p.Substring($axisMatches[0].Index+$axisMatches[0].Length)
 
 $resolveCall='            HRESULT tsrHr=PtTsr1Resolve('
 $phaseBridge=@'
