@@ -17,11 +17,8 @@ if($p.IndexOf('PTAR R15 TRUE720 JITTER9 RUNTIME',[StringComparison]::Ordinal) -l
 if($i.IndexOf('R15_TRUE720_PHASE_RESERVOIR_RUNTIME',[StringComparison]::Ordinal) -lt 0){throw 'phase runtime missing'}
 if($p.IndexOf('R15_FIELD_SAFETYFIX2',[StringComparison]::Ordinal) -ge 0){throw 'SAFETYFIX2 already applied'}
 
-# The R14/R15 generator chain has legitimately changed whitespace around the
-# device typedef block several times. Match the SetSamplerState declaration
-# structurally, not byte-for-byte, and insert SetRenderState immediately before
-# it. This keeps the patch strict (exactly one structural match) without tying
-# field packaging to one formatting revision.
+# Insert the render-state type structurally so the field package is independent
+# of harmless formatting changes made by the preceding runtime generators.
 if($p.IndexOf('typedef HRESULT (STDMETHODCALLTYPE *PFN_SetRenderState)',[StringComparison]::Ordinal) -lt 0)
 {
     $typedefPattern='(?s)typedef\s+HRESULT\s*\(STDMETHODCALLTYPE\s+\*PFN_SetSamplerState\)\s*\(\s*IDirect3DDevice9\*,\s*DWORD,\s*D3DSAMPLERSTATETYPE,\s*DWORD\s*\);'
@@ -43,10 +40,7 @@ static PFN_SetRenderState g_realSetRenderState=0;
 '@ 'render-state pointer'
 }
 
-# Patch the R15 sampling-state structure semantically. Previous field-test
-# packaging assumed phaseIndex immediately followed currentVertexShaderPatched;
-# that adjacency is not an API contract and can change as the phase bridge
-# evolves. Restrict the edit to the unique PtR15SamplingState body instead.
+# Patch PtR15SamplingState semantically rather than relying on field adjacency.
 if($p.IndexOf('bool depthEnabled;',[StringComparison]::Ordinal) -lt 0 -or
    $p.IndexOf('bool lodBiasActive;',[StringComparison]::Ordinal) -lt 0)
 {
@@ -63,10 +57,8 @@ if($p.IndexOf('bool depthEnabled;',[StringComparison]::Ordinal) -lt 0 -or
     $p=$p.Substring(0,$stateStart)+$stateBody+$p.Substring($stateEnd)
 }
 
-# Qualify jitter/LOD only inside the actual PtR15ShouldAffectGameDraw helper.
-# Do not assume a byte-exact predicate sequence: phase-superresolve work may add
-# legitimate clauses. Preserve them and inject the two new guards immediately
-# before the final HUD/FG exclusion term.
+# Jitter/LOD may affect only a qualified, depth-enabled 3-D draw using a shader
+# for which the position-output patch actually succeeded.
 $qualStart=$p.IndexOf('static bool PtR15ShouldAffectGameDraw()',[StringComparison]::Ordinal)
 $qualEnd=$p.IndexOf('static bool PtR15IsPatchedVertexShader',$qualStart,[StringComparison]::Ordinal)
 if($qualStart -lt 0 -or $qualEnd -lt 0 -or $qualEnd -le $qualStart){throw 'R15 SAFETYFIX2 3D qualification boundaries missing'}
@@ -86,9 +78,9 @@ if($qualBody.IndexOf('g_ptarR15.currentVertexShaderPatched',[StringComparison]::
     $p=$p.Substring(0,$qualStart)+$qualBody+$p.Substring($qualEnd)
 }
 
-# Insert the stale-identity helper by function boundaries rather than by a
-# byte-exact copy of PtR15IsPatchedVertexShader. The helper implementation has
-# no semantic dependency on that function's whitespace or loop spelling.
+# The shader identity vector is non-owning. It exists only to recognize the
+# patched shader pointer selected by SetVertexShader. Never hold an extra COM
+# reference; scrub stale pointer identities before recording/reusing an address.
 if($p.IndexOf('static void PtR15ForgetPatchedVertexShader(',[StringComparison]::Ordinal) -lt 0)
 {
     $memberStart=$p.IndexOf('static bool PtR15IsPatchedVertexShader(',[StringComparison]::Ordinal)
@@ -111,29 +103,47 @@ static void PtR15ForgetPatchedVertexShader(IDirect3DVertexShader9* shader)
     $p=$p.Substring(0,$memberEnd)+$forget+$p.Substring($memberEnd)
 }
 
-$p=R1 $p @'
-                (*out)->AddRef();
-                g_ptarR15PatchedShaders.push_back(*out);
-'@ @'
-                PtR15ForgetPatchedVertexShader(*out);
-                g_ptarR15PatchedShaders.push_back(*out);
-'@ 'remove shader ownership leak'
+# Patch HookCreateVertexShader inside its own boundaries. The old field script
+# assumed exact whitespace around AddRef/push_back; runtime-generation changes
+# proved that brittle. The semantic contract is stronger: exactly one extra
+# AddRef and exactly one patched-shader insertion must exist in this function.
+$createStart=$p.IndexOf('static HRESULT STDMETHODCALLTYPE HookCreateVertexShader(',[StringComparison]::Ordinal)
+$createEnd=$p.IndexOf('static HRESULT STDMETHODCALLTYPE HookSetVertexShader(',$createStart,[StringComparison]::Ordinal)
+if($createStart -lt 0 -or $createEnd -lt 0 -or $createEnd -le $createStart)
+    {throw 'R15 SAFETYFIX2 CreateVertexShader boundaries missing'}
+$createBody=$p.Substring($createStart,$createEnd-$createStart)
 
-$p=R1 $p @'
-    return g_realCreateVertexShader(self,function,out);
-}
+$addRefPattern='(?m)^[ \t]*\(\*out\)->AddRef\(\);[ \t]*(?:\n|$)'
+$addRefs=[regex]::Matches($createBody,$addRefPattern)
+if($addRefs.Count -ne 1){throw "R15 SAFETYFIX2 CreateVertexShader extra-AddRef count=$($addRefs.Count)"}
+$m=$addRefs[0]
+$createBody=$createBody.Substring(0,$m.Index)+$createBody.Substring($m.Index+$m.Length)
 
-static HRESULT STDMETHODCALLTYPE HookSetVertexShader(
-'@ @'
-    HRESULT originalHr=g_realCreateVertexShader(self,function,out);
-    if(SUCCEEDED(originalHr) && out && *out)
-        PtR15ForgetPatchedVertexShader(*out);
-    return originalHr;
-}
+$pushPattern='(?m)^([ \t]*)g_ptarR15PatchedShaders\.push_back\(\*out\);[ \t]*$'
+$pushes=[regex]::Matches($createBody,$pushPattern)
+if($pushes.Count -ne 1){throw "R15 SAFETYFIX2 patched-shader push count=$($pushes.Count)"}
+$m=$pushes[0]
+$indent=$m.Groups[1].Value
+$pushReplacement=$indent+'PtR15ForgetPatchedVertexShader(*out);'+"`n"+$m.Value
+$createBody=$createBody.Substring(0,$m.Index)+$pushReplacement+$createBody.Substring($m.Index+$m.Length)
 
-static HRESULT STDMETHODCALLTYPE HookSetVertexShader(
-'@ 'original shader stale-identity cleanup'
+# The early invalid-argument fallback may legitimately call the original
+# CreateVertexShader too. Only rewrite the LAST fallback in this hook, which is
+# the normal unpatched-shader return path immediately before HookSetVertexShader.
+$fallbackPattern='(?m)^([ \t]*)return\s+g_realCreateVertexShader\(self,function,out\);[ \t]*$'
+$fallbacks=[regex]::Matches($createBody,$fallbackPattern)
+if($fallbacks.Count -lt 1){throw 'R15 SAFETYFIX2 original CreateVertexShader fallback missing'}
+$m=$fallbacks[$fallbacks.Count-1]
+$indent=$m.Groups[1].Value
+$fallbackReplacement=$indent+'HRESULT originalHr=g_realCreateVertexShader(self,function,out);'+"`n"+
+    $indent+'if(SUCCEEDED(originalHr) && out && *out)'+"`n"+
+    $indent+'    PtR15ForgetPatchedVertexShader(*out);'+"`n"+
+    $indent+'return originalHr;'
+$createBody=$createBody.Substring(0,$m.Index)+$fallbackReplacement+$createBody.Substring($m.Index+$m.Length)
+$p=$p.Substring(0,$createStart)+$createBody+$p.Substring($createEnd)
 
+# LOD bias becomes a transition-cached state, avoiding 16 redundant sampler
+# writes on every draw while still restoring the game's raw state on domain exit.
 $lod=@'
 static void PtR15ApplyLodBiases(IDirect3DDevice9* dev)
 {
@@ -165,9 +175,6 @@ static void PtR15ApplyLodBiases(IDirect3DDevice9* dev)
 }
 '@ 'LOD transition cache'
 
-# Reset guards are also patched inside the reset function rather than through a
-# brittle three-line adjacency. This guarantees the two new booleans start from
-# a known state while leaving phaseIndex and any later fields untouched.
 $resetStart=$p.IndexOf('static void PtR15ResetSamplingState(bool mainTarget)',[StringComparison]::Ordinal)
 $resetEnd=$p.IndexOf('static void PtR15AdvanceForNextGameFrame',$resetStart,[StringComparison]::Ordinal)
 if($resetStart -lt 0 -or $resetEnd -lt 0 -or $resetEnd -le $resetStart){throw 'R15 SAFETYFIX2 reset-function boundaries missing'}
