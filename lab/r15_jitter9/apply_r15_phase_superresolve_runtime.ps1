@@ -277,8 +277,7 @@ foreach($token in @(
     'R15_TRUE720_PHASE_RESERVOIR_RUNTIME',
     'g_ptarR15PhaseAccumPs',
     'R15_PHASE_EXACT_ACCUM',
-    'R15_PHASE_PRESENT_COPY',
-    'known'))
+    'R15_PHASE_PRESENT_COPY'))
 {
     if($i.IndexOf($token,[StringComparison]::Ordinal) -lt 0)
     { throw "R15 phase implementation token missing: $token" }
