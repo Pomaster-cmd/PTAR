@@ -1,0 +1,3 @@
+# R15 patch scripts compare generated LF-normalized source with multiline here-strings.
+# Keep these scripts LF on Windows runners so semantic anchors are byte-stable.
+lab/r15_jitter9/*.ps1 text eol=lf
