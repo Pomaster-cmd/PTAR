@@ -1,0 +1,227 @@
+name: LAB D3D9 R15 JITTER9 TRUE720 FIELDTEST
+on:
+  push:
+    branches:
+      - lab/r15-jitter9-true720
+    paths:
+      - '.github/workflows/lab-d3d9-r15-fieldtest.yml'
+      - 'lab/r15_jitter9/**'
+      - 'lab/tsr1/**'
+      - 'compat/x86_d3d9/**'
+  workflow_dispatch:
+
+jobs:
+  fieldtest:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      - name: Prove calibrated D3D9 ownership lattice
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python .\lab\r15_jitter9\r15_lattice_oracle.py
+
+      - name: Build hardened R15 TRUE720 phase superresolve field test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force artifact,build_x86 | Out-Null
+
+          $fgFiles=@(
+            'compat/x86_d3d9/ptar_fg_pacer.h',
+            'compat/x86_d3d9/ptar_fg_me_coarse_ps.hlsl',
+            'compat/x86_d3d9/ptar_fg_me_refine_ps.hlsl',
+            'compat/x86_d3d9/ptar_fg_interpolate_ps.hlsl',
+            'compat/x86_d3d9/ptar_f7_benchmark.h')
+
+          # Qualified R13 -> R14 accumulation lineage, unchanged from the
+          # already-passing R15 phase-superresolve lab workflow.
+          .\lab\tsr1\apply_r10_aliasresidual.ps1
+          .\lab\tsr1\apply_r11_plsr1.ps1
+          .\lab\tsr1\apply_r12_resaa1.ps1
+          .\lab\tsr1\apply_r13_plsr_max1.ps1
+          .\lab\tsr1\run_r13_tsr_ci_compat.ps1
+
+          $fgBefore=@{}
+          foreach($f in $fgFiles){$fgBefore[$f]=(Get-FileHash $f -Algorithm SHA256).Hash}
+
+          .\lab\tsr1\apply_r14_mfsr1_accum1080.ps1
+          $fxc=Get-Command fxc.exe -ErrorAction Stop
+          $fxcPath=if($fxc.Path){$fxc.Path}else{$fxc.FullName}
+
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 `
+            /Fh build_x86\ptar_tsr1_resolve_ps_bytecode.h /Vn g_ptarTsr1ResolvePs `
+            /Fo artifact\R14_TSR_RESOLVE.cso /Fc artifact\R14_TSR_RESOLVE_ASM.txt `
+            lab\tsr1\ptar_tsr1_resolve_ps.hlsl
+          if($LASTEXITCODE){throw 'R14 resolve compile failed'}
+
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 `
+            /Fh build_x86\ptar_r14_restore_ps_bytecode.h /Vn g_ptarR14RestorePs `
+            /Fo artifact\R14_RESTORE.cso /Fc artifact\R14_RESTORE_ASM.txt `
+            lab\tsr1\ptar_r14_restore_ps.hlsl
+          if($LASTEXITCODE){throw 'R14 restore compile failed'}
+
+          .\lab\tsr1\apply_r14_runtime_accum1080.ps1
+
+          Copy-Item lab\r15_jitter9\ptar_vs_jitter_patch.h build_x86\ptar_r15_vs_jitter_patch.h -Force
+          $samplingPatch='lab\r15_jitter9\apply_r15_game_sampling_runtime.ps1'
+          $samplingText=[IO.File]::ReadAllText((Resolve-Path $samplingPatch)) -replace "`r`n","`n"
+          [IO.File]::WriteAllText((Resolve-Path $samplingPatch),$samplingText,(New-Object System.Text.UTF8Encoding($false)))
+          .\lab\r15_jitter9\apply_r15_game_sampling_runtime.ps1
+
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 `
+            /Fh build_x86\ptar_r15_phase_accum_ps_bytecode.h /Vn g_ptarR15PhaseAccumPs `
+            /Fo artifact\R15_PHASE_ACCUM.cso /Fc artifact\R15_PHASE_ACCUM_ASM.txt `
+            lab\r15_jitter9\ptar_r15_phase_accum_ps.hlsl
+          if($LASTEXITCODE){throw 'R15 phase accumulator compile failed'}
+
+          $asm=Get-Content artifact\R15_PHASE_ACCUM_ASM.txt -Raw
+          $tex=([regex]::Matches($asm,'(?im)^\s*texld')).Count
+          $slotMatch=[regex]::Match($asm,'(?i)approximately\s+(\d+)\s+instruction slots')
+          if(!$slotMatch.Success){throw 'R15 phase accumulator slot parse failed'}
+          $slots=[int]$slotMatch.Groups[1].Value
+          Write-Host "R15_PHASE_ACCUM=$slots`_SLOTS_$tex`_TEXLD"
+          if($slots -gt 220){throw "R15 phase accumulator unexpectedly large: $slots slots"}
+          if($tex -gt 8){throw "R15 phase accumulator unexpectedly texture-heavy: $tex texld"}
+
+          .\lab\r15_jitter9\apply_r15_phase_superresolve_runtime.ps1
+          .\lab\r15_jitter9\apply_r15_field_safetyfix2.ps1
+          .\lab\r15_jitter9\apply_r15_field_safetyfix3.ps1
+
+          $proxy=Get-Content compat\x86_d3d9\ptar_d3d9_proxy.cpp -Raw
+          $hdr=Get-Content compat\x86_d3d9\ptar_tsr1_runtime.h -Raw
+          $inl=Get-Content compat\x86_d3d9\ptar_tsr1_runtime.inl -Raw
+          $all=$proxy+$hdr+$inl
+
+          foreach($token in @(
+            'PTAR R15 TRUE720 JITTER9 RUNTIME',
+            'R15_FIELD_SAFETYFIX2',
+            'R15_FIELD_SAFETYFIX3',
+            'PtR15AxisResidue',
+            'R15 TRUE720 PHASE RESERVOIR STATE',
+            'R15_TRUE720_PHASE_RESERVOIR_RUNTIME',
+            'R15_PHASE_EXACT_ACCUM',
+            'PtTsr1SetJitter9Phase(',
+            'g_ptarR15PhaseAccumPs',
+            'HookSetRenderState',
+            'PatchVtableSlot(dev,57',
+            'PtR15ForgetPatchedVertexShader'))
+          {
+            if($all -notmatch [regex]::Escape($token)){throw "R15 field integration token missing: $token"}
+          }
+
+          if($proxy -match [regex]::Escape('(*out)->AddRef();')){throw 'R15 field shader ownership leak survived'}
+          if($hdr -match 'jitterAccumTexture'){throw 'R15 field allocated redundant 1080p history'}
+          if($proxy -match [regex]::Escape('g_ptar.currentRealTexture=g_ptar.generatedTexture')){throw 'R15 field contaminates FG history'}
+          if($inl -notmatch 'g_ptarTsr1\.accumValid=false;\s*PtDiagLogA\('){throw 'R15 field resolve failure does not invalidate accumulation'}
+
+          $orderNeedle="g_ptar.inPresent=false;`n    PtR15AdvanceForNextGameFrame(self);"
+          $normalized=$proxy -replace "`r`n","`n"
+          if($normalized.IndexOf($orderNeedle,[StringComparison]::Ordinal) -lt 0){throw 'R15 phase advance still occurs while inPresent'}
+          if($normalized.IndexOf("PtR15ApplyVertexConstant(self);`n        PtR15ApplyLodBiases(self);",[StringComparison]::Ordinal) -lt 0){throw 'R15 VS-domain LOD transition guard missing'}
+
+          & cl.exe /nologo /LD /O2 /MT /W4 /WX /EHsc `
+            /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 `
+            /I build_x86 `
+            compat\x86_d3d9\ptar_d3d9_proxy.cpp `
+            /link user32.lib `
+            /DEF:compat\x86_d3d9\d3d9_proxy.def `
+            /OUT:artifact\d3d9.dll `
+            /SUBSYSTEM:WINDOWS,6.03
+          if($LASTEXITCODE){throw 'R15 hardened field runtime compile failed'}
+
+          dumpbin /headers artifact\d3d9.dll | Out-File artifact\R15_FIELD_HEADERS.txt -Encoding ascii
+          dumpbin /exports artifact\d3d9.dll | Out-File artifact\R15_FIELD_EXPORTS.txt -Encoding ascii
+          dumpbin /dependents artifact\d3d9.dll | Out-File artifact\R15_FIELD_DEPENDENTS.txt -Encoding ascii
+          $hd=Get-Content artifact\R15_FIELD_HEADERS.txt -Raw
+          $ex=Get-Content artifact\R15_FIELD_EXPORTS.txt -Raw
+          $dp=Get-Content artifact\R15_FIELD_DEPENDENTS.txt -Raw
+          if($hd -notmatch '14C machine \(x86\)' -or $hd -notmatch '6\.03 subsystem version'){throw 'R15 field Win8.1 x86 PE contract failed'}
+          foreach($n in @('Direct3DCreate9','Direct3DCreate9Ex','PTAR_D3D9_DIAG_STATE')){if($ex -notmatch [regex]::Escape($n)){throw "R15 field missing export $n"}}
+          foreach($bad in @('VCRUNTIME','MSVCP','UCRTBASE','API-MS-WIN-CRT')){if($dp -match $bad){throw "R15 field forbidden dependency $bad"}}
+
+          foreach($f in $fgFiles)
+          {
+            $after=(Get-FileHash $f -Algorithm SHA256).Hash
+            if($after -ne $fgBefore[$f]){throw "R15 field modified frozen FG file: $f"}
+          }
+
+          $runtimeSha=(Get-FileHash artifact\d3d9.dll -Algorithm SHA256).Hash.ToLowerInvariant()
+          $phaseSha=(Get-FileHash artifact\R15_PHASE_ACCUM.cso -Algorithm SHA256).Hash.ToLowerInvariant()
+          @(
+            ('SOURCE_COMMIT='+$env:GITHUB_SHA),
+            'PTAR_R15_VARIANT=JITTER9_TRUE720_PHASE_SUPERRESOLVE_FIELDTEST',
+            'R15_INPUT=1280X720',
+            'R15_OUTPUT=1920X1080',
+            'R15_PHASE_COUNT=9',
+            'R15_RASTER_CONVENTION=D3D9_INTEGER_CENTER_CALIBRATED',
+            'R15_PHASE_JITTER=-1/3,0,+1/3_SOURCE_PIXEL',
+            'R15_TEXTURE_LOD_BIAS=-0.5849625007211562',
+            'R15_HISTORY_SURFACES=2X_1920X1080_A8R8G8B8',
+            'R15_HISTORY_INPUT=REAL_FRAMES_ONLY',
+            'R15_PHASE_ADVANCE_AFTER_INPRESENT_CLEAR=YES',
+            'R15_HUD_DEPTH_GUARD=YES',
+            'R15_SHADER_EXTRA_ADDREF=0',
+            'R15_RESOLVE_FAIL_INVALIDATES_ACCUM=YES',
+            'R15_FG_SCOPE=OFF_FOR_THIS_TEMPORAL_TEST',
+            'R15_FG_FILES_IDENTICAL_TO_QUALIFIED_R13=PASS',
+            ('R15_PHASE_SHADER_SLOTS='+$slots),
+            ('R15_PHASE_SHADER_TEXLD='+$tex),
+            ('R15_RUNTIME_SHA256='+$runtimeSha),
+            ('R15_PHASE_CSO_SHA256='+$phaseSha),
+            'WIN81_X86=PASS') | Set-Content artifact\R15_JITTER9_TRUE720_FIELDTEST.txt -Encoding ascii
+
+          @'
+          PTAR R15 JITTER9 TRUE720 PHASE SUPERRESOLVE - FIELD TEST
+
+          Experimental field build. It is not a canonical release.
+          Target: Splinter Cell Conviction, D3D9 x86, Windows 8.1.
+          Test at 1280x720 internal rendering to 1920x1080 output.
+          Keep frame generation OFF for this test.
+
+          This build deliberately jitters qualified 3-D game vertex shaders over
+          a calibrated 3x3 / 9-phase source-pixel lattice. Each phase directly
+          owns one ninth of the 1080p output lattice; non-owned pixels are taken
+          from the reprojected real-frame phase reservoir or from the spatial
+          fallback when history is unsafe.
+
+          Field-safety changes in this package:
+          - phase advances only after the proxy leaves its Present path;
+          - depth-disabled/HUD-like draws are excluded from jitter and LOD bias;
+          - patched vertex shaders are tracked without an extra lifetime AddRef;
+          - LOD bias is changed only when entering/leaving a qualified 3-D draw domain;
+          - a failed temporal resolve invalidates the phase reservoir.
+
+          Expected startup: the game must remain visually stable. If HUD text or
+          menus visibly jitter, stop the test and keep the PTAR diagnostic log.
+          Compare after at least nine REAL game frames using the same camera.
+          Use 100% crops on text, chair weave, foliage/branches, diagonals and ground.
+          '@ | Set-Content artifact\README_R15_JITTER9_TRUE720_FIELDTEST.txt -Encoding ascii
+
+          Write-Host "R15_FIELD_RUNTIME_SHA256=$runtimeSha"
+          Write-Host "R15_FIELD_PHASE_CSO_SHA256=$phaseSha"
+          Write-Host 'R15_PHASE_ADVANCE_AFTER_INPRESENT_CLEAR=PASS'
+          Write-Host 'R15_HUD_DEPTH_GUARD=PASS'
+          Write-Host 'R15_SHADER_EXTRA_ADDREF=0'
+          Write-Host 'R15_RESOLVE_FAIL_INVALIDATES_ACCUM=PASS'
+          Write-Host 'R15_FIELDTEST_BUILD=PASS'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-R15-JITTER9-TRUE720-FIELDTEST
+          path: |
+            artifact/d3d9.dll
+            artifact/R15_PHASE_ACCUM.cso
+            artifact/R15_PHASE_ACCUM_ASM.txt
+            artifact/R15_JITTER9_TRUE720_FIELDTEST.txt
+            artifact/README_R15_JITTER9_TRUE720_FIELDTEST.txt
+            artifact/R15_FIELD_HEADERS.txt
+            artifact/R15_FIELD_EXPORTS.txt
+            artifact/R15_FIELD_DEPENDENTS.txt
+          if-no-files-found: error
