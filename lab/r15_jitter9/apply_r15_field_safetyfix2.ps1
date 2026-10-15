@@ -63,17 +63,28 @@ if($p.IndexOf('bool depthEnabled;',[StringComparison]::Ordinal) -lt 0 -or
     $p=$p.Substring(0,$stateStart)+$stateBody+$p.Substring($stateEnd)
 }
 
-$p=R1 $p @'
-        !g_ptar.inPresent &&
-        g_ptarR15.mainTarget &&
-        !PtHudFgEnabled();
-'@ @'
-        !g_ptar.inPresent &&
-        g_ptarR15.mainTarget &&
-        g_ptarR15.currentVertexShaderPatched &&
-        g_ptarR15.depthEnabled &&
-        !PtHudFgEnabled();
-'@ '3D qualification'
+# Qualify jitter/LOD only inside the actual PtR15ShouldAffectGameDraw helper.
+# Do not assume a byte-exact predicate sequence: phase-superresolve work may add
+# legitimate clauses. Preserve them and inject the two new guards immediately
+# before the final HUD/FG exclusion term.
+$qualStart=$p.IndexOf('static bool PtR15ShouldAffectGameDraw()',[StringComparison]::Ordinal)
+$qualEnd=$p.IndexOf('static bool PtR15IsPatchedVertexShader',$qualStart,[StringComparison]::Ordinal)
+if($qualStart -lt 0 -or $qualEnd -lt 0 -or $qualEnd -le $qualStart){throw 'R15 SAFETYFIX2 3D qualification boundaries missing'}
+$qualBody=$p.Substring($qualStart,$qualEnd-$qualStart)
+if($qualBody.IndexOf('g_ptarR15.currentVertexShaderPatched',[StringComparison]::Ordinal) -lt 0 -or
+   $qualBody.IndexOf('g_ptarR15.depthEnabled',[StringComparison]::Ordinal) -lt 0)
+{
+    $hudPattern='(?m)^(\s*)!PtHudFgEnabled\(\);\s*$'
+    $hudMatches=[regex]::Matches($qualBody,$hudPattern)
+    if($hudMatches.Count -ne 1){throw "R15 SAFETYFIX2 3D qualification HUD term count=$($hudMatches.Count)"}
+    $m=$hudMatches[0]
+    $indent=$m.Groups[1].Value
+    $guardInsert=$indent+'g_ptarR15.currentVertexShaderPatched &&'+"`n"+
+        $indent+'g_ptarR15.depthEnabled &&'+"`n"+
+        $indent+'!PtHudFgEnabled();'
+    $qualBody=$qualBody.Substring(0,$m.Index)+$guardInsert+$qualBody.Substring($m.Index+$m.Length)
+    $p=$p.Substring(0,$qualStart)+$qualBody+$p.Substring($qualEnd)
+}
 
 $member=@'
 static bool PtR15IsPatchedVertexShader(IDirect3DVertexShader9* shader)
