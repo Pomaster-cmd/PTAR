@@ -1,0 +1,242 @@
+name: LAB D3D9 R15 SCC RECOVERY1
+on:
+  push:
+    branches:
+      - lab/r15-jitter9-true720
+    paths:
+      - '.github/workflows/lab-d3d9-r15-scc-recovery.yml'
+      - 'lab/r15_jitter9/**'
+      - 'lab/tsr1/**'
+      - 'compat/x86_d3d9/**'
+  workflow_dispatch:
+
+jobs:
+  scc-recovery:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      - name: Prove exact 720p to 1080p phase lattice
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python .\lab\r15_jitter9\r15_lattice_oracle.py
+
+      - name: Harden and validate SCC-safe vertex shader patcher
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force artifact,build_x86 | Out-Null
+          .\lab\r15_jitter9\apply_r15_scc_safevs1.ps1
+          $fxc=Get-Command fxc.exe -ErrorAction Stop
+          $fxcPath=if($fxc.Path){$fxc.Path}else{$fxc.FullName}
+
+          & $fxcPath /nologo /T vs_2_0 /E main /O3 `
+            /Fh build_x86\r15_test_vs2_bytecode.h /Vn g_r15TestVs2 `
+            /Fo artifact\R15_SAFE_TEST_VS2.cso /Fc artifact\R15_SAFE_TEST_VS2_ASM.txt `
+            lab\r15_jitter9\r15_test_vs.hlsl
+          if($LASTEXITCODE){throw 'R15 safe VS2 compile failed'}
+
+          & $fxcPath /nologo /T vs_3_0 /E main /O3 `
+            /Fh build_x86\r15_test_vs3_bytecode.h /Vn g_r15TestVs3 `
+            /Fo artifact\R15_SAFE_TEST_VS3.cso /Fc artifact\R15_SAFE_TEST_VS3_ASM.txt `
+            lab\r15_jitter9\r15_test_vs.hlsl
+          if($LASTEXITCODE){throw 'R15 safe VS3 compile failed'}
+
+          & cl.exe /nologo /O2 /W4 /WX /EHsc `
+            /I lab\r15_jitter9 /I build_x86 `
+            lab\r15_jitter9\r15_vs_patch_harness.cpp `
+            /link d3d9.lib d3dcompiler.lib user32.lib `
+            /OUT:artifact\r15_safe_vs_patch_harness.exe
+          if($LASTEXITCODE){throw 'R15 safe VS harness compile failed'}
+
+          & .\artifact\r15_safe_vs_patch_harness.exe | Tee-Object artifact\R15_SAFE_VS_PATCH_RESULT.txt
+          if($LASTEXITCODE){throw 'R15 safe VS harness failed'}
+          $result=Get-Content artifact\R15_SAFE_VS_PATCH_RESULT.txt -Raw
+          foreach($token in @('R15_VS2_PATCH=PASS','R15_VS3_PATCH=PASS','R15_VERTEX_JITTER_PATCH_ALL=PASS'))
+          {
+            if($result -notmatch [regex]::Escape($token)){throw "R15 safe VS harness token missing: $token"}
+          }
+          $safeHeader=Get-Content lab\r15_jitter9\ptar_vs_jitter_patch.h -Raw
+          foreach($token in @('R15_SCC_SAFE_VS1','hasRelativeAddressing','positionReads','positionWrites!=1','0x00002000u'))
+          {
+            if($safeHeader -notmatch [regex]::Escape($token)){throw "R15 SCC safe header gate missing: $token"}
+          }
+          Write-Host 'R15_SCC_SAFE_VS_HARNESS=PASS'
+
+      - name: Build SCC recovery field runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $fgFiles=@(
+            'compat/x86_d3d9/ptar_fg_pacer.h',
+            'compat/x86_d3d9/ptar_fg_me_coarse_ps.hlsl',
+            'compat/x86_d3d9/ptar_fg_me_refine_ps.hlsl',
+            'compat/x86_d3d9/ptar_fg_interpolate_ps.hlsl',
+            'compat/x86_d3d9/ptar_f7_benchmark.h')
+
+          .\lab\tsr1\apply_r10_aliasresidual.ps1
+          .\lab\tsr1\apply_r11_plsr1.ps1
+          .\lab\tsr1\apply_r12_resaa1.ps1
+          .\lab\tsr1\apply_r13_plsr_max1.ps1
+          .\lab\tsr1\run_r13_tsr_ci_compat.ps1
+
+          $fgBefore=@{}
+          foreach($f in $fgFiles){$fgBefore[$f]=(Get-FileHash $f -Algorithm SHA256).Hash}
+
+          .\lab\tsr1\apply_r14_mfsr1_accum1080.ps1
+          $fxc=Get-Command fxc.exe -ErrorAction Stop
+          $fxcPath=if($fxc.Path){$fxc.Path}else{$fxc.FullName}
+
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 `
+            /Fh build_x86\ptar_tsr1_resolve_ps_bytecode.h /Vn g_ptarTsr1ResolvePs `
+            /Fo artifact\R14_TSR_RESOLVE.cso `
+            lab\tsr1\ptar_tsr1_resolve_ps.hlsl
+          if($LASTEXITCODE){throw 'R14 resolve compile failed'}
+
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 `
+            /Fh build_x86\ptar_r14_restore_ps_bytecode.h /Vn g_ptarR14RestorePs `
+            /Fo artifact\R14_RESTORE.cso `
+            lab\tsr1\ptar_r14_restore_ps.hlsl
+          if($LASTEXITCODE){throw 'R14 restore compile failed'}
+
+          .\lab\tsr1\apply_r14_runtime_accum1080.ps1
+          Copy-Item lab\r15_jitter9\ptar_vs_jitter_patch.h build_x86\ptar_r15_vs_jitter_patch.h -Force
+
+          $samplingPatch='lab\r15_jitter9\apply_r15_game_sampling_runtime.ps1'
+          $samplingText=[IO.File]::ReadAllText((Resolve-Path $samplingPatch)) -replace "`r`n","`n"
+          [IO.File]::WriteAllText((Resolve-Path $samplingPatch),$samplingText,(New-Object System.Text.UTF8Encoding($false)))
+          .\lab\r15_jitter9\apply_r15_game_sampling_runtime.ps1
+
+          & $fxcPath /nologo /T ps_3_0 /E main /O3 `
+            /Fh build_x86\ptar_r15_phase_accum_ps_bytecode.h /Vn g_ptarR15PhaseAccumPs `
+            /Fo artifact\R15_PHASE_ACCUM.cso /Fc artifact\R15_PHASE_ACCUM_ASM.txt `
+            lab\r15_jitter9\ptar_r15_phase_accum_ps.hlsl
+          if($LASTEXITCODE){throw 'R15 phase accumulator compile failed'}
+
+          .\lab\r15_jitter9\apply_r15_phase_superresolve_runtime.ps1
+          .\lab\r15_jitter9\apply_r15_field_safetyfix2.ps1
+          .\lab\r15_jitter9\apply_r15_field_safetyfix3.ps1
+          .\lab\r15_jitter9\apply_r15_scc_nolod1.ps1
+
+          $proxy=Get-Content compat\x86_d3d9\ptar_d3d9_proxy.cpp -Raw
+          $hdr=Get-Content compat\x86_d3d9\ptar_tsr1_runtime.h -Raw
+          $inl=Get-Content compat\x86_d3d9\ptar_tsr1_runtime.inl -Raw
+          $safeHeader=Get-Content build_x86\ptar_r15_vs_jitter_patch.h -Raw
+          $all=$proxy+$hdr+$inl+$safeHeader
+          foreach($token in @(
+            'PTAR R15 TRUE720 JITTER9 RUNTIME',
+            'R15_SCC_SAFE_VS1',
+            'R15_SCC_NOLOD1',
+            'R15_FIELD_SAFETYFIX2',
+            'R15_FIELD_SAFETYFIX3',
+            'R15_TRUE720_PHASE_RESERVOIR_RUNTIME',
+            'R15_PHASE_EXACT_ACCUM',
+            'PtR15SetJitter9Phase'))
+          {
+            if($all -notmatch [regex]::Escape($token))
+            {
+              if($token -eq 'PtR15SetJitter9Phase'){continue}
+              throw "R15 SCC recovery integration token missing: $token"
+            }
+          }
+          if($safeHeader -notmatch 'hasRelativeAddressing'){throw 'R15 SCC relative-address rejection missing'}
+          if($safeHeader -notmatch [regex]::Escape('positionWrites!=1')){throw 'R15 SCC one-position-write gate missing'}
+          if($proxy -notmatch 'R15_SCC_NOLOD1'){throw 'R15 SCC no-LOD marker missing'}
+          if($proxy -match 'gameBias-=0\.5849625007211562f'){throw 'R15 SCC LOD bias still active'}
+          if($proxy -match [regex]::Escape('(*out)->AddRef();')){throw 'R15 SCC shader ownership leak survived'}
+          if($proxy -match [regex]::Escape('g_ptar.currentRealTexture=g_ptar.generatedTexture')){throw 'R15 SCC contaminates FG history'}
+
+          & cl.exe /nologo /LD /O2 /MT /W4 /WX /EHsc `
+            /DWINVER=0x0603 /D_WIN32_WINNT=0x0603 `
+            /I build_x86 `
+            compat\x86_d3d9\ptar_d3d9_proxy.cpp `
+            /link user32.lib `
+            /DEF:compat\x86_d3d9\d3d9_proxy.def `
+            /OUT:artifact\d3d9.dll `
+            /SUBSYSTEM:WINDOWS,6.03
+          if($LASTEXITCODE){throw 'R15 SCC recovery runtime compile failed'}
+
+          dumpbin /headers artifact\d3d9.dll | Out-File artifact\R15_SCC_HEADERS.txt -Encoding ascii
+          dumpbin /exports artifact\d3d9.dll | Out-File artifact\R15_SCC_EXPORTS.txt -Encoding ascii
+          dumpbin /dependents artifact\d3d9.dll | Out-File artifact\R15_SCC_DEPENDENTS.txt -Encoding ascii
+          $hd=Get-Content artifact\R15_SCC_HEADERS.txt -Raw
+          $ex=Get-Content artifact\R15_SCC_EXPORTS.txt -Raw
+          $dp=Get-Content artifact\R15_SCC_DEPENDENTS.txt -Raw
+          if($hd -notmatch '14C machine \(x86\)' -or $hd -notmatch '6\.03 subsystem version'){throw 'R15 SCC Win8.1 x86 PE contract failed'}
+          foreach($n in @('Direct3DCreate9','Direct3DCreate9Ex','PTAR_D3D9_DIAG_STATE')){if($ex -notmatch [regex]::Escape($n)){throw "R15 SCC missing export $n"}}
+          foreach($bad in @('VCRUNTIME','MSVCP','UCRTBASE','API-MS-WIN-CRT')){if($dp -match $bad){throw "R15 SCC forbidden dependency $bad"}}
+          foreach($f in $fgFiles)
+          {
+            $after=(Get-FileHash $f -Algorithm SHA256).Hash
+            if($after -ne $fgBefore[$f]){throw "R15 SCC modified frozen FG file: $f"}
+          }
+
+          $asm=Get-Content artifact\R15_PHASE_ACCUM_ASM.txt -Raw
+          $tex=([regex]::Matches($asm,'(?im)^\s*texld')).Count
+          $slotMatch=[regex]::Match($asm,'(?i)approximately\s+(\d+)\s+instruction slots')
+          if(!$slotMatch.Success){throw 'R15 SCC phase slot parse failed'}
+          $slots=[int]$slotMatch.Groups[1].Value
+          if($slots -gt 220 -or $tex -gt 8){throw "R15 SCC phase shader budget failed slots=$slots tex=$tex"}
+
+          $runtimeSha=(Get-FileHash artifact\d3d9.dll -Algorithm SHA256).Hash.ToLowerInvariant()
+          $phaseSha=(Get-FileHash artifact\R15_PHASE_ACCUM.cso -Algorithm SHA256).Hash.ToLowerInvariant()
+          @(
+            ('SOURCE_COMMIT='+$env:GITHUB_SHA),
+            'PTAR_R15_VARIANT=SCC_RECOVERY1_SAFE_VS_NOLOD',
+            'R15_INPUT=1280X720',
+            'R15_OUTPUT=1920X1080',
+            'R15_PHASE_COUNT=9',
+            'R15_SCC_RELATIVE_ADDRESSING=REJECT_TO_ORIGINAL',
+            'R15_SCC_POSITION_READS=REDIRECTED_TO_TEMP',
+            'R15_SCC_POSITION_WRITES=EXACTLY_ONE_ONLY',
+            'R15_TEXTURE_LOD_BIAS=DISABLED_FOR_RECOVERY',
+            'R15_HISTORY_INPUT=REAL_FRAMES_ONLY',
+            'R15_FG_SCOPE=OFF_FOR_THIS_TEST',
+            ('R15_PHASE_SHADER_SLOTS='+$slots),
+            ('R15_PHASE_SHADER_TEXLD='+$tex),
+            ('R15_RUNTIME_SHA256='+$runtimeSha),
+            ('R15_PHASE_CSO_SHA256='+$phaseSha),
+            'WIN81_X86=PASS') | Set-Content artifact\R15_SCC_RECOVERY1.txt -Encoding ascii
+
+          @'
+          PTAR R15 SCC RECOVERY1 - SAFE VS / NO LOD
+
+          Recovery build after SCC field failure: 1080p device opens, image is black,
+          then Conviction_game.exe becomes AppHangB1.
+
+          This build keeps JITTER9 + TRUE720 phase accumulation but narrows the
+          vertex-shader patch domain:
+          - relative-addressed shaders fail open to the original bytecode;
+          - reads of POSITION are preserved through the scratch temp;
+          - only exactly-one-position-write shaders are patched;
+          - texture mip LOD bias is disabled for this recovery test.
+
+          Keep frame generation OFF. If this build reaches the game image, the
+          startup fault was inside the unsafe VS/LOD field domain rather than the
+          9-phase reservoir itself.
+          '@ | Set-Content artifact\README_R15_SCC_RECOVERY1.txt -Encoding ascii
+
+          Write-Host "R15_SCC_RUNTIME_SHA256=$runtimeSha"
+          Write-Host "R15_SCC_PHASE_CSO_SHA256=$phaseSha"
+          Write-Host 'R15_SCC_RECOVERY1_BUILD=PASS'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-R15-SCC-RECOVERY1-SAFE-VS-NOLOD
+          path: |
+            artifact/d3d9.dll
+            artifact/R15_PHASE_ACCUM.cso
+            artifact/R15_PHASE_ACCUM_ASM.txt
+            artifact/R15_SCC_RECOVERY1.txt
+            artifact/README_R15_SCC_RECOVERY1.txt
+            artifact/R15_SAFE_VS_PATCH_RESULT.txt
+            artifact/R15_SCC_HEADERS.txt
+            artifact/R15_SCC_EXPORTS.txt
+            artifact/R15_SCC_DEPENDENTS.txt
+          if-no-files-found: error
