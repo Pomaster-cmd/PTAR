@@ -43,17 +43,25 @@ static PFN_SetRenderState g_realSetRenderState=0;
 '@ 'render-state pointer'
 }
 
-$p=R1 $p @'
-    bool mainTarget;
-    bool currentVertexShaderPatched;
-    UINT phaseIndex;
-'@ @'
-    bool mainTarget;
-    bool currentVertexShaderPatched;
-    bool depthEnabled;
-    bool lodBiasActive;
-    UINT phaseIndex;
-'@ 'state guards'
+# Patch the R15 sampling-state structure semantically. Previous field-test
+# packaging assumed phaseIndex immediately followed currentVertexShaderPatched;
+# that adjacency is not an API contract and can change as the phase bridge
+# evolves. Restrict the edit to the unique PtR15SamplingState body instead.
+if($p.IndexOf('bool depthEnabled;',[StringComparison]::Ordinal) -lt 0 -or
+   $p.IndexOf('bool lodBiasActive;',[StringComparison]::Ordinal) -lt 0)
+{
+    $stateStart=$p.IndexOf('struct PtR15SamplingState',[StringComparison]::Ordinal)
+    $stateEnd=$p.IndexOf('};',$stateStart,[StringComparison]::Ordinal)
+    if($stateStart -lt 0 -or $stateEnd -lt 0){throw 'R15 SAFETYFIX2 sampling-state boundaries missing'}
+    $stateBody=$p.Substring($stateStart,$stateEnd-$stateStart)
+    $fieldPattern='(?m)^[ \t]*bool\s+currentVertexShaderPatched\s*;[ \t]*$'
+    $fieldMatches=[regex]::Matches($stateBody,$fieldPattern)
+    if($fieldMatches.Count -ne 1){throw "R15 SAFETYFIX2 sampling-state patched-VS field count=$($fieldMatches.Count)"}
+    $m=$fieldMatches[0]
+    $fieldInsert=$m.Value+"`n    bool depthEnabled;`n    bool lodBiasActive;"
+    $stateBody=$stateBody.Substring(0,$m.Index)+$fieldInsert+$stateBody.Substring($m.Index+$m.Length)
+    $p=$p.Substring(0,$stateStart)+$stateBody+$p.Substring($stateEnd)
+}
 
 $p=R1 $p @'
         !g_ptar.inPresent &&
@@ -144,17 +152,23 @@ static void PtR15ApplyLodBiases(IDirect3DDevice9* dev)
 }
 '@ 'LOD transition cache'
 
-$p=R1 $p @'
-    g_ptarR15.mainTarget=mainTarget;
-    g_ptarR15.currentVertexShaderPatched=false;
-    g_ptarR15.phaseIndex=0;
-'@ @'
-    g_ptarR15.mainTarget=mainTarget;
-    g_ptarR15.currentVertexShaderPatched=false;
-    g_ptarR15.depthEnabled=true;
-    g_ptarR15.lodBiasActive=false;
-    g_ptarR15.phaseIndex=0;
-'@ 'reset guards'
+# Reset guards are also patched inside the reset function rather than through a
+# brittle three-line adjacency. This guarantees the two new booleans start from
+# a known state while leaving phaseIndex and any later fields untouched.
+$resetStart=$p.IndexOf('static void PtR15ResetSamplingState(bool mainTarget)',[StringComparison]::Ordinal)
+$resetEnd=$p.IndexOf('static void PtR15AdvanceForNextGameFrame',$resetStart,[StringComparison]::Ordinal)
+if($resetStart -lt 0 -or $resetEnd -lt 0 -or $resetEnd -le $resetStart){throw 'R15 SAFETYFIX2 reset-function boundaries missing'}
+$resetBody=$p.Substring($resetStart,$resetEnd-$resetStart)
+if($resetBody.IndexOf('g_ptarR15.depthEnabled=true;',[StringComparison]::Ordinal) -lt 0)
+{
+    $resetNeedle='    g_ptarR15.currentVertexShaderPatched=false;'
+    $r=$resetBody.IndexOf($resetNeedle,[StringComparison]::Ordinal)
+    if($r -lt 0 -or $resetBody.IndexOf($resetNeedle,$r+$resetNeedle.Length,[StringComparison]::Ordinal) -ge 0)
+        {throw 'R15 SAFETYFIX2 reset patched-VS assignment not unique'}
+    $resetInsert=$resetNeedle+"`n    g_ptarR15.depthEnabled=true;`n    g_ptarR15.lodBiasActive=false;"
+    $resetBody=$resetBody.Substring(0,$r)+$resetInsert+$resetBody.Substring($r+$resetNeedle.Length)
+    $p=$p.Substring(0,$resetStart)+$resetBody+$p.Substring($resetEnd)
+}
 
 $p=R1 $p 'static HRESULT STDMETHODCALLTYPE HookSetSamplerState(' @'
 static HRESULT STDMETHODCALLTYPE HookSetRenderState(
