@@ -1,0 +1,42 @@
+name: LAB D3D9 R15A COLORCONTRACT1
+on:
+  push:
+    branches:
+      - lab/r15a-colorcontract1
+    paths:
+      - '.github/workflows/lab-d3d9-r15a-colorcontract1.yml'
+      - 'lab/r15_colorcontract1/**'
+  workflow_dispatch:
+
+jobs:
+  colorcontract1:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      - name: Build and qualify R15A COLOR-CONTRACT1
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          .\lab\r15_colorcontract1\run_r15a_colorcontract1_ci.ps1
+          if($LASTEXITCODE){throw 'R15A COLOR-CONTRACT1 qualification failed'}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PTAR-R15A-COLORCONTRACT1-LAB
+          path: |
+            artifact/d3d9_r15a_colorcontract1.dll
+            artifact/R15A_COLORCONTRACT1_VALIDATION.txt
+            artifact/R15A_APPLY.txt
+            artifact/R15A_SRGB_ORACLE.txt
+            artifact/R15A_HEADERS.txt
+            artifact/R15A_EXPORTS.txt
+            artifact/R15A_DEPENDENTS.txt
+            artifact/R15_PHASE_ACCUM.cso
+            artifact/R15_PHASE_ACCUM_ASM.txt
+          if-no-files-found: error
